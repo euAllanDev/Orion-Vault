@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Marika Vault MVP</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg0: #0c0e12;
+      --bg1: #111317;
+      --bg2: #1a1c20;
+      --glass: rgba(255,255,255,.035);
+      --glass-2: rgba(255,255,255,.05);
+      --line: rgba(255,255,255,.07);
+      --text: #e2e2e8;
+      --muted: #b9cacb;
+      --cyan: #00dbe7;
+      --orange: #ff6b00;
+      --lime: #c3f400;
+      --shadow: 0 24px 80px rgba(0,0,0,.45);
+      --r-xl: 26px;
+      --r-lg: 20px;
+      --r-md: 16px;
+      --font-d: "Space Grotesk", system-ui, sans-serif;
+      --font-b: "Inter", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--font-b);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 18% 26%, rgba(255,255,255,.03), transparent 24%),
+        radial-gradient(circle at 84% 18%, rgba(255,255,255,.02), transparent 26%),
+        linear-gradient(180deg, var(--bg2), var(--bg1) 55%, var(--bg0));
+      overflow: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image: linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px);
+      background-size: 54px 54px;
+      pointer-events: none;
+      opacity: .6;
+    }
+
+    .app {
+      height: 100%;
+      padding: 18px;
+      display: grid;
+      grid-template-columns: 88px minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .glass {
+      background: var(--glass);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,.04);
+    }
+
+    .sidebar {
+      border-radius: 999px;
+      padding: 18px 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .brand {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-family: var(--font-d);
+      font-weight: 700;
+      color: var(--cyan);
+      background: rgba(0,219,231,.08);
+      border: 1px solid rgba(0,219,231,.14);
+    }
+
+    .nav {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .nav button, .icon-btn, .pill, .chip, .action {
+      transition: .18s ease;
+    }
+
+    .nav button {
+      width: 44px;
+      height: 44px;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(255,255,255,.025);
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .nav button.active, .nav button:hover {
+      color: white;
+      background: rgba(0,219,231,.08);
+      box-shadow: 0 0 0 1px rgba(0,219,231,.14) inset;
+    }
+
+    .content {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: 76px minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .topbar {
+      border-radius: 28px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .title small {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 11px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: rgba(226,226,232,.55);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      font-family: var(--font-d);
+      letter-spacing: -.03em;
+    }
+
+    h1 { font-size: 28px; }
+    h2 { font-size: 24px; }
+    h3 { font-size: 15px; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .search {
+      width: min(340px, 38vw);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(15,17,21,.7);
+    }
+
+    .search input {
+      width: 100%;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: white;
+      font: inherit;
+    }
+
+    .icon-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.03);
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+    }
+
+    .avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,107,0,.28);
+      background: linear-gradient(145deg, #f1f1f1, #7b7f88 60%, #0e1014);
+    }
+
+    .workspace {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .view { display: none; }
+    .view.active { display: block; }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, .95fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .stack { display: grid; gap: 18px; }
+    .panel {
+      border-radius: var(--r-xl);
+      padding: 18px;
+      min-width: 0;
+    }
+
+    .hero {
+      min-height: 340px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: flex-end;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0)),
+        radial-gradient(circle at 78% 22%, rgba(0,219,231,.09), transparent 24%),
+        radial-gradient(circle at 20% 75%, rgba(255,107,0,.08), transparent 28%);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -30px -40px auto;
+      width: 220px;
+      height: 140px;
+      filter: blur(42px);
+      background: rgba(0,219,231,.12);
+      border-radius: 50%;
+    }
+
+    .hero-body {
+      position: relative;
+      z-index: 1;
+      max-width: 70%;
+      display: grid;
+      gap: 14px;
+    }
+
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: rgba(226,226,232,.55);
+    }
+
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .action, .chip {
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.09);
+      background: rgba(255,255,255,.03);
+      color: var(--text);
+      padding: 10px 14px;
+      cursor: pointer;
+    }
+    .action.primary { background: rgba(0,242,255,.95); color: #002022; border-color: rgba(0,242,255,.5); font-weight: 700; }
+
+    .stats {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      display: flex;
+      gap: 12px;
+      padding: 12px;
+      border-radius: 18px;
+      background: rgba(12,14,18,.55);
+      border: 1px solid rgba(255,255,255,.06);
+    }
+
+    .stat { min-width: 90px; text-align: center; }
+    .stat strong { display: block; font: 700 26px/1 var(--font-d); color: white; }
+    .stat span { display: block; margin-top: 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: rgba(226,226,232,.55); }
+
+    .cards-2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18px; }
+    .mini {
+      min-height: 154px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: rgba(255,255,255,.028);
+    }
+
+    .value { font: 700 36px/1 var(--font-d); color: white; letter-spacing: -.05em; }
+    .meta { color: rgba(226,226,232,.63); font-size: 12px; }
+    .accent-cyan { box-shadow: inset 0 0 0 1px rgba(0,219,231,.05); }
+    .accent-orange { box-shadow: inset 0 0 0 1px rgba(255,107,0,.05); }
+
+    .announcements {
+      display: grid;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .announce {
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.07);
+      background: rgba(255,255,255,.022);
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .table th {
+      text-align: left;
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: rgba(226,226,232,.45);
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255,255,255,.07);
+    }
+    .table td {
+      padding: 14px 0;
+      border-bottom: 1px solid rgba(255,255,255,.05);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      border: 1px solid rgba(255,255,255,.08);
+    }
+    .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .pill.active { color: var(--cyan); background: rgba(0,219,231,.06); border-color: rgba(0,219,231,.14); }
+    .pill.pending { color: var(--orange); background: rgba(255,107,0,.06); border-color: rgba(255,107,0,.14); }
+    .pill.done { color: var(--lime); background: rgba(195,244,0,.06); border-color: rgba(195,244,0,.14); }
+
+    .list { display: grid; gap: 10px; }
+    .note-row {
+      width: 100%;
+      border: 1px solid rgba(255,255,255,.07);
+      background: rgba(255,255,255,.022);
+      border-radius: 18px;
+      padding: 14px;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+    }
+    .note-row.active { border-color: rgba(0,219,231,.28); background: rgba(0,219,231,.055); }
+    .glyph {
+      width: 44px; height: 44px; border-radius: 14px;
+      display: grid; place-items: center;
+      background: rgba(15,17,21,.6); border: 1px solid rgba(255,255,255,.06);
+      font-family: var(--font-d); font-weight: 700; color: var(--cyan);
+    }
+    .note-title strong { display:block; color:white; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .note-title span, .note-path { color: rgba(226,226,232,.58); font-size:12px; }
+    .tags { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+    .tag {
+      padding: 4px 9px; border-radius: 999px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+      border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.03);
+    }
+    .tag.cyan { color: var(--cyan); background: rgba(0,219,231,.06); border-color: rgba(0,219,231,.14); }
+    .tag.orange { color: var(--orange); background: rgba(255,107,0,.06); border-color: rgba(255,107,0,.14); }
+    .tag.lime { color: var(--lime); background: rgba(195,244,0,.06); border-color: rgba(195,244,0,.14); }
+
+    .detail { display: grid; gap: 18px; }
+    .markdown { white-space: pre-wrap; line-height: 1.7; font-size: 14px; color: rgba(226,226,232,.92); }
+    .plan { display:grid; gap:10px; }
+    .plan-item {
+      border-radius: 16px; padding: 12px 14px; border: 1px solid rgba(255,255,255,.07); background: rgba(255,255,255,.022);
+      display:flex; justify-content:space-between; gap:14px;
+    }
+    .plan-item strong { display:block; color:white; font-size: 13px; margin-bottom: 4px; }
+    .plan-item span { color: rgba(226,226,232,.62); font-size: 12px; }
+
+    .view-builder {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+      align-items: start;
+      min-height: calc(100vh - 120px);
+    }
+    .tree-shell {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: calc(100vh - 120px);
+    }
+    .tree-toolbar {
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+    }
+    .tree-toolbar .chip {
+      padding: 8px 12px;
+      font-size: 12px;
+      background: rgba(255,255,255,.02);
+    }
+    .explorer {
+      flex: 1;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.06);
+      background: rgba(10,12,16,.42);
+      padding: 10px;
+      overflow: auto;
+    }
+    .folder-tree, .folder-tree ul {
+      list-style: none;
+      margin: 0;
+      padding-left: 18px;
+    }
+    .folder-tree { padding-left: 0; }
+    .folder-group { margin-bottom: 6px; }
+    .folder-node,
+    .folder-summary,
+    .file-node {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 10px;
+      border-radius: 12px;
+      color: var(--text);
+    }
+    .folder-summary {
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+    }
+    .folder-summary:hover,
+    .folder-node:hover,
+    .file-node:hover { background: rgba(255,255,255,.03); }
+    .folder-summary::-webkit-details-marker { display: none; }
+    .folder-node .name,
+    .folder-summary .name,
+    .file-node .name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .folder-summary .caret { color: rgba(226,226,232,.45); font-size: 12px; transition: transform .16s ease; }
+    details[open] > .folder-summary .caret { transform: rotate(90deg); }
+    .folder-node .label,
+    .folder-summary .label,
+    .file-node .label { color: white; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .folder-node .kind,
+    .folder-summary .kind,
+    .file-node .kind { color: rgba(226,226,232,.48); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+    .folder-actions { display: flex; gap: 6px; }
+    .mini-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.02);
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+    }
+    .mini-btn:hover { color: white; background: rgba(255,255,255,.04); }
+    .file-node {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 10px 8px 24px;
+      border-radius: 10px;
+      color: rgba(226,226,232,.88);
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .file-node:hover { background: rgba(255,255,255,.025); }
+    .file-node .meta { color: rgba(226,226,232,.42); font-size: 11px; }
+    .tree-icon {
+      width: 18px;
+      height: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(226,226,232,.55);
+      flex: 0 0 auto;
+    }
+    .tree-icon svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+    }
+    .folder-icon-open { display: none; }
+    details[open] > .folder-summary .folder-icon-closed { display: none; }
+    details[open] > .folder-summary .folder-icon-open { display: block; }
+    .folder-summary .tree-icon { color: var(--cyan); }
+    .file-node .tree-icon { color: rgba(226,226,232,.7); }
+    .scroll::-webkit-scrollbar, .workspace::-webkit-scrollbar { width: 5px; }
+    .scroll::-webkit-scrollbar-thumb, .workspace::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 999px; }
+
+    @media (max-width: 1180px) {
+      body { overflow:auto; }
+      .app { grid-template-columns: 1fr; }
+      .sidebar { border-radius: 28px; flex-direction: row; padding: 14px 18px; }
+      .nav { flex-direction: row; flex: 0; }
+      .dashboard-grid, .view-builder { grid-template-columns: 1fr; }
+      .tree-shell { min-height: auto; }
+      .hero-body { max-width: 100%; }
+    }
+
+    @media (max-width: 760px) {
+      .app { padding: 12px; gap: 12px; }
+      .topbar { padding: 16px; flex-direction: column; align-items: stretch; }
+      .toolbar { justify-content: space-between; flex-wrap: wrap; }
+      .search { width: 100%; }
+      .cards-2 { grid-template-columns: 1fr; }
+      .stats { position: static; margin-top: 18px; width: fit-content; flex-wrap: wrap; }
+      .note-row { grid-template-columns: 1fr; }
+      .tags { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar glass">
+      <div class="brand">M</div>
+      <nav class="nav" aria-label="Navegação principal">
+        <button class="active" data-view="dashboard" title="Dashboard">V</button>
+        <button data-view="builder" title="Builder">S</button>
+        <button title="Inspect">I</button>
+        <button title="Organize">O</button>
+        <button title="Context">C</button>
+        <button title="Validate">D</button>
+      </nav>
+      <button class="icon-btn" title="Configurações">⚙</button>
+    </aside>
+
+    <section class="content">
+      <header class="topbar glass">
+        <div class="title">
+          <small>Marika Vault Notes</small>
+          <h1>Dashboard</h1>
+        </div>
+        <div class="toolbar">
+          <label class="search" aria-label="Buscar">
+            <span style="color: rgba(226,226,232,.55)">⌕</span>
+            <input type="search" placeholder="Search notes, tags, or paths" />
+          </label>
+          <button class="icon-btn">✉</button>
+          <button class="icon-btn">◌</button>
+          <div class="avatar"></div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="view active" data-view-panel="dashboard">
+          <div class="dashboard-grid">
+            <div class="stack">
+              <article class="panel glass hero">
+                <div class="hero-body">
+                  <span class="eyebrow">Featured note</span>
+                  <h2>Architecture &amp; Security Design</h2>
+                  <p style="margin:0;color:rgba(226,226,232,.86);line-height:1.6;max-width:58ch;">Tela inicial para o usuário ver o estado do vault, novidades da plataforma e atalhos para começar a organizar as notas.</p>
+                  <div class="actions">
+                    <button class="action primary">Open note</button>
+                    <button class="action">Run organize</button>
+                    <button class="action">Inspect vault</button>
+                  </div>
+                </div>
+                <div class="stats glass">
+                  <div class="stat"><strong>5</strong><span>notes</span></div>
+                  <div class="stat"><strong>3</strong><span>folders</span></div>
+                  <div class="stat"><strong>1</strong><span>dry-run</span></div>
+                </div>
+              </article>
+
+              <div class="cards-2">
+                <section class="panel glass mini accent-cyan">
+                  <div>
+                    <div class="eyebrow">Organization trend</div>
+                    <h3 style="margin-top:8px;">Plan quality</h3>
+                  </div>
+                  <div>
+                    <svg viewBox="0 0 100 28" width="100%" height="72" aria-hidden="true">
+                      <path d="M0,20 Q10,24 20,16 T40,10 T60,18 T80,6 L100,12" fill="none" stroke="#00dbe7" stroke-width="1.8" stroke-linecap="round"/>
+                      <path d="M0,25 Q10,22 20,20 T40,22 T60,18 T80,22 L100,18" fill="none" stroke="#ff6b00" opacity=".7" stroke-width="1.2" stroke-linecap="round"/>
+                    </svg>
+                    <div class="meta">Deterministic local planner, safe by default.</div>
+                  </div>
+                </section>
+
+                <section class="panel glass mini accent-orange">
+                  <div>
+                    <div class="eyebrow">Vault health</div>
+                    <h3 style="margin-top:8px;">Verification</h3>
+                  </div>
+                  <div>
+                    <div class="value">97%</div>
+                    <div class="meta">Markdown files with valid metadata</div>
+                  </div>
+                </section>
+
+                <section class="panel glass mini" style="grid-column: 1 / -1;">
+                  <div>
+                    <div class="eyebrow">Platform updates</div>
+                    <h3 style="margin-top:8px;">Announcements</h3>
+                  </div>
+                  <div class="announcements">
+                    <div class="announce"><strong>New:</strong> vault MVP preview now includes dashboard + structure builder navigation.</div>
+                    <div class="announce"><strong>Tip:</strong> use `organize --dry-run` first before applying folder changes.</div>
+                  </div>
+                </section>
+              </div>
+
+              <section class="panel glass">
+                <div class="section-head">
+                  <div>
+                    <span class="eyebrow">Recent updates</span>
+                    <h3 style="margin-top:6px;">Vault activity</h3>
+                  </div>
+                  <button class="chip">Category ▾</button>
+                </div>
+                <div class="scroll" style="overflow:auto;max-height:330px;padding-right:4px;">
+                  <table class="table">
+                    <thead>
+                      <tr><th>Note</th><th>Status</th><th style="text-align:right;">Last modified</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>Project Alpha</td><td><span class="pill active">Active</span></td><td style="text-align:right;color:rgba(226,226,232,.65)">2h ago</td></tr>
+                      <tr><td>Reunião 2026-05-07</td><td><span class="pill pending">Pending</span></td><td style="text-align:right;color:rgba(226,226,232,.65)">5h ago</td></tr>
+                      <tr><td>Tooling</td><td><span class="pill done">Done</span></td><td style="text-align:right;color:rgba(226,226,232,.65)">8h ago</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+
+            <div class="detail">
+              <section class="panel glass">
+                <div class="section-head">
+                  <div>
+                    <span class="eyebrow">Vault explorer</span>
+                    <h3 style="margin-top:6px;">MVP structure</h3>
+                  </div>
+                  <span class="pill done">local</span>
+                </div>
+                <div class="list" id="note-list"></div>
+              </section>
+
+              <section class="panel glass">
+                <div class="section-head">
+                  <div>
+                    <span class="eyebrow">Selected note</span>
+                    <h2 id="detail-title">-</h2>
+                    <div class="note-path" id="detail-path"></div>
+                  </div>
+                  <span class="pill active" id="detail-status">active</span>
+                </div>
+                <div class="tags" id="detail-tags" style="justify-content:flex-start;margin-bottom:12px;"></div>
+                <div class="markdown scroll" id="detail-content" style="max-height:250px;overflow:auto;padding-right:4px;"></div>
+              </section>
+
+              <section class="panel glass">
+                <div class="section-head">
+                  <div>
+                    <span class="eyebrow">Organize preview</span>
+                    <h3 style="margin-top:6px;">Suggested actions</h3>
+                  </div>
+                  <span class="pill pending">dry-run</span>
+                </div>
+                <div class="plan">
+                  <div class="plan-item"><div><strong>Create folder</strong><span>organized/project</span></div><span class="pill active">1x</span></div>
+                  <div class="plan-item"><div><strong>Move note</strong><span>inbox/ideia-01.md → organized/project/ideia-01.md</span></div><span class="pill pending">safe</span></div>
+                  <div class="plan-item"><div><strong>No-op</strong><span>README.md stays at root</span></div><span class="pill done">kept</span></div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="builder">
+          <div class="view-builder">
+            <section class="panel glass tree-shell">
+              <div class="section-head">
+                <div>
+                  <span class="eyebrow">Structure builder</span>
+                  <h3 style="margin-top:6px;">Explorer</h3>
+                </div>
+                <span class="pill active">editing</span>
+              </div>
+
+              <div class="tree-toolbar">
+                <button class="chip">+ Folder</button>
+                <button class="chip">+ File</button>
+                <button class="chip">Collapse all</button>
+                <button class="chip">Preview organize</button>
+              </div>
+
+              <div class="explorer">
+                <ul class="folder-tree">
+                  <li>
+                    <details class="folder-group" open>
+                      <summary class="folder-summary">
+                        <div class="name"><span class="caret">▸</span><span class="tree-icon" aria-hidden="true"><span class="folder-icon-closed"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-icon lucide-folder"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 8.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="folder-icon-open"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-open-icon lucide-folder-open"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span></span><span class="label">vault-mvp</span></div>
+                        <div class="folder-actions">
+                          <button class="mini-btn" data-create="folder" title="New folder">+</button>
+                          <button class="mini-btn" data-create="file" title="New file">▣</button>
+                        </div>
+                      </summary>
+                      <ul>
+                        <li>
+                          <details class="folder-group" open>
+                            <summary class="folder-summary">
+                              <div class="name"><span class="caret">▸</span><span class="tree-icon" aria-hidden="true"><span class="folder-icon-closed"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-icon lucide-folder"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 8.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="folder-icon-open"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-open-icon lucide-folder-open"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69-.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span></span><span class="label">inbox</span></div>
+                              <div class="folder-actions">
+                                <button class="mini-btn" data-create="folder" title="New folder">+</button>
+                                <button class="mini-btn" data-create="file" title="New file">▣</button>
+                              </div>
+                            </summary>
+                            <ul>
+                              <li><div class="file-node"><div class="name"><span class="tree-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pen-icon lucide-pen"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span><span class="label">ideia-01.md</span></div><span class="meta">md</span></div></li>
+                              <li><div class="file-node"><div class="name"><span class="tree-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pen-icon lucide-pen"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span><span class="label">reuniao-2026-05-07.md</span></div><span class="meta">md</span></div></li>
+                            </ul>
+                          </details>
+                        </li>
+                        <li>
+                          <details class="folder-group" open>
+                            <summary class="folder-summary">
+                              <div class="name"><span class="caret">▸</span><span class="tree-icon" aria-hidden="true"><span class="folder-icon-closed"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-icon lucide-folder"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 8.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="folder-icon-open"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-open-icon lucide-folder-open"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69-.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span></span><span class="label">projetos</span></div>
+                              <div class="folder-actions">
+                                <button class="mini-btn" data-create="folder" title="New folder">+</button>
+                                <button class="mini-btn" data-create="file" title="New file">▣</button>
+                              </div>
+                            </summary>
+                            <ul>
+                              <li>
+                                <details class="folder-group">
+                                  <summary class="folder-summary">
+                                    <div class="name"><span class="caret">▸</span><span class="tree-icon" aria-hidden="true"><span class="folder-icon-closed"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-icon lucide-folder"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 8.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="folder-icon-open"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-open-icon lucide-folder-open"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69-.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span></span><span class="label">alpha</span></div>
+                                    <div class="folder-actions">
+                                      <button class="mini-btn" data-create="folder" title="New folder">+</button>
+                                      <button class="mini-btn" data-create="file" title="New file">▣</button>
+                                    </div>
+                                  </summary>
+                                  <ul>
+                                    <li><div class="file-node"><div class="name"><span class="tree-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pen-icon lucide-pen"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span><span class="label">overview.md</span></div><span class="meta">md</span></div></li>
+                                  </ul>
+                                </details>
+                              </li>
+                              <li><div class="file-node"><div class="name"><span class="tree-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pen-icon lucide-pen"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span><span class="label">roadmap.md</span></div><span class="meta">md</span></div></li>
+                            </ul>
+                          </details>
+                        </li>
+                        <li>
+                          <details class="folder-group" open>
+                            <summary class="folder-summary">
+                              <div class="name"><span class="caret">▸</span><span class="tree-icon" aria-hidden="true"><span class="folder-icon-closed"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-icon lucide-folder"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 8.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="folder-icon-open"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-folder-open-icon lucide-folder-open"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69-.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span></span><span class="label">referencia</span></div>
+                              <div class="folder-actions">
+                                <button class="mini-btn" data-create="folder" title="New folder">+</button>
+                                <button class="mini-btn" data-create="file" title="New file">▣</button>
+                              </div>
+                            </summary>
+                            <ul>
+                              <li><div class="file-node"><div class="name"><span class="tree-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pen-icon lucide-pen"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span><span class="label">tooling.md</span></div><span class="meta">md</span></div></li>
+                            </ul>
+                          </details>
+                        </li>
+                      </ul>
+                    </details>
+                  </li>
+                </ul>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </section>
+  </div>
+
+  <script>
+    const notes = [
+      { id: 'alpha', title: 'Project Alpha', path: 'projetos/alpha/overview.md', status: 'active', tags: ['project', 'alpha'], body: 'Projeto principal do MVP. Serve como âncora para validar o fluxo de organização e o agrupamento temático.\n\nConteúdo esperado:\n- escopo claro\n- links entre notas\n- possibilidade de dry-run sem mutação.' },
+      { id: 'inbox', title: 'Ideia de app', path: 'inbox/ideia-01.md', status: 'pending', tags: ['inbox'], body: 'Nota solta para testar como o organizador reconhece conteúdo sem categoria definida.\n\nIdeal para ser movida para uma pasta sugerida pela IA.' },
+      { id: 'tooling', title: 'Tooling', path: 'referencia/tooling.md', status: 'done', tags: ['cli', 'typescript'], body: 'Nota de referência para ferramentas e contratos.\n\nBoa candidata para permanecer como documentação de apoio.' }
+    ];
+
+    const noteList = document.getElementById('note-list');
+    const detailTitle = document.getElementById('detail-title');
+    const detailPath = document.getElementById('detail-path');
+    const detailTags = document.getElementById('detail-tags');
+    const detailContent = document.getElementById('detail-content');
+    const detailStatus = document.getElementById('detail-status');
+    const viewButtons = document.querySelectorAll('[data-view]');
+    const viewPanels = document.querySelectorAll('[data-view-panel]');
+
+    function statusClass(status) {
+      if (status === 'pending') return 'pending';
+      if (status === 'done') return 'done';
+      return 'active';
+    }
+
+    function render(note) {
+      detailTitle.textContent = note.title;
+      detailPath.textContent = note.path;
+      detailContent.textContent = note.body;
+      detailTags.innerHTML = note.tags.map((tag, index) => `<span class="tag ${index === 0 ? 'cyan' : 'orange'}">#${tag}</span>`).join('');
+      detailStatus.textContent = note.status;
+      detailStatus.className = `pill ${statusClass(note.status)}`;
+      document.querySelectorAll('.note-row').forEach((row) => row.classList.toggle('active', row.dataset.id === note.id));
+    }
+
+    noteList.innerHTML = notes.map((note) => `
+      <button class="note-row ${note.id === 'alpha' ? 'active' : ''}" data-id="${note.id}">
+        <div class="glyph">${note.title.slice(0,1).toUpperCase()}</div>
+        <div class="note-title">
+          <strong>${note.title}</strong>
+          <span>${note.path}</span>
+        </div>
+        <div class="tags">${note.tags.map((tag, index) => `<span class="tag ${index === 0 ? 'cyan' : 'orange'}">${tag}</span>`).join('')}</div>
+      </button>
+    `).join('');
+
+    noteList.addEventListener('click', (event) => {
+      const row = event.target.closest('.note-row');
+      if (!row) return;
+      const note = notes.find((entry) => entry.id === row.dataset.id);
+      if (note) render(note);
+    });
+
+    viewButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const view = button.dataset.view;
+        if (!view) return;
+        viewButtons.forEach((el) => el.classList.toggle('active', el.dataset.view === view));
+        viewPanels.forEach((panel) => panel.classList.toggle('active', panel.dataset.viewPanel === view));
+      });
+    });
+
+    document.querySelectorAll('[data-create]').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+    });
+
+    render(notes[0]);
+  </script>
+</body>
+</html>

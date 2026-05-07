@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Marika CLI Notes - Vault MVP</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111317;
+      --bg-2: #0c0e12;
+      --surface: rgba(255, 255, 255, 0.06);
+      --surface-strong: rgba(255, 255, 255, 0.09);
+      --border: rgba(255, 255, 255, 0.1);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --text: #e2e2e8;
+      --muted: #b9cacb;
+      --cyan: #00dbe7;
+      --cyan-strong: #00f2ff;
+      --orange: #ff6b00;
+      --lime: #c3f400;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.46);
+      --radius-lg: 24px;
+      --radius-md: 18px;
+      --radius-sm: 14px;
+      --sidebar: 280px;
+      --header: 76px;
+      --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+      --font-body: "Inter", system-ui, sans-serif;
+      --font-mono: "Space Grotesk", ui-monospace, SFMono-Regular, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--font-body);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 15% 35%, rgba(255, 107, 0, 0.12), transparent 28%),
+        radial-gradient(circle at 82% 25%, rgba(0, 219, 231, 0.12), transparent 30%),
+        linear-gradient(180deg, #13161b 0%, #0f1115 100%);
+      overflow: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image: linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: linear-gradient(180deg, rgba(0,0,0,0.4), transparent 90%);
+      pointer-events: none;
+    }
+
+    .shell {
+      height: 100%;
+      display: grid;
+      grid-template-columns: 88px minmax(0, 1fr);
+      gap: 18px;
+      padding: 18px;
+    }
+
+    .glass {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+
+    .sidebar {
+      border-radius: 999px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 18px 0;
+      gap: 18px;
+      min-height: 0;
+      position: relative;
+    }
+
+    .brand {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: var(--cyan);
+      background: rgba(0, 219, 231, 0.1);
+      border: 1px solid rgba(0, 219, 231, 0.2);
+      font-family: var(--font-display);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+
+    .nav {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+      flex: 1;
+      justify-content: center;
+    }
+
+    .nav button {
+      width: 44px;
+      height: 44px;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.03);
+      color: var(--muted);
+      cursor: pointer;
+      transition: 180ms ease;
+    }
+
+    .nav button:hover,
+    .nav button.active {
+      color: white;
+      background: rgba(0, 219, 231, 0.12);
+      box-shadow: 0 0 0 1px rgba(0, 219, 231, 0.2) inset;
+    }
+
+    .nav button.active {
+      color: var(--cyan);
+    }
+
+    .content {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: var(--header) minmax(0, 1fr);
+      gap: 18px;
+      min-height: 0;
+    }
+
+    .topbar {
+      border-radius: 28px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-width: 0;
+    }
+
+    .title {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: rgba(226, 226, 232, 0.55);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      letter-spacing: -0.03em;
+    }
+
+    h1 { font-size: clamp(22px, 2.3vw, 28px); }
+    h2 { font-size: clamp(20px, 1.8vw, 26px); }
+    h3 { font-size: 15px; color: white; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .search {
+      width: min(320px, 38vw);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(15, 17, 21, 0.65);
+      color: white;
+    }
+
+    .search input {
+      border: 0;
+      outline: 0;
+      width: 100%;
+      background: transparent;
+      color: white;
+      font: inherit;
+    }
+
+    .icon-btn, .chip, .action, .note-row {
+      transition: 180ms ease;
+    }
+
+    .icon-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.04);
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+    }
+
+    .icon-btn:hover { color: white; border-color: rgba(255,255,255,0.18); }
+
+    .avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 107, 0, 0.4);
+      background: radial-gradient(circle at 30% 30%, #fff 0 18%, #d4d4d8 19% 24%, #667 25%, #111 100%);
+    }
+
+    .workspace {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .workspace::-webkit-scrollbar,
+    .scroll::-webkit-scrollbar { width: 5px; }
+    .workspace::-webkit-scrollbar-thumb,
+    .scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
+      gap: 18px;
+      min-height: 100%;
+      align-items: start;
+    }
+
+    .stack {
+      display: grid;
+      gap: 18px;
+      min-width: 0;
+    }
+
+    .panel {
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      min-width: 0;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      min-height: 340px;
+      display: flex;
+      align-items: flex-end;
+      isolation: isolate;
+    }
+
+    .hero::before,
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto;
+      border-radius: 50%;
+      filter: blur(44px);
+      pointer-events: none;
+      opacity: 0.75;
+    }
+
+    .hero::before {
+      width: 180px;
+      height: 180px;
+      right: -18px;
+      top: -24px;
+      background: rgba(0, 219, 231, 0.18);
+    }
+
+    .hero::after {
+      width: 240px;
+      height: 180px;
+      left: 10%;
+      bottom: -40px;
+      background: rgba(255, 107, 0, 0.18);
+    }
+
+    .hero-media {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(17,19,23,0.15), rgba(17,19,23,0.82)),
+        radial-gradient(circle at 25% 35%, rgba(0, 219, 231, 0.18), transparent 38%),
+        radial-gradient(circle at 75% 45%, rgba(255, 107, 0, 0.16), transparent 38%),
+        linear-gradient(135deg, rgba(255,255,255,0.08), transparent 55%);
+      opacity: 0.95;
+    }
+
+    .hero-body {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-width: 72%;
+    }
+
+    .hero-body p {
+      margin: 0;
+      max-width: 56ch;
+      color: rgba(226, 226, 232, 0.86);
+      line-height: 1.6;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .chip,
+    .action {
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      padding: 10px 14px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .action.primary {
+      background: linear-gradient(180deg, rgba(0,242,255,0.98), rgba(0,219,231,0.88));
+      color: #002022;
+      border-color: rgba(0, 242, 255, 0.6);
+      font-weight: 700;
+    }
+
+    .action:hover, .chip:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255,255,255,0.22);
+    }
+
+    .stats {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      display: flex;
+      gap: 14px;
+      padding: 12px;
+      border-radius: 18px;
+      background: rgba(12, 14, 18, 0.7);
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(16px);
+    }
+
+    .stat {
+      min-width: 94px;
+      text-align: center;
+    }
+
+    .stat strong {
+      display: block;
+      font: 700 26px/1 var(--font-display);
+      color: white;
+      margin-bottom: 4px;
+    }
+
+    .stat span {
+      display: block;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(226,226,232,0.56);
+    }
+
+    .aside-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .mini {
+      min-height: 158px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .mini .value {
+      font: 700 clamp(30px, 4vw, 40px)/1 var(--font-display);
+      color: white;
+      letter-spacing: -0.05em;
+    }
+
+    .mini .meta {
+      font-size: 12px;
+      color: rgba(226,226,232,0.65);
+    }
+
+    .accent-cyan { box-shadow: inset 0 0 0 1px rgba(0,219,231,0.06); }
+    .accent-orange { box-shadow: inset 0 0 0 1px rgba(255,107,0,0.06); }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .section-head p {
+      margin: 6px 0 0;
+      color: rgba(226,226,232,0.62);
+      font-size: 13px;
+    }
+
+    .list {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .note-row {
+      width: 100%;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+      border-radius: 18px;
+      padding: 14px;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .note-row:hover { background: rgba(255,255,255,0.05); }
+    .note-row.active {
+      border-color: rgba(0,219,231,0.36);
+      background: rgba(0,219,231,0.08);
+    }
+
+    .glyph {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: rgba(15,17,21,0.72);
+      border: 1px solid rgba(255,255,255,0.08);
+      display: grid;
+      place-items: center;
+      font-family: var(--font-display);
+      font-weight: 700;
+      color: var(--cyan);
+    }
+
+    .note-title {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .note-title strong {
+      font-size: 14px;
+      color: white;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .note-title span,
+    .note-path,
+    .muted {
+      color: rgba(226,226,232,0.6);
+      font-size: 12px;
+    }
+
+    .tags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .tag {
+      padding: 4px 9px;
+      border-radius: 999px;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+    }
+
+    .tag.cyan { color: var(--cyan); background: rgba(0,219,231,0.08); border-color: rgba(0,219,231,0.18); }
+    .tag.orange { color: var(--orange); background: rgba(255,107,0,0.08); border-color: rgba(255,107,0,0.18); }
+    .tag.lime { color: var(--lime); background: rgba(195,244,0,0.08); border-color: rgba(195,244,0,0.18); }
+
+    .detail {
+      display: grid;
+      gap: 18px;
+      min-width: 0;
+    }
+
+    .detail-card {
+      border-radius: var(--radius-lg);
+      padding: 18px;
+    }
+
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+
+    .detail-header h2 { margin-top: 6px; }
+
+    .markdown {
+      white-space: pre-wrap;
+      line-height: 1.7;
+      font-size: 14px;
+      color: rgba(226,226,232,0.9);
+    }
+
+    .plan {
+      display: grid;
+      gap: 10px;
+    }
+
+    .plan-item {
+      border-radius: 16px;
+      padding: 12px 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .plan-item strong { display: block; font-size: 13px; color: white; margin-bottom: 4px; }
+    .plan-item span { font-size: 12px; color: rgba(226,226,232,0.65); }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .table th {
+      text-align: left;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(226,226,232,0.45);
+      padding: 0 0 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .table td {
+      padding: 14px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      vertical-align: top;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .pill::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .pill.active { color: var(--cyan); background: rgba(0,219,231,0.08); border-color: rgba(0,219,231,0.18); }
+    .pill.pending { color: var(--orange); background: rgba(255,107,0,0.08); border-color: rgba(255,107,0,0.18); }
+    .pill.done { color: var(--lime); background: rgba(195,244,0,0.08); border-color: rgba(195,244,0,0.18); }
+
+    .footer-note {
+      margin-top: 10px;
+      color: rgba(226,226,232,0.5);
+      font-size: 12px;
+    }
+
+    @media (max-width: 1180px) {
+      body { overflow: auto; }
+      .shell { grid-template-columns: 1fr; }
+      .sidebar {
+        border-radius: 28px;
+        flex-direction: row;
+        justify-content: space-between;
+        padding: 14px 18px;
+      }
+      .nav { flex-direction: row; justify-content: center; }
+      .content { grid-template-rows: auto 1fr; }
+      .grid { grid-template-columns: 1fr; }
+      .hero-body { max-width: 100%; }
+    }
+
+    @media (max-width: 760px) {
+      .shell { padding: 12px; gap: 12px; }
+      .topbar { padding: 16px; flex-direction: column; align-items: stretch; }
+      .toolbar { justify-content: space-between; }
+      .search { width: 100%; }
+      .aside-grid { grid-template-columns: 1fr; }
+      .stats { position: static; margin-top: 18px; width: fit-content; flex-wrap: wrap; }
+      .note-row { grid-template-columns: 1fr; }
+      .tags { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar glass">
+      <div class="brand">M</div>
+      <nav class="nav" aria-label="Navegação principal">
+        <button class="active" title="Vault">V</button>
+        <button title="Search">S</button>
+        <button title="Inspect">I</button>
+        <button title="Organize">O</button>
+        <button title="Context">C</button>
+        <button title="Validate">D</button>
+      </nav>
+      <button class="icon-btn" title="Configurações">⚙</button>
+    </aside>
+
+    <section class="content">
+      <header class="topbar glass">
+        <div class="title">
+          <span class="eyebrow">Marika CLI Notes</span>
+          <h1>Vault MVP</h1>
+        </div>
+
+        <div class="toolbar">
+          <label class="search" aria-label="Buscar nota">
+            <span style="color: rgba(226,226,232,0.55)">⌕</span>
+            <input type="search" placeholder="Search notes, tags, or paths" />
+          </label>
+          <button class="icon-btn" title="Inbox">✉</button>
+          <button class="icon-btn" title="Alerts">◌</button>
+          <div class="avatar" title="User"></div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <div class="grid">
+          <div class="stack">
+            <article class="panel glass hero accent-cyan">
+              <div class="hero-media" aria-hidden="true"></div>
+              <div class="hero-body">
+                <span class="eyebrow">Featured insight</span>
+                <h2 id="hero-title">Architecture &amp; Security Design</h2>
+                <p id="hero-copy">Uma interface de vault local-first que mistura leitura rápida, inspeção do estado e um fluxo de organização seguro para notas Markdown.</p>
+                <div class="actions">
+                  <button class="action primary">Open note</button>
+                  <button class="action">Run organize</button>
+                  <button class="action">Inspect vault</button>
+                </div>
+              </div>
+
+              <div class="stats glass">
+                <div class="stat">
+                  <strong id="stat-notes">5</strong>
+                  <span>notes</span>
+                </div>
+                <div class="stat">
+                  <strong id="stat-folders">3</strong>
+                  <span>folders</span>
+                </div>
+                <div class="stat">
+                  <strong>1</strong>
+                  <span>dry-run</span>
+                </div>
+              </div>
+            </article>
+
+            <div class="aside-grid">
+              <section class="panel glass mini accent-cyan">
+                <div>
+                  <div class="eyebrow">Organization trend</div>
+                  <h3 style="margin-top: 8px">Plan quality</h3>
+                </div>
+                <svg viewBox="0 0 100 28" width="100%" height="74" aria-hidden="true">
+                  <path d="M0,20 Q10,24 20,16 T40,10 T60,18 T80,6 L100,12" fill="none" stroke="#00dbe7" stroke-width="1.8" stroke-linecap="round"/>
+                  <path d="M0,25 Q10,22 20,20 T40,22 T60,18 T80,22 L100,18" fill="none" stroke="#ff6b00" opacity="0.7" stroke-width="1.2" stroke-linecap="round"/>
+                  <circle cx="80" cy="6" r="2" fill="#00dbe7" />
+                </svg>
+                <div class="meta">Deterministic local planner, safe by default.</div>
+              </section>
+
+              <section class="panel glass mini accent-orange">
+                <div>
+                  <div class="eyebrow">Vault health</div>
+                  <h3 style="margin-top: 8px">Verification</h3>
+                </div>
+                <div>
+                  <div class="value">97%</div>
+                  <div class="meta">Markdown files with valid metadata</div>
+                </div>
+              </section>
+            </div>
+
+            <section class="panel glass">
+              <div class="section-head">
+                <div>
+                  <span class="eyebrow">Recent updates</span>
+                  <h3 style="margin-top: 6px">Vault activity</h3>
+                </div>
+                <button class="chip">Category ▾</button>
+              </div>
+
+              <div class="scroll" style="overflow:auto; max-height: 330px; padding-right: 4px;">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Note</th>
+                      <th>Status</th>
+                      <th style="text-align:right">Last modified</th>
+                    </tr>
+                  </thead>
+                  <tbody id="updates-table"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="detail">
+            <section class="panel glass">
+              <div class="section-head">
+                <div>
+                  <span class="eyebrow">Vault explorer</span>
+                  <h3 style="margin-top: 6px">MVP structure</h3>
+                </div>
+                <span class="pill done">local</span>
+              </div>
+
+              <div class="list" id="note-list"></div>
+              <div class="footer-note">Clique em uma nota para trocar a prévia e o plano sugerido.</div>
+            </section>
+
+            <section class="panel glass detail-card">
+              <div class="detail-header">
+                <div>
+                  <span class="eyebrow">Selected note</span>
+                  <h2 id="detail-title">-</h2>
+                  <div class="note-path" id="detail-path"></div>
+                </div>
+                <span class="pill active" id="detail-status">active</span>
+              </div>
+
+              <div class="tags" id="detail-tags" style="justify-content:flex-start; margin-bottom: 12px;"></div>
+              <div class="markdown scroll" id="detail-content" style="max-height: 250px; overflow:auto; padding-right: 4px;"></div>
+            </section>
+
+            <section class="panel glass detail-card">
+              <div class="section-head">
+                <div>
+                  <span class="eyebrow">Organize preview</span>
+                  <h3 style="margin-top: 6px">Suggested actions</h3>
+                </div>
+                <span class="pill pending">dry-run</span>
+              </div>
+              <div class="plan" id="plan-list"></div>
+            </section>
+          </div>
+        </div>
+      </main>
+    </section>
+  </div>
+
+  <script>
+    const notes = [
+      {
+        id: 'alpha',
+        title: 'Project Alpha',
+        path: 'projetos/alpha/overview.md',
+        folder: 'projetos/alpha',
+        status: 'active',
+        modified: '2h ago',
+        excerpt: '# Project Alpha\n\nNotes about the current product direction.\n\n- scope\n- milestones\n- decisions',
+        tags: ['project', 'alpha'],
+        body: 'Projeto principal do MVP. Serve como âncora para validar o fluxo de organização e o agrupamento temático.\n\nConteúdo esperado:\n- escopo claro\n- links entre notas\n- possibilidade de dry-run sem mutação.'
+      },
+      {
+        id: 'inbox',
+        title: 'Ideia de app',
+        path: 'inbox/ideia-01.md',
+        folder: 'inbox',
+        status: 'pending',
+        modified: '5h ago',
+        excerpt: '# Ideia de app\n\nAnotações soltas e heurísticas de organização.',
+        tags: ['inbox'],
+        body: 'Nota solta para testar como o organizador reconhece conteúdo sem categoria definida.\n\nIdeal para ser movida para uma pasta sugerida pela IA.'
+      },
+      {
+        id: 'tooling',
+        title: 'Tooling',
+        path: 'referencia/tooling.md',
+        folder: 'referencia',
+        status: 'done',
+        modified: '8h ago',
+        excerpt: '# Tooling\n\nLocal-first stack, build, test, lint and validate commands.',
+        tags: ['cli', 'typescript'],
+        body: 'Nota de referência para ferramentas e contratos.\n\nBoa candidata para permanecer como documentação de apoio, sem mover para o espaço de projetos.'
+      },
+      {
+        id: 'meeting',
+        title: 'Reunião 2026-05-07',
+        path: 'inbox/reuniao-2026-05-07.md',
+        folder: 'inbox',
+        status: 'pending',
+        modified: '11h ago',
+        excerpt: '# Reunião 2026-05-07\n\n- falar com design\n- definir escopo\n- organizar tarefas',
+        tags: ['meeting', 'todo'],
+        body: 'Um exemplo clássico de entrada em inbox, útil para demonstrar como o sistema coleta contexto e propõe um destino temático.'
+      },
+      {
+        id: 'README',
+        title: 'Vault README',
+        path: 'README.md',
+        folder: 'root',
+        status: 'active',
+        modified: '1d ago',
+        excerpt: '# Marika Vault\n\nA local-first notes workspace for the MVP.',
+        tags: ['root', 'guide'],
+        body: 'Documento-raiz que ajuda a inspecionar o vault e orientar o usuário.\n\nTambém serve como ponto de partida para validar leitura da raiz e metadados.'
+      }
+    ];
+
+    const plan = [
+      { title: 'Create folder', detail: 'organized/project', meta: '1x' },
+      { title: 'Move note', detail: 'inbox/ideia-01.md → organized/project/ideia-01.md', meta: 'safe' },
+      { title: 'Move note', detail: 'inbox/reuniao-2026-05-07.md → organized/meeting/reuniao-2026-05-07.md', meta: 'safe' },
+      { title: 'No-op', detail: 'README.md stays at vault root', meta: 'kept' }
+    ];
+
+    const updates = [
+      ['Project Alpha', 'Active', '2h ago'],
+      ['Reunião 2026-05-07', 'Pending', '5h ago'],
+      ['Tooling', 'Done', '8h ago']
+    ];
+
+    const noteList = document.getElementById('note-list');
+    const detailTitle = document.getElementById('detail-title');
+    const detailPath = document.getElementById('detail-path');
+    const detailTags = document.getElementById('detail-tags');
+    const detailContent = document.getElementById('detail-content');
+    const planList = document.getElementById('plan-list');
+    const updatesTable = document.getElementById('updates-table');
+    const heroTitle = document.getElementById('hero-title');
+    const heroCopy = document.getElementById('hero-copy');
+    const statNotes = document.getElementById('stat-notes');
+    const statFolders = document.getElementById('stat-folders');
+
+    function statusClass(status) {
+      if (status === 'pending') return 'pending';
+      if (status === 'done') return 'done';
+      return 'active';
+    }
+
+    function renderNote(note) {
+      detailTitle.textContent = note.title;
+      detailPath.textContent = note.path;
+      detailContent.textContent = note.body + '\n\nPreview:\n' + note.excerpt;
+      detailTags.innerHTML = note.tags.map((tag) => `<span class="tag cyan">#${tag}</span>`).join('');
+      heroTitle.textContent = note.title;
+      heroCopy.textContent = note.body;
+      document.getElementById('detail-status').textContent = note.status;
+      document.getElementById('detail-status').className = `pill ${statusClass(note.status)}`;
+
+      document.querySelectorAll('.note-row').forEach((button) => {
+        button.classList.toggle('active', button.dataset.id === note.id);
+      });
+    }
+
+    noteList.innerHTML = notes.map((note) => `
+      <button class="note-row ${note.id === 'alpha' ? 'active' : ''}" data-id="${note.id}">
+        <div class="glyph">${note.title.slice(0, 1).toUpperCase()}</div>
+        <div class="note-title">
+          <strong>${note.title}</strong>
+          <span>${note.path}</span>
+        </div>
+        <div class="tags">
+          ${note.tags.slice(0, 2).map((tag, index) => `<span class="tag ${index === 0 ? 'cyan' : 'orange'}">${tag}</span>`).join('')}
+        </div>
+      </button>
+    `).join('');
+
+    planList.innerHTML = plan.map((item, index) => `
+      <div class="plan-item">
+        <div>
+          <strong>${index + 1}. ${item.title}</strong>
+          <span>${item.detail}</span>
+        </div>
+        <span class="pill ${index === 0 ? 'active' : index === 3 ? 'done' : 'pending'}">${item.meta}</span>
+      </div>
+    `).join('');
+
+    updatesTable.innerHTML = updates.map(([title, status, modified]) => `
+      <tr>
+        <td>${title}</td>
+        <td><span class="pill ${status.toLowerCase()}">${status}</span></td>
+        <td style="text-align:right; color: rgba(226,226,232,0.65)">${modified}</td>
+      </tr>
+    `).join('');
+
+    statNotes.textContent = String(notes.length);
+    statFolders.textContent = String(new Set(notes.map((note) => note.folder)).size);
+
+    noteList.addEventListener('click', (event) => {
+      const button = event.target.closest('.note-row');
+      if (!button) return;
+      const note = notes.find((entry) => entry.id === button.dataset.id);
+      if (note) renderNote(note);
+    });
+
+    renderNote(notes[0]);
+  </script>
+</body>
+</html>

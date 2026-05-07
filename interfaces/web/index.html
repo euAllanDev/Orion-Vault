@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Marika Vault</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="rail glass">
+      <div class="brand">M</div>
+      <nav class="rail-nav" aria-label="Navegação global">
+        <button class="rail-btn active" data-view="setup" title="Vault">⌂</button>
+        <button class="rail-btn" data-view="workspace" title="Workspace">◫</button>
+        <button class="rail-btn" data-view="search" title="Busca">⌕</button>
+        <button class="rail-btn" data-view="settings" title="Configurações">◌</button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="topbar glass">
+        <div class="topbar-title">
+          <span class="eyebrow">Marika Vault</span>
+          <h1 id="pageTitle">Vault Setup</h1>
+          <p id="pageSubtitle">Crie ou abra um vault local com a fronteira explícita.</p>
+        </div>
+
+        <div class="topbar-actions">
+          <label class="path-box" for="vaultPathInput">
+            <span>Vault</span>
+            <input id="vaultPathInput" type="text" placeholder="C:\\MarikaVault" autocomplete="off" />
+          </label>
+          <button id="openWorkspaceButton" class="action primary">Abrir workspace</button>
+        </div>
+      </header>
+
+      <section class="view active" id="setupView">
+        <div class="setup-layout">
+          <section class="setup-hero glass">
+            <div class="setup-copy">
+              <span class="eyebrow">Vault onboarding</span>
+              <h2>Comece pelo root seguro.</h2>
+              <p>
+                Crie ou abra o vault e mantenha a navegação simples, local e previsível.
+                A interface de trabalho segue a lógica de um editor de notas, com árvore de arquivos e conteúdo central.
+              </p>
+              <div class="actions-row">
+                <button id="createVaultButton" class="action primary">Criar vault</button>
+                <button id="openVaultButton" class="action">Abrir vault</button>
+              </div>
+            </div>
+          </section>
+
+          <aside class="setup-side">
+            <section class="card glass">
+              <span class="eyebrow">Vault ativo</span>
+              <h3 id="vaultName">MarikaVault</h3>
+              <div class="meta-list">
+                <div>
+                  <span>Root</span>
+                  <strong id="vaultRootDisplay">C:\\MarikaVault</strong>
+                </div>
+                <div>
+                  <span>Status</span>
+                  <strong id="vaultStateText">válido</strong>
+                </div>
+              </div>
+              <p id="setupHint" class="hint">O vault está pronto para inspeção e organização.</p>
+            </section>
+
+            <section class="card glass">
+              <span class="eyebrow">Atalhos</span>
+              <div class="shortcut-list">
+                <button class="shortcut active">inspect</button>
+                <button class="shortcut">validate</button>
+                <button class="shortcut">organize</button>
+                <button class="shortcut">mkdir</button>
+                <button class="shortcut">touch</button>
+                <button class="shortcut">edit</button>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="workspaceView">
+        <section id="workspaceEmpty" class="workspace-empty glass">
+          <div class="workspace-empty-card">
+            <span class="eyebrow">Workspace vazio</span>
+            <h2>Crie ou abra um vault para começar.</h2>
+            <p>
+              A visualização vai permanecer limpa até você escolher um root.
+              Depois disso, a árvore, a nota e o painel auxiliar aparecem aqui.
+            </p>
+            <div class="actions-row center">
+              <button id="emptyCreateVaultButton" class="action primary">Criar vault</button>
+              <button id="emptyOpenVaultButton" class="action">Abrir vault</button>
+            </div>
+          </div>
+        </section>
+
+        <div class="workspace-layout">
+          <aside class="tree-pane glass">
+            <div class="pane-head">
+              <div>
+                <span class="eyebrow">Pastas e notas</span>
+                <h3>Vault</h3>
+              </div>
+              <div class="pane-actions">
+                <button id="newNoteButton" title="Nova nota">＋</button>
+                <button id="newFolderButton" title="Nova pasta">⌄</button>
+              </div>
+            </div>
+            <div class="tree-context">
+              <span class="eyebrow">Pasta ativa</span>
+              <p id="folderBreadcrumb">Nenhuma pasta selecionada</p>
+            </div>
+            <div id="tree" class="tree"></div>
+          </aside>
+
+          <section class="editor-pane glass">
+            <div class="editor-head">
+              <div class="editor-toolbar">
+                <div class="breadcrumbs" id="breadcrumbs">Estudos / Clean Architecture / O que é</div>
+                <div class="editor-actions">
+                  <button id="renameButton" class="action">Renomear</button>
+                  <button id="moveButton" class="action">Mover</button>
+                  <button id="saveButton" class="action primary">Salvar</button>
+                </div>
+              </div>
+            </div>
+
+            <article class="editor-body">
+              <h2 id="noteTitle">O que é</h2>
+              <p class="editor-meta">Estudos · Clean Architecture · markdown</p>
+              <textarea id="noteEditor" spellcheck="false"></textarea>
+              <p id="editorStatus" class="editor-status">Nenhuma nota carregada.</p>
+            </article>
+          </section>
+
+          <aside class="summary-pane glass">
+            <div class="pane-head">
+              <div>
+                <span class="eyebrow">Sumário</span>
+                <h3>Auxiliar</h3>
+              </div>
+              <div class="pane-actions">
+                <button title="Buscar">⌕</button>
+                <button title="Minimizar">–</button>
+                <button title="Fechar">×</button>
+              </div>
+            </div>
+
+            <div class="empty-state">
+              <span>Nenhum sumário encontrado.</span>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <template id="folderTemplate">
+    <details class="folder" open>
+      <summary>
+        <span class="folder-name"></span>
+        <span class="folder-count"></span>
+      </summary>
+      <div class="folder-items"></div>
+    </details>
+  </template>
+
+  <template id="fileTemplate">
+    <button class="file-item" type="button">
+      <span class="file-icon">M</span>
+      <span class="file-meta-block">
+        <span class="file-name"></span>
+        <span class="file-meta"></span>
+      </span>
+    </button>
+  </template>
+
+  <menu id="quickMenu" class="quick-menu">
+    <button data-action="create-note">Nova nota</button>
+    <button data-action="create-folder">Nova pasta</button>
+    <button data-action="rename">Renomear</button>
+    <button data-action="move">Mover</button>
+  </menu>
+
+  <menu id="folderContextMenu" class="quick-menu context-menu"></menu>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
