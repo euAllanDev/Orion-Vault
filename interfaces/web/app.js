@@ -29,6 +29,11 @@ const els = {
   vaultName: document.getElementById('vaultName'),
   vaultRootDisplay: document.getElementById('vaultRootDisplay'),
   vaultStateText: document.getElementById('vaultStateText'),
+  vaultHealthPill: document.getElementById('vaultHealthPill'),
+  metricNotes: document.getElementById('metricNotes'),
+  metricFolders: document.getElementById('metricFolders'),
+  metricMarkdown: document.getElementById('metricMarkdown'),
+  metricBytes: document.getElementById('metricBytes'),
   setupHint: document.getElementById('setupHint'),
   folderBreadcrumb: document.getElementById('folderBreadcrumb'),
   tree: document.getElementById('tree'),
@@ -41,8 +46,30 @@ const els = {
   emptyCreateVaultButton: document.getElementById('emptyCreateVaultButton'),
   emptyOpenVaultButton: document.getElementById('emptyOpenVaultButton'),
   quickMenu: document.getElementById('quickMenu'),
-  folderContextMenu: document.getElementById('folderContextMenu')
+  folderContextMenu: document.getElementById('folderContextMenu'),
+  inputDialog: document.getElementById('inputDialog'),
+  inputDialogEyebrow: document.getElementById('inputDialogEyebrow'),
+  inputDialogTitle: document.getElementById('inputDialogTitle'),
+  inputDialogMessage: document.getElementById('inputDialogMessage'),
+  inputDialogFieldLabel: document.getElementById('inputDialogFieldLabel'),
+  inputDialogInput: document.getElementById('inputDialogInput'),
+  inputDialogTextarea: document.getElementById('inputDialogTextarea'),
+  inputDialogCancel: document.getElementById('inputDialogCancel'),
+  inputDialogConfirm: document.getElementById('inputDialogConfirm'),
+  projectSlideTag: document.getElementById('projectSlideTag'),
+  projectSlideTitle: document.getElementById('projectSlideTitle'),
+  projectSlideBody: document.getElementById('projectSlideBody'),
+  projectSlideDots: document.getElementById('projectSlideDots')
 };
+
+const projectSlides = [
+  { tag: 'desktop', title: 'Shell local-first', body: 'A experiência desktop está sendo refinada para manter o vault local e a navegação limpa.' },
+  { tag: 'vault', title: 'Setup guiado', body: 'Criação e abertura agora usam a própria interface interna, sem depender do navegador.' },
+  { tag: 'ui', title: 'Visual mais premium', body: 'Ícones, cards e modais estão recebendo um acabamento mais discreto e mais sólido.' }
+];
+
+let projectSlideIndex = 0;
+let projectSlideTimer = null;
 
 async function api(url, options = {}) {
   const response = await fetch(url, {
@@ -143,6 +170,117 @@ function updateVault(value) {
 function showError(message) {
   els.setupHint.textContent = message;
   els.editorStatus.textContent = message;
+}
+
+function bytesToCompactLabel(bytes) {
+  if (!bytes) return '0 KB';
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(kb < 10 ? 1 : 0)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+}
+
+function updateVaultSummary(summary) {
+  const data = summary ?? { fileCount: 0, folderCount: 0, markdownFileCount: 0, totalBytes: 0, issues: [] };
+  els.metricNotes.textContent = String(data.fileCount ?? 0);
+  els.metricFolders.textContent = String(data.folderCount ?? 0);
+  els.metricMarkdown.textContent = String(data.markdownFileCount ?? 0);
+  els.metricBytes.textContent = bytesToCompactLabel(Number(data.totalBytes ?? 0));
+  els.vaultHealthPill.textContent = (data.issues?.length ?? 0) > 0 ? 'review' : 'healthy';
+
+  const bars = document.querySelectorAll('.mini-chart span');
+  const values = [data.folderCount ?? 0, data.fileCount ?? 0, data.markdownFileCount ?? 0, Math.ceil(Number(data.totalBytes ?? 0) / 1024), data.issues?.length ?? 0];
+  bars.forEach((bar, index) => {
+    const height = Math.max(16, Math.min(100, ((values[index] ?? 0) * 14) + 16));
+    bar.style.setProperty('--bar-height', `${height}%`);
+  });
+}
+
+function renderProjectSlide() {
+  const slide = projectSlides[projectSlideIndex % projectSlides.length];
+  els.projectSlideTag.textContent = slide.tag;
+  els.projectSlideTitle.textContent = slide.title;
+  els.projectSlideBody.textContent = slide.body;
+  els.projectSlideDots.innerHTML = projectSlides.map((_, index) => `<span class="${index === projectSlideIndex ? 'active' : ''}"></span>`).join('');
+}
+
+function startProjectSlide() {
+  renderProjectSlide();
+  if (projectSlideTimer) clearInterval(projectSlideTimer);
+  projectSlideTimer = setInterval(() => {
+    projectSlideIndex = (projectSlideIndex + 1) % projectSlides.length;
+    renderProjectSlide();
+  }, 4500);
+}
+
+function closeInputDialog() {
+  if (els.inputDialog.open) {
+    els.inputDialog.close();
+  }
+}
+
+function openInputDialog({ eyebrow, title, message, label, value = '', multiline = false }) {
+  return new Promise((resolve) => {
+    els.inputDialogEyebrow.textContent = eyebrow;
+    els.inputDialogTitle.textContent = title;
+    els.inputDialogMessage.textContent = message;
+    els.inputDialogFieldLabel.textContent = label;
+    els.inputDialogInput.value = value;
+    els.inputDialogTextarea.value = value;
+    els.inputDialogInput.hidden = multiline;
+    els.inputDialogTextarea.hidden = !multiline;
+
+    const cleanup = () => {
+      els.inputDialog.removeEventListener('cancel', onCancel);
+      els.inputDialogConfirm.removeEventListener('click', onConfirm);
+      els.inputDialogCancel.removeEventListener('click', onCancelClick);
+    };
+
+    const finish = (result) => {
+      cleanup();
+      closeInputDialog();
+      resolve(result);
+    };
+
+    const onConfirm = () => {
+      const output = multiline ? els.inputDialogTextarea.value : els.inputDialogInput.value;
+      finish(output.trim());
+    };
+
+    const onCancel = (event) => {
+      event.preventDefault();
+      finish(null);
+    };
+
+    const onCancelClick = () => finish(null);
+
+    els.inputDialog.addEventListener('cancel', onCancel, { once: true });
+    els.inputDialogConfirm.addEventListener('click', onConfirm, { once: true });
+    els.inputDialogCancel.addEventListener('click', onCancelClick, { once: true });
+    els.inputDialog.showModal();
+    if (multiline) {
+      els.inputDialogTextarea.focus();
+    } else {
+      els.inputDialogInput.focus();
+    }
+  });
+}
+
+async function openVaultFromBootstrap(vaultRoot) {
+  state.vaultPath = vaultRoot;
+  els.vaultPathInput.value = vaultRoot;
+  updateVault(vaultRoot);
+  setView('workspace');
+  syncWorkspaceState();
+
+  try {
+    await refreshWorkspace();
+  } catch (error) {
+    setView('setup');
+    state.vaultPath = '';
+    showError(error instanceof Error ? error.message : 'Falha ao carregar vault ativo');
+  }
 }
 
 function closeMenus() {
@@ -380,6 +518,7 @@ async function refreshWorkspace(preferredPath = state.selectedFile, autoOpenFirs
 
   if (data.summary) {
     els.setupHint.textContent = `${data.summary.fileCount} arquivos, ${data.summary.folderCount} pastas.`;
+    updateVaultSummary(data.summary);
   }
 }
 
@@ -399,15 +538,41 @@ async function loadNote(relativePath) {
   });
 }
 
+async function askRelativePath(message, fallback = '') {
+  const value = await openInputDialog({
+    eyebrow: 'Workspace',
+    title: message,
+    message: 'Digite um caminho relativo dentro do vault ativo.',
+    label: 'Caminho',
+    value: fallback,
+    multiline: false
+  });
+
+  if (!value) return null;
+  return String(value).replace(/\\/g, '/');
+}
+
+async function askMultiline(message, fallback = '') {
+  const value = await openInputDialog({
+    eyebrow: 'Conteúdo',
+    title: message,
+    message: 'Escreva o conteúdo inicial da nota.',
+    label: 'Texto',
+    value: fallback,
+    multiline: true
+  });
+
+  if (value === null) return null;
+  return String(value);
+}
+
 async function activateVault(mode) {
   let vaultRoot = els.vaultPathInput.value.trim();
 
   if (!vaultRoot) {
-    const defaultRoot = 'C:\\MarikaVault';
-    const prompted = prompt('Caminho do vault', defaultRoot);
-    if (!prompted) return;
-    vaultRoot = prompted.trim();
+    vaultRoot = 'C:\\MarikaVault';
     els.vaultPathInput.value = vaultRoot;
+    els.setupHint.textContent = 'Usando o caminho padrão do vault.';
   }
 
   const valid = isValidVaultPath(vaultRoot);
@@ -428,15 +593,9 @@ async function activateVault(mode) {
   await refreshWorkspace();
 }
 
-function promptRelativePath(message, fallback = '') {
-  const value = prompt(message, fallback);
-  if (!value) return null;
-  return value.trim().replace(/\\/g, '/');
-}
-
 async function createFolder() {
   const base = containerForSelection();
-  const name = promptRelativePath('Nome da pasta', 'Nova Pasta');
+  const name = await askRelativePath('Nova pasta', 'Nova Pasta');
   if (!name) return;
   const value = joinRelativePath(base, name);
 
@@ -451,12 +610,13 @@ async function createFolder() {
 
 async function createNote() {
   const base = containerForSelection();
-  const name = promptRelativePath('Nome da nota', 'nova-nota');
+  const name = await askRelativePath('Nova nota', 'nova-nota');
   if (!name) return;
   const fileName = name.toLowerCase().endsWith('.md') ? name : `${name}.md`;
   const pathValue = joinRelativePath(base, fileName);
 
-  const content = prompt('Conteúdo inicial da nota', '# Nova nota\n\n') ?? '';
+  const content = await askMultiline('Conteúdo inicial', '# Nova nota\n\n');
+  if (content === null) return;
   await api('/api/file', {
     method: 'POST',
     body: JSON.stringify({ vaultRoot: state.vaultPath, path: pathValue, content, operation: 'create' })
@@ -480,7 +640,7 @@ async function saveNote() {
 
 async function renameNote() {
   if (!state.selectedFile) return;
-  const nextPath = promptRelativePath('Novo caminho relativo', state.selectedFile);
+  const nextPath = await askRelativePath('Renomear', state.selectedFile);
   if (!nextPath) return;
 
   await api('/api/rename', {
@@ -493,7 +653,7 @@ async function renameNote() {
 
 async function moveNote() {
   if (!state.selectedFile) return;
-  const nextPath = promptRelativePath('Destino relativo', state.selectedFile);
+  const nextPath = await askRelativePath('Mover', state.selectedFile);
   if (!nextPath) return;
 
   await api('/api/move', {
@@ -546,12 +706,13 @@ els.noteEditor.addEventListener('input', () => {
 updateVault(state.vaultPath);
 setView('setup');
 syncWorkspaceState();
+startProjectSlide();
+updateVaultSummary(null);
 
 api('/api/bootstrap')
   .then((bootstrap) => {
     if (bootstrap.vaultRoot) {
-      els.vaultPathInput.value = String(bootstrap.vaultRoot);
-      updateVault(String(bootstrap.vaultRoot));
+      void openVaultFromBootstrap(String(bootstrap.vaultRoot));
     }
   })
   .catch((error) => showError(error instanceof Error ? error.message : 'Falha ao iniciar interface'));

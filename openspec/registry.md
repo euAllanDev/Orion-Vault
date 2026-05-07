@@ -5,6 +5,7 @@ Lista de changes OpenSpec registradas no projeto.
 - `organize-notes` - draft
 - `project-foundation` - draft
 - `vault-interface` - draft
+- `desktop-app` - draft
 
 ## Modules
 - `domain/notes`
@@ -35,7 +36,9 @@ Lista de changes OpenSpec registradas no projeto.
 - `interfaces/cli/commands/rename`
 - `interfaces/cli/commands/move`
 - `interfaces/web`
+- `interfaces/desktop`
 - `vault/onboarding`
 - `openspec/changes/organize-notes/specs`
 - `openspec/changes/vault-interface/specs`
+- `openspec/changes/desktop-app/specs`
 - `scripts`

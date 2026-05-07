@@ -19,6 +19,7 @@ A interface deve expor os comandos existentes do sistema em uma página operacio
 - A ordenação visual deve favorecer `inspect` e `organize` como comandos principais.
 - A experiência de criação não deve depender de caminhos brutos nem expor o path completo como texto principal da lista.
 - O destaque visual de pastas deve ser sutil, preservando a hierarquia sem excesso de contraste.
+- As ações de criação e renomeação devem usar entrada interna da interface, não prompts do navegador.
 
 ## Cenários
 

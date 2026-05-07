@@ -1,6 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadAppConfig } from '../../infra/config/app-config';
 import { NodeVaultWorkspace } from '../../infra/filesystem/workspace/node-vault-workspace';
 import { NodeVaultScanner } from '../../infra/filesystem/readers/node-vault-scanner';
@@ -14,6 +15,10 @@ const scanner = new NodeVaultScanner();
 const verifier = new VaultVerificationService(scanner);
 
 type JsonValue = Record<string, unknown>;
+
+type WebServerOptions = {
+  desktopSessionPath?: string;
+};
 
 function sendJson(res: http.ServerResponse, statusCode: number, body: JsonValue): void {
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -50,6 +55,25 @@ async function ensureVaultRoot(vaultRoot: string): Promise<void> {
   await fs.mkdir(vaultRoot, { recursive: true });
 }
 
+async function readDesktopSessionVaultRoot(sessionPath?: string): Promise<string> {
+  if (!sessionPath) return '';
+
+  try {
+    const raw = await fs.readFile(sessionPath, 'utf8');
+    const parsed = JSON.parse(raw) as { vaultRoot?: unknown };
+    return typeof parsed.vaultRoot === 'string' ? parsed.vaultRoot.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+async function writeDesktopSessionVaultRoot(sessionPath: string | undefined, vaultRoot: string): Promise<void> {
+  if (!sessionPath) return;
+
+  await fs.mkdir(path.dirname(sessionPath), { recursive: true });
+  await fs.writeFile(sessionPath, JSON.stringify({ vaultRoot }, null, 2), 'utf8');
+}
+
 async function serveStatic(res: http.ServerResponse, requestPath: string): Promise<boolean> {
   const normalizedPath = requestPath === '/' ? '/index.html' : requestPath;
   const absolutePath = path.resolve(webRoot, `.${normalizedPath}`);
@@ -80,9 +104,11 @@ async function serveStatic(res: http.ServerResponse, requestPath: string): Promi
   return true;
 }
 
-async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
+async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL, options: WebServerOptions): Promise<void> {
   if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
-    sendJson(res, 200, { vaultRoot: process.env.MARIKA_VAULT_ROOT?.trim() ?? '', defaultDryRun: config.defaultDryRun });
+    const sessionVaultRoot = await readDesktopSessionVaultRoot(options.desktopSessionPath);
+    const vaultRoot = sessionVaultRoot || process.env.MARIKA_VAULT_ROOT?.trim() || '';
+    sendJson(res, 200, { vaultRoot, defaultDryRun: config.defaultDryRun });
     return;
   }
 
@@ -132,6 +158,7 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
 
     if (action === 'create') {
       await ensureVaultRoot(vaultRoot);
+      await writeDesktopSessionVaultRoot(options.desktopSessionPath, vaultRoot);
       sendJson(res, 200, { vaultRoot, created: true });
       return;
     }
@@ -141,6 +168,7 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
       return;
     }
 
+    await writeDesktopSessionVaultRoot(options.desktopSessionPath, vaultRoot);
     sendJson(res, 200, { vaultRoot, opened: true });
     return;
   }
@@ -187,25 +215,42 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
   sendJson(res, 404, { error: 'unknown api route' });
 }
 
-const server = http.createServer(async (req, res) => {
-  try {
-    const requestUrl = new URL(req.url ?? '/', 'http://localhost');
+export function createWebServer(options: WebServerOptions = {}): http.Server {
+  return http.createServer(async (req, res) => {
+    try {
+      const requestUrl = new URL(req.url ?? '/', 'http://localhost');
 
-    if (requestUrl.pathname.startsWith('/api/')) {
-      await handleApi(req, res, requestUrl);
-      return;
+      if (requestUrl.pathname.startsWith('/api/')) {
+        await handleApi(req, res, requestUrl, options);
+        return;
+      }
+
+      const served = await serveStatic(res, requestUrl.pathname);
+      if (!served) {
+        sendText(res, 404, 'Not found');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unexpected server error';
+      sendJson(res, 500, { error: message });
     }
+  });
+}
 
-    const served = await serveStatic(res, requestUrl.pathname);
-    if (!served) {
-      sendText(res, 404, 'Not found');
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unexpected server error';
-    sendJson(res, 500, { error: message });
-  }
-});
+export async function startWebServer(port = 4173, options: WebServerOptions = {}): Promise<{ server: http.Server; port: number }> {
+  const server = createWebServer(options);
 
-server.listen(4173, () => {
-  console.log('Marika web running at http://localhost:4173');
-});
+  await new Promise<void>((resolve) => {
+    server.listen(port, resolve);
+  });
+
+  const address = server.address();
+  const boundPort = typeof address === 'object' && address ? address.port : port;
+  console.log(`Marika web running at http://localhost:${boundPort}`);
+  return { server, port: boundPort };
+}
+
+const isEntryPoint = process.argv[1] ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1]) : false;
+
+if (isEntryPoint) {
+  void startWebServer();
+}

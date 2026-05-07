@@ -11,10 +11,18 @@
     <aside class="rail glass">
       <div class="brand">M</div>
       <nav class="rail-nav" aria-label="Navegação global">
-        <button class="rail-btn active" data-view="setup" title="Vault">⌂</button>
-        <button class="rail-btn" data-view="workspace" title="Workspace">◫</button>
-        <button class="rail-btn" data-view="search" title="Busca">⌕</button>
-        <button class="rail-btn" data-view="settings" title="Configurações">◌</button>
+        <button class="rail-btn active" data-view="setup" title="Vault" aria-label="Vault">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1z"/></svg>
+        </button>
+        <button class="rail-btn" data-view="workspace" title="Workspace" aria-label="Workspace">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h6v6H5zM13 5.5h6v3h-6zM13 10.5h6v8h-6zM5 13.5h6v5H5z"/></svg>
+        </button>
+        <button class="rail-btn" data-view="search" title="Busca" aria-label="Busca">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="5.5"/><path d="m15 15 4 4"/></svg>
+        </button>
+        <button class="rail-btn" data-view="settings" title="Configurações" aria-label="Configurações">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 4.7 12 3.8l2.8.9.8 2.9 2.5 1.5-.2 2.9 1.8 2.3-1.7 2.4-.4 2.9-2.7 1.1-2.9-.8-2.9.8-2.7-1.1-.4-2.9-1.7-2.4 1.8-2.3-.2-2.9 2.5-1.5z"/><circle cx="12" cy="12" r="2.5"/></svg>
+        </button>
       </nav>
     </aside>
 
@@ -53,6 +61,37 @@
           </section>
 
           <aside class="setup-side">
+            <section class="card glass metrics-card">
+              <div class="card-head">
+                <div>
+                  <span class="eyebrow">Vault pulse</span>
+                  <h3>Notas e arquivos</h3>
+                </div>
+                <span class="pill" id="vaultHealthPill">idle</span>
+              </div>
+              <div class="metric-grid">
+                <article class="metric-tile">
+                  <span>Notas</span>
+                  <strong id="metricNotes">0</strong>
+                </article>
+                <article class="metric-tile">
+                  <span>Pastas</span>
+                  <strong id="metricFolders">0</strong>
+                </article>
+                <article class="metric-tile">
+                  <span>Markdown</span>
+                  <strong id="metricMarkdown">0</strong>
+                </article>
+                <article class="metric-tile">
+                  <span>Tamanho</span>
+                  <strong id="metricBytes">0 KB</strong>
+                </article>
+              </div>
+              <div class="mini-chart" aria-hidden="true">
+                <span></span><span></span><span></span><span></span><span></span>
+              </div>
+            </section>
+
             <section class="card glass">
               <span class="eyebrow">Vault ativo</span>
               <h3 id="vaultName">MarikaVault</h3>
@@ -70,8 +109,24 @@
             </section>
 
             <section class="card glass">
+              <div class="card-head">
+                <div>
+                  <span class="eyebrow">Atualizações</span>
+                  <h3>Marika pulse</h3>
+                </div>
+                <span class="pill subtle">auto</span>
+              </div>
+              <div class="project-slide">
+                <span class="project-slide-tag" id="projectSlideTag">desktop</span>
+                <h4 id="projectSlideTitle">Shell local-first</h4>
+                <p id="projectSlideBody">A experiência desktop está sendo refinada com foco em vault local, leitura limpa e ações rápidas.</p>
+              </div>
+              <div class="project-dots" id="projectSlideDots" aria-hidden="true"></div>
+            </section>
+
+            <section class="card glass">
               <span class="eyebrow">Atalhos</span>
-              <div class="shortcut-list">
+              <div class="shortcut-list compact">
                 <button class="shortcut active">inspect</button>
                 <button class="shortcut">validate</button>
                 <button class="shortcut">organize</button>
@@ -189,6 +244,27 @@
   </menu>
 
   <menu id="folderContextMenu" class="quick-menu context-menu"></menu>
+
+      <dialog id="inputDialog" class="input-dialog">
+        <form method="dialog" class="input-dialog-panel">
+          <div class="input-dialog-head">
+            <span class="eyebrow" id="inputDialogEyebrow">Ação</span>
+            <h3 id="inputDialogTitle">Título</h3>
+            <p id="inputDialogMessage">Mensagem</p>
+          </div>
+
+          <label class="input-dialog-field" id="inputDialogFieldWrap">
+            <span id="inputDialogFieldLabel">Valor</span>
+            <input id="inputDialogInput" type="text" autocomplete="off" />
+            <textarea id="inputDialogTextarea" spellcheck="false"></textarea>
+          </label>
+
+          <div class="input-dialog-actions">
+            <button id="inputDialogCancel" value="cancel" class="action" type="button">Cancelar</button>
+            <button id="inputDialogConfirm" value="confirm" class="action primary" type="button">Confirmar</button>
+          </div>
+        </form>
+      </dialog>
 
   <script type="module" src="./app.js"></script>
 </body>

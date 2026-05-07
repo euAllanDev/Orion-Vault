@@ -9,6 +9,7 @@ O sistema deve permitir criar ou abrir um vault local com segurança, tornando a
 3. O sistema deve rejeitar caminhos fora da fronteira permitida.
 4. O sistema deve mostrar o estado do vault ativo para a interface.
 5. Erros de caminho, validação ou configuração devem aparecer de forma controlada.
+6. A interface deve usar o campo de caminho visível como entrada principal, sem depender de prompt do navegador.
 
 ## Pontos de atenção
 - A criação do vault não deve presumir estrutura interna obrigatória além da raiz segura.
@@ -23,6 +24,7 @@ When o usuário confirma a criação
 Then o sistema cria ou prepara a raiz do vault
 And valida a fronteira
 And marca o vault como ativo
+And não abre prompt adicional para a operação principal
 
 ### Cenário 2: abrir um vault existente
 Given um vault local já existente

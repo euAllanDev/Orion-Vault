@@ -8,6 +8,7 @@
     "build": "tsup",
     "dev": "tsx interfaces/cli/main.ts",
     "dev:web": "tsx interfaces/web/server.ts",
+    "dev:desktop": "electron interfaces/desktop/bootstrap.cjs",
     "dev:inspect:testvault": "tsx interfaces/cli/main.ts inspect --vault C:\\teste-vault",
     "dev:validate:testvault": "tsx interfaces/cli/main.ts validate --vault C:\\teste-vault",
     "dev:scan:testvault": "tsx interfaces/cli/main.ts scan --vault C:\\teste-vault",
@@ -29,10 +30,11 @@
   "devDependencies": {
     "@eslint/js": "^9.14.0",
     "@types/node": "^22.10.1",
+    "electron": "^33.4.11",
     "eslint": "^9.14.0",
     "prettier": "^3.3.3",
     "tsup": "^8.3.5",
-    "tsx": "^4.19.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.14.0",
     "vitest": "^2.1.5"
