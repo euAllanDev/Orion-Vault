@@ -1,5 +1,7 @@
-import { app, BrowserWindow, session } from 'electron';
+import { app, BrowserWindow, ipcMain, session } from 'electron';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startWebServer } from '../web/server';
 
 const desktopShell = {
@@ -16,9 +18,12 @@ const desktopShell = {
   internetRequired: false
 } as const;
 
+const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url));
+
 let mainWindow: BrowserWindow | null = null;
 let webServer: Awaited<ReturnType<typeof startWebServer>>['server'] | null = null;
 let desktopUrl = 'http://127.0.0.1:4173';
+const appRoot = path.resolve(process.cwd());
 
 app.commandLine.appendSwitch('disable-http-cache');
 
@@ -37,7 +42,8 @@ function createWindow(): BrowserWindow {
     titleBarStyle: 'default',
     webPreferences: {
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      preload: preloadPath
     }
   });
 
@@ -53,6 +59,68 @@ function createWindow(): BrowserWindow {
 
   return window;
 }
+
+function openPowerShellInDirectory(cwd: string, vaultRoot: string): void {
+  const systemRoot = process.env.SystemRoot ?? 'C:\\Windows';
+  const powerShellPath = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const startupScript = path.join(appRoot, 'scripts', 'start-ai-terminal.ps1');
+  const wtCommand = ['new-tab', '--title', 'Marika AI', '--startingDirectory', appRoot, 'powershell.exe', '-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', startupScript, '-AppRoot', appRoot, '-VaultRoot', vaultRoot];
+  const env = { ...process.env, MARIKA_VAULT_ROOT: vaultRoot };
+
+  const tryWindowsTerminal = (): boolean => {
+    try {
+      const wt = spawn('wt.exe', wtCommand, {
+        cwd,
+        env,
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false
+      });
+
+      wt.on('error', (error) => {
+        console.error('Failed to open AI terminal with wt.exe', error);
+      });
+
+      wt.unref();
+      return true;
+    } catch (error) {
+      console.error('Failed to spawn wt.exe', error);
+      return false;
+    }
+  };
+
+  const tryPowerShell = (): boolean => {
+    try {
+      const child = spawn(powerShellPath, ['-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', startupScript, '-AppRoot', appRoot, '-VaultRoot', vaultRoot], {
+        cwd,
+        env,
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false
+      });
+
+      child.on('error', (error) => {
+        console.error('Failed to open AI terminal', error);
+      });
+
+      child.unref();
+      return true;
+    } catch (error) {
+      console.error('Failed to spawn PowerShell', error);
+      return false;
+    }
+  };
+
+  if (!tryWindowsTerminal()) {
+    void tryPowerShell();
+  }
+}
+
+ipcMain.handle('ai-terminal:open', (_event, requestedVaultRoot?: string) => {
+  const vaultRoot = requestedVaultRoot && requestedVaultRoot.trim() ? path.resolve(requestedVaultRoot) : appRoot;
+  openPowerShellInDirectory(appRoot, vaultRoot);
+  return { cwd: appRoot, vaultRoot };
+});
 
 async function startDesktop(): Promise<void> {
   const sessionPath = getDesktopSessionPath();

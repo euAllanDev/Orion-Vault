@@ -19,6 +19,17 @@
 - [ ] Exibir métricas e cards no setup inicial
 - [ ] Exibir card rotativo de novidades do projeto
 - [ ] Refinar modais e encaixe visual do desktop
+- [ ] Listar comandos disponíveis em um hub visual no desktop
+- [ ] Adicionar busca global local para notas Markdown
+- [ ] Adicionar modelos para novas notas e salvar como modelo
+- [ ] Mostrar backlinks da nota aberta no painel auxiliar
+- [ ] Permitir fixar notas e persistir a lista localmente
+- [ ] Abrir a nota diária local do dia com um atalho rápido
+- [ ] Exibir graph view local das conexões da nota ativa
+- [ ] Mostrar rede local das notas da pasta selecionada no graph view
+- [ ] Permitir zoom e drag no graph view
+- [ ] Mostrar subpastas como nós azuis clicáveis no graph view
+- [ ] Expor a ponte local de IA via CLI para contexto, busca e planejamento
 
 ## Quality
 - [ ] Garantir operação local-first sem internet obrigatória

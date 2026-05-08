@@ -6,6 +6,7 @@ Lista de changes OpenSpec registradas no projeto.
 - `project-foundation` - draft
 - `vault-interface` - draft
 - `desktop-app` - draft
+- `ai-cli-bridge` - draft
 
 ## Modules
 - `domain/notes`
@@ -41,4 +42,5 @@ Lista de changes OpenSpec registradas no projeto.
 - `openspec/changes/organize-notes/specs`
 - `openspec/changes/vault-interface/specs`
 - `openspec/changes/desktop-app/specs`
+- `openspec/changes/ai-cli-bridge/specs`
 - `scripts`

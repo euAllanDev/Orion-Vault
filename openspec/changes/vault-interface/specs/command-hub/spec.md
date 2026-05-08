@@ -12,6 +12,11 @@ A interface deve expor os comandos existentes do sistema em uma página operacio
 6. A ação de criação deve respeitar a pasta atualmente selecionada, sem exigir que o usuário digite o caminho completo manualmente.
 7. A navegação da árvore deve priorizar pastas antes de notas, e exibir somente o nome da nota na linha principal.
 8. O menu de contexto em pastas deve expor as mesmas ações principais do hub, de forma consistente.
+9. A interface desktop deve expor um botão para listar os comandos disponíveis, agrupados por intenção.
+10. A ponte de IA via CLI deve reutilizar os mesmos comandos do hub para ler contexto, planejar e propor ações sobre notas.
+11. A ponte de IA via CLI deve usar o mesmo vocabulário em slash commands, como `/context`, `/search`, `/plan`, `/preview` e `/apply`.
+12. O onboarding da IA deve apresentar esses slash commands como caminho guiado para começar rápido.
+13. O onboarding da IA no desktop deve manter o fluxo de comandos dentro do painel da própria IA, sem exigir modais aninhados.
 
 ## Pontos de atenção
 - O hub deve refletir os contratos já existentes, não inventar novos comportamentos.
@@ -52,3 +57,15 @@ Given uma operação inválida ou sem efeito
 When o comando termina
 Then a interface mostra o motivo ou o no-op
 And o usuário não fica sem feedback
+
+### Cenário 5: IA via CLI conversa com as notas
+Given uma IA local usando a CLI do projeto
+When ela chama slash commands como `/context`, `/search` ou `/plan` para uma nota
+Then a interface fornece os mesmos comandos do hub
+And qualquer mutação sugerida precisa passar por validação de segurança
+
+### Cenário 6: comandos da IA ficam no painel
+Given o popup de onboarding da IA está aberto
+When o usuário pede para ver os comandos
+Then a lista agrupada é exibida dentro do mesmo painel
+And o usuário pode alternar a visibilidade sem perder o contexto atual

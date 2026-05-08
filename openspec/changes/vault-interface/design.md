@@ -1,33 +1,50 @@
 # Design
 
 ## Visão geral
-A interface é dividida em duas páginas.
+A interface adota uma linguagem visual dark, tátil e local-first, com superfícies profundas, painéis em camadas, acentos frios e uma sensação de produto desktop sólido.
 
-1. `Vault Setup`: criação ou abertura do vault e validação da raiz.
-2. `Vault Workspace`: inspeção, organização e acesso aos comandos já implementados.
+O app continua dividido em duas superfícies principais:
 
-O design é local-first. A UI não acessa o filesystem diretamente; ela apenas solicita ações à camada de aplicação.
+1. `Vault Setup`: criar ou abrir vault com validação explícita.
+2. `Vault Workspace`: navegar, editar, buscar, inspecionar e organizar notas.
+
+## Linguagem visual
+- sidebar fixa com navegação por intenção
+- top bar com contexto do vault e ações rápidas
+- área central mutável para setup, workspace, editor, graph ou busca
+- painel auxiliar para backlinks, fixados, metadados e contexto
+- launcher flutuante para IA local
+- cards, modais e menus com profundidade e separação clara
 
 ## Página 1: Vault Setup
-Objetivo: deixar o vault pronto para uso.
+Objetivo: ativar o vault com segurança e clareza.
 
 Componentes principais:
-- seletor de caminho do vault
-- ação de criar ou abrir vault
-- status de validação da raiz
+- campo visível para caminho do vault
+- ações primárias para criar e abrir vault
+- validação canônica da raiz
 - resumo do vault ativo
-- mensagens de erro controladas
+- métricas rápidas do vault
+- card rotativo com novidades ou destaques do produto
+- atalhos para comandos mais usados
 
 Regras de comportamento:
 - a raiz escolhida deve ser validada antes de ficar ativa
 - caminhos inválidos ou fora da fronteira devem ser rejeitados
 - se o vault não existir, a interface pode orientar sua criação
-- a página deve funcionar como ponto único de entrada do fluxo
+- o setup deve funcionar como entrada principal e sem modais aninhados desnecessários
 
 ## Página 2: Vault Workspace
-Objetivo: concentrar os comandos operacionais já criados.
+Objetivo: concentrar leitura, edição e organização.
 
-Agrupamento sugerido:
+Layout esperado:
+- sidebar com seções do produto
+- árvore de pastas e notas separadas por tipo
+- editor central com conteúdo Markdown
+- painel auxiliar com sumário, backlinks, fixados e grafo
+- botões rápidos para criar, salvar, renomear, mover e fixar
+
+Agrupamento de comandos:
 - Observação: `inspect`, `validate`, `scan`, `context`, `doctor`
 - Planejamento: `organize`, `plan`, `diff`
 - Workspace: `mkdir`, `touch`, `edit`, `rename`, `move`
@@ -38,6 +55,7 @@ Regras de comportamento:
 - ações de escrita precisam passar por validação
 - a interface deve mostrar preview, no-ops, conflitos e erros
 - o usuário precisa ver claramente o vault ativo antes de executar qualquer comando
+- o grafo e a busca precisam ser acessíveis sem sair do workspace
 
 ## Estados
 - vazio: nenhum vault selecionado
@@ -45,10 +63,11 @@ Regras de comportamento:
 - inválido: caminho rejeitado ou fora da fronteira
 - carregando: leitura ou validação em progresso
 - preview: plano calculado sem mutação
+- erro: operação bloqueada ou falha controlada
 
 ## Navegação
-- desktop: layout em duas colunas ou com sidebar fixa
-- mobile: páginas empilhadas e navegação simples entre setup e workspace
+- desktop: sidebar fixa + top bar + painéis laterais
+- mobile: empilhamento dos painéis com navegação simples entre setup e workspace
 
 ## Segurança
 - nenhuma operação pode escapar do vault configurado

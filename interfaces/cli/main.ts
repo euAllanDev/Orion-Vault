@@ -14,6 +14,8 @@ import { executeEditCommand } from './commands/edit';
 import { executeRenameCommand } from './commands/rename';
 import { executeMoveCommand } from './commands/move';
 import { ZodError } from 'zod';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 function parseArgs(argv: string[]) {
   const command = argv[0] ?? 'help';
@@ -30,6 +32,20 @@ function parseArgs(argv: string[]) {
   const source = readOption('--source');
   const destination = readOption('--destination');
   const content = readOption('--content');
+  const valueOptions = new Set(['--vault', '--query', '--phrase', '--path', '--source', '--destination', '--content', '--tag']);
+  const plainArgs: string[] = [];
+
+  for (let index = 1; index < argv.length; index += 1) {
+    const current = argv[index];
+    if (current.startsWith('--')) {
+      if (valueOptions.has(current)) {
+        index += 1;
+      }
+      continue;
+    }
+
+    plainArgs.push(current);
+  }
 
   const tagValues = [] as string[];
   for (let index = 0; index < argv.length; index += 1) {
@@ -38,13 +54,32 @@ function parseArgs(argv: string[]) {
     }
   }
 
-  return { command, vaultRoot, dryRun, query, phrase, path: pathValue, source, destination, content, tags: tagValues };
+  return { command, vaultRoot, dryRun, query, phrase, path: pathValue, source, destination, content, tags: tagValues, plainArgs };
 }
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  const slashCommand = args.command.startsWith('/') ? args.command.slice(1) : args.command;
+  const positionalInput = (args.plainArgs[0] ?? '').trim();
 
   try {
+    if (slashCommand === 'organize' || slashCommand === 'preview') {
+      await executeOrganizeCommand({ vaultRoot: args.vaultRoot, dryRun: true });
+      return;
+    }
+
+    if (slashCommand === 'guide') {
+      const guidePath = path.resolve('comandos.md');
+      const content = await fs.readFile(guidePath, 'utf8');
+      console.log(content);
+      return;
+    }
+
+    if (slashCommand === 'apply') {
+      await executeOrganizeCommand({ vaultRoot: args.vaultRoot, dryRun: false });
+      return;
+    }
+
     if (args.command === 'organize') {
       await executeOrganizeCommand({ vaultRoot: args.vaultRoot, dryRun: args.dryRun });
       return;
@@ -75,6 +110,11 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (slashCommand === 'inspect') {
+      await executeInspectCommand({ vaultRoot: args.vaultRoot });
+      return;
+    }
+
     if (args.command === 'inspect') {
       await executeInspectCommand({ vaultRoot: args.vaultRoot });
       return;
@@ -90,8 +130,13 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (slashCommand === 'context') {
+      await executeContextCommand({ vaultRoot: args.vaultRoot, path: args.path ?? (positionalInput || undefined) });
+      return;
+    }
+
     if (args.command === 'context') {
-      await executeContextCommand({ vaultRoot: args.vaultRoot });
+      await executeContextCommand({ vaultRoot: args.vaultRoot, path: args.path });
       return;
     }
 
@@ -100,8 +145,23 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (slashCommand === 'search') {
+      await executeSearchCommand({ vaultRoot: args.vaultRoot, query: args.query ?? (positionalInput || undefined), phrase: args.phrase, tags: args.tags });
+      return;
+    }
+
     if (args.command === 'search') {
       await executeSearchCommand({ vaultRoot: args.vaultRoot, query: args.query, phrase: args.phrase, tags: args.tags });
+      return;
+    }
+
+    if (slashCommand === 'plan') {
+      await executePlanCommand({ vaultRoot: args.vaultRoot });
+      return;
+    }
+
+    if (slashCommand === 'preview') {
+      await executePlanCommand({ vaultRoot: args.vaultRoot });
       return;
     }
 
@@ -121,6 +181,12 @@ async function main(): Promise<void> {
     }
 
     console.log('Usage: organize [--vault <path>] [--dry-run]');
+    console.log('       /guide');
+    console.log('       /context [--vault <path>] [--path <note>]');
+    console.log('       /search [--vault <path>] [--query <text>] [--phrase <text>] [--tag <tag>]');
+    console.log('       /plan [--vault <path>]');
+    console.log('       /preview [--vault <path>]');
+    console.log('       /apply [--vault <path>]');
     console.log('       mkdir --vault <path> --path <folder>');
     console.log('       touch --vault <path> --path <file.md> [--content <text>]');
     console.log('       edit --vault <path> --path <file.md> --content <text>');
