@@ -1,27 +1,82 @@
+const shellMode = new URLSearchParams(window.location.search).get('shell');
+const isDesktopShell = shellMode === 'desktop' || Boolean(window.marikaDesktop);
+const startupView = isDesktopShell ? 'workspace' : 'setup';
+const startupVaultRoot = isDesktopShell ? (new URLSearchParams(window.location.search).get('vaultRoot') ?? '').trim() : '';
+
 const state = {
-  view: 'setup',
-  vaultPath: '',
+  view: startupView,
+  vaultPath: isDesktopShell ? '' : startupVaultRoot,
+  defaultVaultPath: isDesktopShell ? '' : startupVaultRoot,
   selectedFile: '',
   selectedFolder: '',
   tree: null,
   pinnedPaths: [],
   backlinks: [],
+  related: { manualLinks: [], backlinks: [], related: [] },
+  linkSuggestions: [],
+  linkPreview: null,
   templates: [],
   selectedTemplate: null,
   summaryMode: 'overview',
   graphContext: { kind: 'note', path: '' },
-  graph: { scope: 'note', nodes: [], edges: [] }
+  graph: { scope: 'note', nodes: [], edges: [] },
+  graphGlobal: { vaultRoot: '', nodes: [], edges: [] },
+  agendaItems: [],
+  agendaFilter: 'all',
+  agendaReminderTimer: null,
+  agendaReminderKeys: new Set(),
+  recentActivity: [],
+  overviewSummary: null
 };
 
+let desktopBootstrapPromise = null;
+let desktopBootstrapComplete = false;
+let inputDialogSession = null;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function loadDesktopBootstrap() {
+  const attempts = isDesktopShell ? 20 : 1;
+  let lastError = null;
+
+  for (let index = 0; index < attempts; index += 1) {
+    try {
+      const bootstrap = await api('/api/bootstrap');
+      const vaultRoot = String(bootstrap.vaultRoot ?? '').trim();
+      if (vaultRoot) return bootstrap;
+      lastError = new Error('Vault padrão não configurado');
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Falha ao carregar bootstrap');
+    }
+
+    if (index < attempts - 1) {
+      await delay(150);
+    }
+  }
+
+  throw lastError ?? new Error('Falha ao carregar bootstrap');
+}
+
+async function syncDesktopActiveVaultRoot(vaultRoot) {
+  const bridge = window.marikaDesktop;
+  if (!isDesktopShell || !bridge || typeof bridge.setActiveVaultRoot !== 'function') return;
+
+  await bridge.setActiveVaultRoot(vaultRoot);
+}
+
 const setupHints = {
-  valid: 'O vault está pronto para inspeção e organização.',
-  invalid: 'O caminho informado não é seguro ou está fora da fronteira.'
+  valid: 'A fronteira do vault está pronta para inspeção e organização.',
+  invalid: 'O caminho informado não é seguro ou está fora da fronteira do vault.'
 };
 
 const els = {
   viewButtons: [...document.querySelectorAll('.rail-btn')],
   setupView: document.getElementById('setupView'),
   workspaceView: document.getElementById('workspaceView'),
+  relationsView: document.getElementById('relationsView'),
+  agendaView: document.getElementById('agendaView'),
   pageTitle: document.getElementById('pageTitle'),
   pageSubtitle: document.getElementById('pageSubtitle'),
   vaultPathInput: document.getElementById('vaultPathInput'),
@@ -30,8 +85,27 @@ const els = {
   dailyNoteButton: document.getElementById('dailyNoteButton'),
   desktopSearchButton: document.getElementById('desktopSearchButton'),
   openWorkspaceButton: document.getElementById('openWorkspaceButton'),
-  createVaultButton: document.getElementById('createVaultButton'),
-  openVaultButton: document.getElementById('openVaultButton'),
+  agendaForm: document.getElementById('agendaForm'),
+  agendaList: document.getElementById('agendaList'),
+  agendaEmpty: document.getElementById('agendaEmpty'),
+  agendaCount: document.getElementById('agendaCount'),
+  agendaPendingCount: document.getElementById('agendaPendingCount'),
+  agendaDoneCount: document.getElementById('agendaDoneCount'),
+  agendaOverdueCount: document.getElementById('agendaOverdueCount'),
+  agendaOptionsButton: document.getElementById('agendaOptionsButton'),
+  agendaOptionsPanel: document.getElementById('agendaOptionsPanel'),
+  agendaOptionsLabel: document.getElementById('agendaOptionsLabel'),
+  overviewOptionsButton: document.getElementById('overviewOptionsButton'),
+  overviewOptionsPanel: document.getElementById('overviewOptionsPanel'),
+  agendaTitleInput: document.getElementById('agendaTitleInput'),
+  agendaDueInput: document.getElementById('agendaDueInput'),
+  agendaStatusInput: document.getElementById('agendaStatusInput'),
+  agendaBodyInput: document.getElementById('agendaBodyInput'),
+  agendaCreateButton: document.getElementById('agendaCreateButton'),
+  agendaResetButton: document.getElementById('agendaResetButton'),
+  agendaStatusMessage: document.getElementById('agendaStatusMessage'),
+  startVaultButton: document.getElementById('startVaultButton'),
+  sidebarNewNoteButton: document.getElementById('sidebarNewNoteButton'),
   newNoteButton: document.getElementById('newNoteButton'),
   newFolderButton: document.getElementById('newFolderButton'),
   saveButton: document.getElementById('saveButton'),
@@ -46,6 +120,19 @@ const els = {
   metricFolders: document.getElementById('metricFolders'),
   metricMarkdown: document.getElementById('metricMarkdown'),
   metricBytes: document.getElementById('metricBytes'),
+  metricAgenda: document.getElementById('metricAgenda'),
+  metricOverdue: document.getElementById('metricOverdue'),
+  overviewDueCount: document.getElementById('overviewDueCount'),
+  overviewDueList: document.getElementById('overviewDueList'),
+  overviewDueEmpty: document.getElementById('overviewDueEmpty'),
+  overviewActivityCount: document.getElementById('overviewActivityCount'),
+  overviewRecentList: document.getElementById('overviewRecentList'),
+  overviewRecentEmpty: document.getElementById('overviewRecentEmpty'),
+  overviewActivityBars: document.getElementById('overviewActivityBars'),
+  overviewActivityPeak: document.getElementById('overviewActivityPeak'),
+  overviewAgendaRing: document.getElementById('overviewAgendaRing'),
+  overviewAgendaRingLabel: document.getElementById('overviewAgendaRingLabel'),
+  overviewAgendaLegend: document.getElementById('overviewAgendaLegend'),
   setupHint: document.getElementById('setupHint'),
   folderBreadcrumb: document.getElementById('folderBreadcrumb'),
   tree: document.getElementById('tree'),
@@ -55,8 +142,7 @@ const els = {
   noteEditor: document.getElementById('noteEditor'),
   editorStatus: document.getElementById('editorStatus'),
   workspaceEmpty: document.getElementById('workspaceEmpty'),
-  emptyCreateVaultButton: document.getElementById('emptyCreateVaultButton'),
-  emptyOpenVaultButton: document.getElementById('emptyOpenVaultButton'),
+  emptyStartVaultButton: document.getElementById('emptyStartVaultButton'),
   quickMenu: document.getElementById('quickMenu'),
   folderContextMenu: document.getElementById('folderContextMenu'),
   inputDialog: document.getElementById('inputDialog'),
@@ -90,6 +176,26 @@ const els = {
   graphPanel: document.getElementById('graphPanel'),
   graphSvg: document.getElementById('graphSvg'),
   graphCount: document.getElementById('graphCount'),
+  relationsRefreshButton: document.getElementById('relationsRefreshButton'),
+  graphGlobalStage: document.getElementById('graphGlobalStage'),
+  graphGlobalSphere: document.getElementById('graphGlobalSphere'),
+  graphGlobalCount: document.getElementById('graphGlobalCount'),
+  graphGlobalOverlayTitle: document.getElementById('graphGlobalOverlayTitle'),
+  graphGlobalOverlaySummary: document.getElementById('graphGlobalOverlaySummary'),
+  graphGlobalOverlayBadge: document.getElementById('graphGlobalOverlayBadge'),
+  graphGlobalOverlayStatus: document.getElementById('graphGlobalOverlayStatus'),
+  graphGlobalOverlayLinks: document.getElementById('graphGlobalOverlayLinks'),
+  graphGlobalOverlayLayer: document.getElementById('graphGlobalOverlayLayer'),
+  relationsNoteTitle: document.getElementById('relationsNoteTitle'),
+  relationsNoteSummary: document.getElementById('relationsNoteSummary'),
+  relationsNoteScore: document.getElementById('relationsNoteScore'),
+  relationsOpenSelectedButton: document.getElementById('relationsOpenSelectedButton'),
+  manualLinksList: document.getElementById('manualLinksList'),
+  relatedList: document.getElementById('relatedList'),
+  relationsManualLinksList: document.getElementById('relationsManualLinksList'),
+  relationsRelatedList: document.getElementById('relationsRelatedList'),
+  linkSuggestionsList: document.getElementById('linkSuggestionsList'),
+  linkPreviewPanel: document.getElementById('linkPreviewPanel'),
   templatesDialog: document.getElementById('templatesDialog'),
   templatesDialogClose: document.getElementById('templatesDialogClose'),
   templatesDialogList: document.getElementById('templatesDialogList'),
@@ -176,6 +282,28 @@ const graphViewport = {
   lastY: 0
 };
 
+const graphGlobalViewport = {
+  scale: 1,
+  yaw: 0.65,
+  pitch: -0.22,
+  roll: 0,
+  dragging: false,
+  lastX: 0,
+  lastY: 0
+};
+
+const graphGlobalScene = {
+  animationFrame: null,
+  lastGraph: null,
+  activePath: '',
+  hoverPath: '',
+  dragging: false,
+  moved: false,
+  startX: 0,
+  startY: 0,
+  motionTime: 0
+};
+
 const aiLauncherState = {
   dragging: false,
   moved: false,
@@ -204,6 +332,28 @@ async function api(url, options = {}) {
   }
 
   return payload;
+}
+
+function sendDebugState(label, extra = {}) {
+  if (!isDesktopShell) return;
+
+  void api('/api/debug/client-state', {
+    method: 'POST',
+    body: JSON.stringify({
+      label,
+      state: {
+        vaultPath: state.vaultPath,
+        defaultVaultPath: state.defaultVaultPath,
+        selectedFile: state.selectedFile,
+        selectedFolder: state.selectedFolder,
+        activeVaultRoot: document.body.dataset.activeVaultRoot || '',
+        treeChildren: state.tree?.children?.length ?? null,
+        ...extra
+      }
+    })
+  }).catch(() => {
+    // Debug logging is best-effort only.
+  });
 }
 
 function formatSearchSnippet(snippet) {
@@ -242,6 +392,35 @@ function fileLabel(relativePath) {
   return normalized.split('/').filter(Boolean).at(-1)?.replace(/\.md$/i, '') ?? normalized;
 }
 
+function collectMarkdownPaths(entry, paths = new Set()) {
+  if (!entry) return paths;
+
+  if (entry.kind === 'file') {
+    if (String(entry.name ?? '').toLowerCase().endsWith('.md')) {
+      paths.add(normalizeRelativePath(entry.relativePath));
+    }
+    return paths;
+  }
+
+  for (const child of entry.children ?? []) {
+    collectMarkdownPaths(child, paths);
+  }
+
+  return paths;
+}
+
+function reconcileVaultScopedState(tree = state.tree) {
+  const markdownPaths = collectMarkdownPaths(tree);
+
+  state.pinnedPaths = state.pinnedPaths.filter((path) => markdownPaths.has(normalizeRelativePath(path)));
+  state.recentActivity = state.recentActivity.filter((item) => item.path && markdownPaths.has(normalizeRelativePath(item.path)));
+
+  persistRecentActivity();
+  renderPinnedList();
+  updatePinButton();
+  renderOverviewDashboard();
+}
+
 function pathDirectory(relativePath) {
   const parts = normalizeRelativePath(relativePath).split('/').filter(Boolean);
   parts.pop();
@@ -256,6 +435,335 @@ function containerForSelection() {
 
 function prettyPath(relativePath) {
   return normalizeRelativePath(relativePath).replace(/\//g, ' / ');
+}
+
+function formatAgendaInputValue(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function parseAgendaDate(value) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function agendaStatusClass(status) {
+  if (status === 'done') return 'done';
+  if (status === 'overdue') return 'overdue';
+  return 'pending';
+}
+
+function agendaStatusLabel(status) {
+  if (status === 'done') return 'Concluída';
+  if (status === 'overdue') return 'Em atraso';
+  return 'Pendente';
+}
+
+function agendaFilterLabel(filter) {
+  if (filter === 'pending') return 'Pendentes';
+  if (filter === 'done') return 'Concluídas';
+  if (filter === 'overdue') return 'Em atraso';
+  return 'Todos';
+}
+
+function agendaStatusKey(status) {
+  return status === 'done' ? 'done' : 'pending';
+}
+
+function agendaDateLabel(value) {
+  const date = parseAgendaDate(value);
+  if (!date) return 'Data inválida';
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(date);
+}
+
+function agendaSlug(value) {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .replace(/[\s_-]+/g, '-');
+}
+
+function buildAgendaFilePath(title, dueValue) {
+  const date = parseAgendaDate(dueValue) ?? new Date();
+  const isoDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const slug = agendaSlug(title || 'nova-nota') || 'nova-nota';
+  return `Agenda/${isoDate}-${slug}.md`;
+}
+
+function buildAgendaMarkdown({ vaultRoot, title, dueValue, status, body }) {
+  const safeTitle = title.trim() || 'Nota com data';
+  const safeBody = body.trim();
+  const lines = [
+    '---',
+    `vaultRoot: ${vaultRoot}`,
+    `due: ${dueValue}`,
+    `status: ${agendaStatusKey(status)}`,
+    '---',
+    `# ${safeTitle}`,
+    ''
+  ];
+
+  if (safeBody) {
+    lines.push(safeBody, '');
+  }
+
+  return lines.join('\n');
+}
+
+function updateAgendaMarkdownStatus(content, nextStatus) {
+  const lines = content.split(/\r?\n/);
+  if (lines[0] !== '---') {
+    return [
+      '---',
+      `status: ${agendaStatusKey(nextStatus)}`,
+      '---',
+      '',
+      content
+    ].join('\n');
+  }
+
+  const output = [...lines];
+  let cursor = 1;
+  let matched = false;
+
+  for (; cursor < output.length; cursor += 1) {
+    const line = output[cursor].trim();
+    if (line === '---') break;
+
+    if (/^status\s*:/i.test(line)) {
+      output[cursor] = `status: ${agendaStatusKey(nextStatus)}`;
+      matched = true;
+      break;
+    }
+  }
+
+  if (!matched) {
+    output.splice(cursor, 0, `status: ${agendaStatusKey(nextStatus)}`);
+  }
+
+  return output.join('\n');
+}
+
+function agendaNotificationKey(item, windowKey) {
+  return `${item.path}|${windowKey}|${item.due}`;
+}
+
+function loadAgendaReminderKeys() {
+  try {
+    const raw = localStorage.getItem('marika-agenda-reminders');
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistAgendaReminderKeys() {
+  localStorage.setItem('marika-agenda-reminders', JSON.stringify([...state.agendaReminderKeys]));
+}
+
+function agendaShouldNotify(item, now = Date.now()) {
+  if (item.status === 'done') return [];
+
+  const due = parseAgendaDate(item.due);
+  if (!due) return [];
+
+  const diff = due.getTime() - now;
+  const windows = [];
+  if (diff <= 24 * 60 * 60 * 1000 && diff > 60 * 60 * 1000) windows.push({ key: '1d', title: 'Lembrete em 1 dia', body: `${item.title} vence em ${agendaDateLabel(item.due)}` });
+  if (diff <= 60 * 60 * 1000 && diff > 0) windows.push({ key: '1h', title: 'Lembrete em 1 hora', body: `${item.title} vence em ${agendaDateLabel(item.due)}` });
+  if (diff <= 0 && diff > -60 * 60 * 1000) windows.push({ key: 'now', title: 'Prazo agora', body: `${item.title} venceu em ${agendaDateLabel(item.due)}` });
+  return windows;
+}
+
+function agendaStoredStatus(item) {
+  return item.status === 'overdue' ? 'overdue' : item.status;
+}
+
+function loadRecentActivity() {
+  try {
+    const raw = localStorage.getItem('marika-overview-activity');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .filter((item) => item && typeof item === 'object')
+      .map((item) => {
+        const at = Number(item.at);
+        return {
+          kind: String(item.kind ?? 'other'),
+          title: String(item.title ?? ''),
+          path: normalizeRelativePath(String(item.path ?? '')),
+          at: Number.isFinite(at) ? at : Date.now(),
+          meta: item.meta && typeof item.meta === 'object' ? item.meta : {}
+        };
+      })
+      .filter((item) => Boolean(item.title || item.path));
+  } catch {
+    return [];
+  }
+}
+
+function persistRecentActivity() {
+  localStorage.setItem('marika-overview-activity', JSON.stringify(state.recentActivity));
+}
+
+function formatRelativeTime(timestamp) {
+  const safeTimestamp = Number(timestamp);
+  if (!Number.isFinite(safeTimestamp)) return 'agora';
+
+  const delta = Date.now() - safeTimestamp;
+  const minutes = Math.floor(delta / 60000);
+  if (minutes < 1) return 'agora';
+  if (minutes < 60) return `há ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `há ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `há ${days} d`;
+}
+
+function activityIcon(kind) {
+  if (kind === 'save') return 'S';
+  if (kind === 'create') return 'N';
+  if (kind === 'rename') return 'R';
+  if (kind === 'move') return 'M';
+  if (kind === 'agenda') return 'A';
+  if (kind === 'daily') return 'D';
+  return 'O';
+}
+
+function recordActivity(kind, title, path, meta = {}) {
+  const entry = {
+    kind,
+    title,
+    path: normalizeRelativePath(path || ''),
+    at: Date.now(),
+    meta
+  };
+
+  state.recentActivity = [entry, ...state.recentActivity].slice(0, 8);
+  persistRecentActivity();
+  renderOverviewDashboard();
+}
+
+function buildAgendaStatusData() {
+  const counts = state.agendaItems.reduce((acc, item) => {
+    if (item.status === 'done') acc.done += 1;
+    else if (item.status === 'overdue') acc.overdue += 1;
+    else acc.pending += 1;
+    return acc;
+  }, { pending: 0, done: 0, overdue: 0 });
+
+  const total = counts.pending + counts.done + counts.overdue;
+  return { ...counts, total };
+}
+
+function renderOverviewDashboard() {
+  const summary = state.overviewSummary ?? { fileCount: 0, folderCount: 0, markdownFileCount: 0, totalBytes: 0, issues: [] };
+  const agenda = [...state.agendaItems]
+    .filter((item) => item.status !== 'done')
+    .sort((left, right) => new Date(left.due).getTime() - new Date(right.due).getTime())
+    .slice(0, 3);
+  const recent = state.recentActivity
+    .filter((item) => Number.isFinite(Number(item.at)))
+    .slice(0, 4);
+  const activityByDay = Array.from({ length: 7 }, (_, index) => {
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    dayStart.setDate(dayStart.getDate() - (6 - index));
+    const nextDay = new Date(dayStart);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const count = state.recentActivity.filter((item) => {
+      const at = Number(item.at);
+      return Number.isFinite(at) && at >= dayStart.getTime() && at < nextDay.getTime();
+    }).length;
+    return count;
+  });
+  const peak = Math.max(1, ...activityByDay.map((value) => (Number.isFinite(value) ? value : 0)));
+  const agendaData = buildAgendaStatusData();
+
+  if (els.metricAgenda) els.metricAgenda.textContent = String(agendaData.total);
+  if (els.metricOverdue) els.metricOverdue.textContent = String(agendaData.overdue);
+  if (els.overviewDueCount) els.overviewDueCount.textContent = String(agenda.length);
+  if (els.overviewActivityCount) els.overviewActivityCount.textContent = String(recent.length);
+  if (els.overviewActivityPeak) els.overviewActivityPeak.textContent = `${peak} ação${peak === 1 ? '' : 'es'}`;
+  if (els.overviewAgendaRingLabel) els.overviewAgendaRingLabel.textContent = `${agendaData.total} itens`;
+
+  if (els.overviewDueList) {
+    els.overviewDueList.innerHTML = agenda.length === 0
+      ? ''
+      : agenda.map((item) => `
+        <button class="overview-list-item" type="button" data-path="${escapeHtml(item.path)}">
+          <div>
+            <strong>${escapeHtml(item.title)}</strong>
+            <p>${escapeHtml(prettyPath(item.path))}</p>
+          </div>
+          <span class="pill ${item.status === 'overdue' ? '' : 'subtle'}">${escapeHtml(agendaDateLabel(item.due))}</span>
+        </button>
+      `).join('');
+  }
+
+  if (els.overviewDueEmpty) {
+    els.overviewDueEmpty.classList.toggle('hidden', agenda.length > 0);
+  }
+
+  if (els.overviewRecentList) {
+    els.overviewRecentList.innerHTML = recent.length === 0
+      ? ''
+      : recent.map((item) => `
+        <button class="recent-item" type="button" data-path="${escapeHtml(item.path)}">
+          <span class="recent-icon">${escapeHtml(activityIcon(item.kind))}</span>
+          <div>
+            <strong>${escapeHtml(item.title)}</strong>
+            <p>${escapeHtml(formatRelativeTime(item.at))}</p>
+          </div>
+        </button>
+      `).join('');
+  }
+
+  if (els.overviewRecentEmpty) {
+    els.overviewRecentEmpty.classList.toggle('hidden', recent.length > 0);
+  }
+
+  if (els.overviewActivityBars) {
+    const bars = [...els.overviewActivityBars.querySelectorAll('span')];
+    bars.forEach((bar, index) => {
+      const ratio = Math.max(0, Number(activityByDay[index] ?? 0) / peak);
+      const height = 18 + (Number.isFinite(ratio) ? ratio : 0) * 82;
+      bar.style.setProperty('--bar-height', `${height}%`);
+    });
+  }
+
+  if (els.overviewAgendaRing) {
+    const pending = agendaData.pending / Math.max(1, agendaData.total) * 360;
+    const overdue = agendaData.overdue / Math.max(1, agendaData.total) * 360;
+    const done = agendaData.done / Math.max(1, agendaData.total) * 360;
+    els.overviewAgendaRing.style.background = `conic-gradient(#c8b7ff 0deg ${pending}deg, #ff9ca6 ${pending}deg ${pending + overdue}deg, #7ee1b5 ${pending + overdue}deg ${pending + overdue + done}deg, rgba(255,255,255,0.06) ${pending + overdue + done}deg 360deg)`;
+  }
+
+  if (els.overviewAgendaLegend) {
+    els.overviewAgendaLegend.innerHTML = [
+      ['Pendente', agendaData.pending, 'pending'],
+      ['Concluída', agendaData.done, 'done'],
+      ['Em atraso', agendaData.overdue, 'overdue']
+    ].map(([label, value, key]) => `
+      <div class="overview-legend-item">
+        <span class="overview-legend-dot ${key}"></span>
+        <strong>${label}</strong>
+        <small>${value}</small>
+      </div>
+    `).join('');
+  }
 }
 
 function joinRelativePath(base, name) {
@@ -279,36 +787,90 @@ function setView(view) {
   state.view = view;
   els.viewButtons.forEach((button) => button.classList.toggle('active', button.dataset.view === view));
   els.setupView.classList.toggle('active', view === 'setup');
+  els.agendaView.classList.toggle('active', view === 'agenda');
+  els.relationsView.classList.toggle('active', view === 'relations');
   els.workspaceView.classList.toggle('active', view === 'workspace');
   document.body.dataset.view = view;
 
   if (view === 'setup') {
     els.pageTitle.textContent = 'Overview';
-    els.pageSubtitle.textContent = 'Welcome back to your vault.';
-    els.vaultPathInput.placeholder = 'Search vault...';
+    els.pageSubtitle.textContent = 'Fronteira explícita, prazos, atividade recente e métricas do vault.';
+    els.vaultPathInput.placeholder = getDefaultVaultPath();
+  } else if (view === 'agenda') {
+    els.pageTitle.textContent = 'Agenda';
+    els.pageSubtitle.textContent = 'Notas com prazo, status e alertas locais.';
+    els.vaultPathInput.placeholder = getDefaultVaultPath();
+  } else if (view === 'relations') {
+    els.pageTitle.textContent = 'Relações';
+    els.pageSubtitle.textContent = 'Links manuais, relações inferidas e graph global do vault.';
+    els.vaultPathInput.placeholder = getDefaultVaultPath();
   } else {
     els.pageTitle.textContent = 'Workspace';
-    els.pageSubtitle.textContent = 'Árvore de arquivos, editor central e painel auxiliar.';
-    els.vaultPathInput.placeholder = 'C:\\MarikaVault';
+    els.pageSubtitle.textContent = 'Árvore de notas, editor central e painéis auxiliares.';
+    els.vaultPathInput.placeholder = getDefaultVaultPath();
+  }
+
+  if (view === 'relations') {
+    startGlobalGraphAnimation();
+  } else {
+    stopGlobalGraphAnimation();
   }
 
   syncWorkspaceState();
 }
 
+function setDesktopReady(isReady) {
+  if (!isDesktopShell) return;
+  document.body.dataset.desktopReady = isReady ? 'true' : 'false';
+}
+
+async function refreshAfterVaultChange(payload) {
+  const nextPath = String(payload?.path ?? '');
+  const isAgendaNote = nextPath.startsWith('Agenda/') || payload?.kind === 'agenda';
+
+  if (isAgendaNote) {
+    await loadAgenda();
+  }
+
+  await refreshWorkspace(state.selectedFile || '', Boolean(state.selectedFile));
+  if (state.view === 'relations' || state.selectedFile) {
+    await refreshRelationsSurface().catch(() => null);
+  }
+}
+
 function updateVault(value) {
-  state.vaultPath = value;
-  const valid = isValidVaultPath(value);
-  els.vaultName.textContent = vaultNameFromPath(value);
-  els.vaultRootDisplay.textContent = value || 'Não selecionado';
-  els.vaultStateText.textContent = valid ? 'válido' : 'inválido';
-  els.setupHint.textContent = valid ? setupHints.valid : setupHints.invalid;
+  const draftValue = String(value ?? '').trim();
+  const activeVault = getConfiguredVaultRoot() || getDefaultVaultPath();
+  const activeValid = isValidVaultPath(activeVault);
+
+  document.body.dataset.activeVaultRoot = activeVault;
+
+  els.vaultName.textContent = vaultNameFromPath(activeVault);
+  els.vaultRootDisplay.textContent = activeVault || 'Não selecionado';
+  els.vaultStateText.textContent = activeValid ? 'válido' : 'inválido';
+  els.setupHint.textContent = draftValue
+    ? (isValidVaultPath(draftValue) ? setupHints.valid : setupHints.invalid)
+    : `O vault padrão deste app é ${activeVault || 'não selecionado'}.`;
+}
+
+function getDefaultVaultPath() {
+  return state.defaultVaultPath || '';
 }
 
 function showError(message) {
   els.setupHint.textContent = message;
   els.editorStatus.textContent = message;
+  if (els.agendaStatusMessage) {
+    els.agendaStatusMessage.textContent = message;
+  }
   if (els.aiDialogStatus) {
     els.aiDialogStatus.textContent = message;
+  }
+}
+
+function setAgendaStatus(message) {
+  if (els.agendaStatusMessage) {
+    els.agendaStatusMessage.textContent = message;
   }
 }
 
@@ -339,6 +901,13 @@ async function openGuideDialog() {
 
 function openAiDialog() {
   const vault = getActiveVaultPath();
+  if (!vault) {
+    els.aiDialogStatus.textContent = 'Abra ou crie um vault antes de usar a IA.';
+    els.aiDialog.classList.remove('hidden');
+    els.aiDialog.setAttribute('aria-hidden', 'false');
+    return;
+  }
+
   localStorage.setItem('marika-ai-popup-seen', 'true');
   closeAiDialog();
   els.aiDialogCommand.textContent = [
@@ -355,11 +924,19 @@ function openAiDialog() {
 }
 
 function getActiveVaultPath() {
-  return state.vaultPath || els.vaultPathInput.value.trim() || 'C:\\MarikaVault';
+  return state.vaultPath || state.defaultVaultPath || '';
+}
+
+function getConfiguredVaultRoot() {
+  return state.vaultPath || state.defaultVaultPath || '';
 }
 
 async function openAiTerminal() {
   const vaultRoot = getActiveVaultPath();
+  if (!vaultRoot) {
+    throw new Error('Abra ou crie um vault antes de iniciar o terminal da IA');
+  }
+
   const bridge = window.marikaDesktop;
   if (!bridge || typeof bridge.openAiTerminal !== 'function') {
     throw new Error('Bridge do desktop indisponível');
@@ -458,6 +1035,315 @@ function renderBacklinksList() {
     `).join('');
 }
 
+function renderLinkList(container, items, emptyLabel, kind = 'note-link-item') {
+  if (!container) return;
+  container.innerHTML = items.length === 0
+    ? `<div class="empty-inline">${escapeHtml(emptyLabel)}</div>`
+    : items.map((item) => `
+      <button class="${kind}" type="button" data-path="${escapeHtml(item.path)}"${item.targetPath ? ` data-target-path="${escapeHtml(item.targetPath)}"` : ''}${item.applicationMode ? ` data-application-mode="${escapeHtml(item.applicationMode)}"` : ''}>
+        <strong>${escapeHtml(item.title || fileLabel(item.path || item.targetPath || ''))}</strong>
+        <small>${escapeHtml(item.path || item.targetPath || '')}</small>
+        ${item.score !== undefined ? `<small>${escapeHtml(`${Number(item.score).toFixed(3)}${item.intensity ? ` · ${item.intensity}` : ''}`)}</small>` : ''}
+      </button>
+    `).join('');
+}
+
+function renderRelatedPanels() {
+  renderLinkList(els.manualLinksList, (state.related.manualLinks ?? []).map((item) => ({
+    path: item.targetPath || '',
+    title: item.label,
+    targetPath: item.targetPath
+  })).filter((item) => item.path), 'Sem links manuais.');
+
+  renderLinkList(els.relatedList, (state.related.related ?? []).map((item) => ({
+    path: item.path,
+    title: item.title,
+    score: item.score,
+    intensity: item.intensity
+  })), 'Sem relações inferidas.');
+
+  renderLinkList(els.relationsManualLinksList, (state.related.manualLinks ?? []).map((item) => ({
+    path: item.targetPath || '',
+    title: item.label,
+    targetPath: item.targetPath
+  })).filter((item) => item.path), 'Sem links manuais.', 'note-link-item');
+
+  renderLinkList(els.relationsRelatedList, (state.related.related ?? []).map((item) => ({
+    path: item.path,
+    title: item.title,
+    score: item.score,
+    intensity: item.intensity
+  })), 'Sem relações inferidas.', 'relation-item');
+
+  if (els.relationsNoteTitle) {
+    els.relationsNoteTitle.textContent = state.selectedFile ? fileLabel(state.selectedFile) : 'Nenhuma nota';
+  }
+  if (els.relationsNoteSummary) {
+    const current = state.related.related?.[0] ?? null;
+    els.relationsNoteSummary.textContent = state.selectedFile
+      ? (current ? current.reasons.join(' · ') : 'Sem relações inferidas acima do limiar.')
+      : 'Selecione uma nota para ver os relacionamentos.';
+  }
+  if (els.relationsNoteScore) {
+    els.relationsNoteScore.textContent = state.related.related?.[0] ? state.related.related[0].score.toFixed(3) : '0.000';
+  }
+}
+
+function renderLinkSuggestions() {
+  if (!els.linkSuggestionsList) return;
+  els.linkSuggestionsList.innerHTML = (state.linkSuggestions ?? []).length === 0
+    ? '<div class="empty-inline">Nenhuma sugestão disponível.</div>'
+    : state.linkSuggestions.map((item) => `
+      <article class="suggestion-item" data-path="${escapeHtml(item.targetPath)}" data-application-mode="${escapeHtml(item.applicationMode)}">
+        <strong>${escapeHtml(item.title)}</strong>
+        <small>${escapeHtml(item.targetPath)} · ${escapeHtml(item.score.toFixed(3))} · ${escapeHtml(item.intensity)}</small>
+        <small>${escapeHtml(item.reasons.join(' · '))}</small>
+        <div class="link-preview-actions">
+          <button class="action" type="button" data-action="preview-link" data-target-path="${escapeHtml(item.targetPath)}" data-application-mode="${escapeHtml(item.applicationMode)}">Preview</button>
+          <button class="action primary" type="button" data-action="apply-link" data-target-path="${escapeHtml(item.targetPath)}" data-application-mode="${escapeHtml(item.applicationMode)}">Aplicar</button>
+        </div>
+      </article>
+    `).join('');
+}
+
+function renderLinkPreview() {
+  if (!els.linkPreviewPanel) return;
+  const preview = state.linkPreview;
+  if (!preview) {
+    els.linkPreviewPanel.innerHTML = '<div class="empty-inline">Escolha uma sugestão para ver o preview.</div>';
+    return;
+  }
+
+  els.linkPreviewPanel.innerHTML = `
+    <div class="empty-inline">
+      <strong>${escapeHtml(preview.title)}</strong><br />
+      <small>${escapeHtml(preview.reason)}</small>
+    </div>
+    <div class="link-preview-actions">
+      <span class="pill subtle">${escapeHtml(preview.applicationMode)}</span>
+      <span class="pill subtle">${escapeHtml(preview.targetPath)}</span>
+    </div>
+    <pre><strong>Antes</strong>\n${escapeHtml(preview.diff.before.join('\n'))}\n\n<strong>Depois</strong>\n${escapeHtml(preview.diff.after.join('\n'))}</pre>
+    <div class="link-preview-actions">
+      <button class="action primary" type="button" data-action="apply-preview-link" data-target-path="${escapeHtml(preview.targetPath)}" data-application-mode="${escapeHtml(preview.applicationMode)}">Aplicar preview</button>
+    </div>
+  `;
+}
+
+function renderAgendaList() {
+  els.agendaOptionsLabel.textContent = agendaFilterLabel(state.agendaFilter);
+  const items = state.agendaItems.filter((item) => {
+    if (state.agendaFilter === 'all') return true;
+    if (state.agendaFilter === 'overdue') return item.status === 'overdue';
+    return agendaStoredStatus(item) === state.agendaFilter;
+  });
+
+  const counts = state.agendaItems.reduce((acc, item) => {
+    acc.total += 1;
+    if (item.status === 'done') acc.done += 1;
+    else if (item.status === 'overdue') acc.overdue += 1;
+    else acc.pending += 1;
+    return acc;
+  }, { total: 0, pending: 0, done: 0, overdue: 0 });
+
+  els.agendaCount.textContent = `${counts.total} itens`;
+  els.agendaPendingCount.textContent = `${counts.pending} pendentes`;
+  els.agendaDoneCount.textContent = `${counts.done} concluídas`;
+  els.agendaOverdueCount.textContent = `${counts.overdue} em atraso`;
+
+  els.agendaEmpty.classList.toggle('hidden', items.length > 0);
+  els.agendaList.innerHTML = items.length === 0
+    ? ''
+    : items.map((item) => `
+      <article class="agenda-item" data-path="${escapeHtml(item.path)}">
+        <div class="agenda-item-head">
+          <div>
+            <h4>${escapeHtml(item.title)}</h4>
+            <p>${escapeHtml(prettyPath(item.path))}</p>
+          </div>
+          <span class="pill agenda-status ${agendaStatusClass(item.status)}">${agendaStatusLabel(item.status)}</span>
+        </div>
+        <div class="agenda-item-meta">
+          <span class="pill subtle">${escapeHtml(agendaDateLabel(item.due))}</span>
+          <span class="pill subtle">${item.isAgendaFolder ? 'Agenda/' : 'meta'}</span>
+        </div>
+        ${item.excerpt ? `<p>${escapeHtml(item.excerpt)}</p>` : ''}
+        <div class="agenda-item-actions">
+          <button class="action" type="button" data-action="open">Abrir</button>
+          <button class="action" type="button" data-action="toggle">${item.status === 'done' ? 'Reabrir' : 'Concluir'}</button>
+        </div>
+      </article>
+    `).join('');
+}
+
+async function notifyAgendaItem(item, windowKey, title, body) {
+  const bridge = window.marikaDesktop;
+  if (!bridge || typeof bridge.notifyAgendaReminder !== 'function') return;
+
+  const reminderKey = agendaNotificationKey(item, windowKey);
+  if (state.agendaReminderKeys.has(reminderKey)) return;
+
+  state.agendaReminderKeys.add(reminderKey);
+  persistAgendaReminderKeys();
+  await bridge.notifyAgendaReminder({ title, body });
+}
+
+async function checkAgendaReminders(items = state.agendaItems) {
+  const now = Date.now();
+  for (const item of items) {
+    if (item.status === 'done') continue;
+
+    for (const reminder of agendaShouldNotify(item, now)) {
+      await notifyAgendaItem(item, reminder.key, reminder.title, reminder.body);
+    }
+  }
+}
+
+async function loadAgenda() {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot) {
+    state.agendaItems = [];
+    renderAgendaList();
+    renderOverviewDashboard();
+    return;
+  }
+
+  const data = await api(`/api/agenda?vaultRoot=${encodeURIComponent(vaultRoot)}`);
+  state.agendaItems = data.items ?? [];
+  renderAgendaList();
+  renderOverviewDashboard();
+  await checkAgendaReminders(state.agendaItems);
+}
+
+function ensureAgendaReminderPolling() {
+  if (state.agendaReminderTimer) return;
+
+  state.agendaReminderTimer = setInterval(() => {
+    if (!getConfiguredVaultRoot()) return;
+    void loadAgenda().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar agenda'));
+  }, 60_000);
+}
+
+function closeAgendaOptionsMenu() {
+  els.agendaOptionsButton?.setAttribute('aria-expanded', 'false');
+  els.agendaOptionsPanel?.classList.add('is-closed');
+  els.agendaOptionsPanel?.setAttribute('aria-hidden', 'true');
+}
+
+function closeOverviewOptionsMenu() {
+  els.overviewOptionsButton?.setAttribute('aria-expanded', 'false');
+  els.overviewOptionsPanel?.classList.add('is-closed');
+  els.overviewOptionsPanel?.setAttribute('aria-hidden', 'true');
+}
+
+function openAgendaOptionsMenu() {
+  els.agendaOptionsButton?.setAttribute('aria-expanded', 'true');
+  els.agendaOptionsPanel?.classList.remove('is-closed');
+  els.agendaOptionsPanel?.setAttribute('aria-hidden', 'false');
+}
+
+function openOverviewOptionsMenu() {
+  els.overviewOptionsButton?.setAttribute('aria-expanded', 'true');
+  els.overviewOptionsPanel?.classList.remove('is-closed');
+  els.overviewOptionsPanel?.setAttribute('aria-hidden', 'false');
+}
+
+function toggleAgendaOptionsMenu() {
+  if (els.agendaOptionsPanel?.classList.contains('is-closed')) {
+    openAgendaOptionsMenu();
+  } else {
+    closeAgendaOptionsMenu();
+  }
+}
+
+function toggleOverviewOptionsMenu() {
+  if (els.overviewOptionsPanel?.classList.contains('is-closed')) {
+    openOverviewOptionsMenu();
+  } else {
+    closeOverviewOptionsMenu();
+  }
+}
+
+async function createAgendaNote() {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot) {
+    showError('Abra um vault antes de criar notas com prazo.');
+    return;
+  }
+
+  const title = els.agendaTitleInput.value.trim();
+  const dueValue = els.agendaDueInput.value.trim();
+  const status = els.agendaStatusInput.value === 'done' ? 'done' : 'pending';
+  const body = els.agendaBodyInput.value.trim();
+
+  if (!title || !dueValue) {
+    showError('Informe título e prazo para criar a nota da agenda.');
+    return;
+  }
+
+  setAgendaStatus('Salvando nota com data...');
+  const filePath = buildAgendaFilePath(title, dueValue);
+  const content = buildAgendaMarkdown({ vaultRoot, title, dueValue, status, body });
+
+  state.agendaReminderKeys = new Set([...state.agendaReminderKeys].filter((key) => !key.startsWith(`${filePath}|`)));
+  persistAgendaReminderKeys();
+
+  const bridge = window.marikaDesktop;
+  if (bridge && typeof bridge.createAgendaNote === 'function') {
+    await bridge.createAgendaNote({ vaultRoot, path: filePath, content });
+  } else {
+    await api('/api/file', {
+      method: 'POST',
+      body: JSON.stringify({ vaultRoot, path: filePath, content, operation: 'create' })
+    });
+  }
+
+  recordActivity('agenda', `Criada ${fileLabel(filePath)}`, filePath);
+
+  els.agendaTitleInput.value = '';
+  els.agendaBodyInput.value = '';
+  els.agendaStatusInput.value = 'pending';
+  els.agendaDueInput.value = formatAgendaInputValue(new Date(Date.now() + (60 * 60 * 1000)));
+
+  setView('agenda');
+  try {
+    await loadAgenda();
+    setAgendaStatus(`Salvo em ${filePath}`);
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Falha ao atualizar agenda');
+  }
+}
+
+async function toggleAgendaItemStatus(pathValue, currentStatus) {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot) return;
+
+  const data = await api(`/api/file?vaultRoot=${encodeURIComponent(vaultRoot)}&path=${encodeURIComponent(pathValue)}`);
+  const nextStatus = currentStatus === 'done' ? 'pending' : 'done';
+  const content = updateAgendaMarkdownStatus(String(data.content ?? ''), nextStatus);
+
+  await api('/api/file', {
+    method: 'POST',
+    body: JSON.stringify({ vaultRoot, path: pathValue, content, operation: 'edit' })
+  });
+
+  if (nextStatus === 'pending') {
+    state.agendaReminderKeys = new Set([...state.agendaReminderKeys].filter((key) => !key.startsWith(`${pathValue}|`)));
+    persistAgendaReminderKeys();
+  }
+
+  if (state.view === 'workspace' && state.selectedFile === pathValue) {
+    await loadNote(pathValue);
+  }
+  recordActivity('agenda', `${nextStatus === 'done' ? 'Concluída' : 'Reaberta'} ${fileLabel(pathValue)}`, pathValue);
+  await loadAgenda();
+}
+
+async function openAgendaItem(pathValue) {
+  setView('workspace');
+  await loadNote(pathValue, { recordActivity: true, kind: 'agenda' });
+}
+
 function setSummaryMode(mode) {
   state.summaryMode = mode;
   els.summaryOverviewButton.classList.toggle('active', mode === 'overview');
@@ -481,49 +1367,43 @@ function renderGraph(graph) {
   }
 
   const center = { x: 180, y: 180 };
-  const current = nodes.find((node) => node.kind === 'current' || node.kind === 'folder') ?? nodes[0];
-  const centerParts = current.path ? current.path.split('/').filter(Boolean) : [];
+  const current = nodes.find((node) => node.kind === 'current') ?? nodes[0];
   const positions = new Map([[current.id, center]]);
-  const levels = new Map();
 
-  const getLevel = (node) => {
-    if (node.id === current.id) return 0;
-    if (graph.scope === 'folder') {
-      const nodeFolderDepth = node.kind === 'folder'
-        ? node.path.split('/').filter(Boolean).length - centerParts.length
-        : Math.max(1, node.path.split('/').filter(Boolean).length - centerParts.length);
-      return Math.max(1, nodeFolderDepth);
+  const sortNodes = (items) => [...items].sort((left, right) => {
+    if (left.kind === right.kind) {
+      return left.label.localeCompare(right.label, 'pt-BR');
     }
-    return 1;
-  };
 
-  for (const node of nodes) {
-    const level = getLevel(node);
-    if (!levels.has(level)) {
-      levels.set(level, []);
-    }
-    levels.get(level).push(node);
-  }
+    if (left.kind === 'folder') return -1;
+    if (right.kind === 'folder') return 1;
+    if (left.kind === 'current') return -1;
+    if (right.kind === 'current') return 1;
+    return left.label.localeCompare(right.label, 'pt-BR');
+  });
 
-  const sortedLevels = [...levels.keys()].sort((left, right) => left - right);
-
-  for (const level of sortedLevels) {
-    if (level === 0) continue;
-    const ringNodes = levels.get(level) ?? [];
-    const baseRadius = graph.scope === 'folder' ? 70 + ((level - 1) * 54) : 112;
-    const arranged = ringNodes.sort((left, right) => {
-      if (left.kind === right.kind) return left.label.localeCompare(right.label, 'pt-BR');
-      return left.kind === 'folder' ? -1 : 1;
-    });
-
+  const placeRing = (items, radius, offset = 0) => {
+    const arranged = sortNodes(items);
     arranged.forEach((node, index) => {
-      const angle = (index / Math.max(1, arranged.length)) * Math.PI * 2 - Math.PI / 2 + (level * 0.22);
-      const wobble = level % 2 === 0 ? 14 : -10;
+      const angle = (index / Math.max(1, arranged.length)) * Math.PI * 2 - Math.PI / 2 + offset;
       positions.set(node.id, {
-        x: center.x + Math.cos(angle) * (baseRadius + wobble),
-        y: center.y + Math.sin(angle) * (baseRadius - wobble)
+        x: center.x + Math.cos(angle) * radius,
+        y: center.y + Math.sin(angle) * radius
       });
     });
+  };
+
+  const folders = nodes.filter((node) => node.id !== current.id && node.kind === 'folder');
+  const linkedNotes = nodes.filter((node) => node.id !== current.id && node.kind !== 'folder');
+
+  if (graph.scope === 'folder') {
+    placeRing(folders, 92, 0.15);
+    placeRing(linkedNotes, 150, -0.1);
+  } else {
+    const folderChain = folders.filter((node) => String(node.path ?? '').includes('/'));
+    const siblingFolders = folders.filter((node) => !String(node.path ?? '').includes('/'));
+    placeRing(folderChain.length > 0 ? folderChain : siblingFolders, 92, 0.12);
+    placeRing(linkedNotes, 150, -0.12);
   }
 
   const lines = edges.map((edge) => {
@@ -615,41 +1495,119 @@ async function openGraphNode(relativePath, kind) {
     return;
   }
 
-  await loadNote(relativePath);
+  await loadNote(relativePath, { recordActivity: true, kind: 'open' });
 }
 
 async function loadPinnedPaths() {
   const data = await api('/api/pins');
   state.pinnedPaths = (data.pinnedPaths ?? []).map((value) => normalizeRelativePath(String(value)));
+  if (state.tree) {
+    reconcileVaultScopedState(state.tree);
+    return;
+  }
   renderPinnedList();
   updatePinButton();
 }
 
 async function refreshBacklinks() {
-  if (!state.vaultPath || !state.selectedFile) {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot || !state.selectedFile) {
     state.backlinks = [];
     renderBacklinksList();
     return;
   }
 
-  const params = new URLSearchParams({ vaultRoot: state.vaultPath, path: state.selectedFile });
+  const params = new URLSearchParams({ vaultRoot, path: state.selectedFile });
   const data = await api(`/api/backlinks?${params.toString()}`);
   state.backlinks = data.backlinks ?? [];
   renderBacklinksList();
 }
 
+async function loadRelatedData() {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot || !state.selectedFile) {
+    state.related = { manualLinks: [], backlinks: [], related: [] };
+    state.backlinks = [];
+    state.linkPreview = null;
+    renderBacklinksList();
+    renderRelatedPanels();
+    return;
+  }
+
+  const params = new URLSearchParams({ vaultRoot, path: state.selectedFile, limit: '10' });
+  const data = await api(`/api/related?${params.toString()}`);
+  state.related = {
+    manualLinks: data.manualLinks ?? [],
+    backlinks: data.backlinks ?? [],
+    related: data.related ?? []
+  };
+  state.backlinks = (data.backlinks ?? []).map((item) => ({
+    path: item.targetPath || item.path || '',
+    title: item.label || item.title || item.targetPath || item.path || ''
+  })).filter((item) => Boolean(item.path));
+  renderBacklinksList();
+  renderRelatedPanels();
+}
+
+async function loadLinkSuggestions() {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot || !state.selectedFile) {
+    state.linkSuggestions = [];
+    state.linkPreview = null;
+    renderLinkSuggestions();
+    renderLinkPreview();
+    return;
+  }
+
+  const params = new URLSearchParams({ vaultRoot, path: state.selectedFile, limit: '8' });
+  const data = await api(`/api/link-suggestions?${params.toString()}`);
+  state.linkSuggestions = data.suggestions ?? [];
+  renderLinkSuggestions();
+}
+
+async function loadLinkPreview(targetPath, applicationMode = 'section') {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot || !state.selectedFile || !targetPath) return;
+
+  const data = await api('/api/link-preview', {
+    method: 'POST',
+    body: JSON.stringify({ vaultRoot, path: state.selectedFile, targetPath, mode: applicationMode })
+  });
+
+  state.linkPreview = data;
+  renderLinkPreview();
+}
+
+async function applyPreviewLink(targetPath, applicationMode = 'section') {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot || !state.selectedFile || !targetPath) return;
+
+  await api('/api/link-apply', {
+    method: 'POST',
+    body: JSON.stringify({ vaultRoot, path: state.selectedFile, targetPath, mode: applicationMode })
+  });
+
+  state.linkPreview = null;
+  await refreshAfterVaultChange({ path: state.selectedFile });
+  await loadRelatedData();
+  await loadLinkSuggestions();
+}
+
 async function refreshGraph() {
-  if (!state.vaultPath) {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot) {
     state.graph = { scope: 'note', nodes: [], edges: [] };
     renderGraph(state.graph);
     return;
   }
 
-  const params = new URLSearchParams({ vaultRoot: state.vaultPath });
+  const params = new URLSearchParams({ vaultRoot });
   if (state.graphContext.kind === 'folder') {
     params.set('folderPath', state.graphContext.path);
   } else if (state.selectedFile) {
     params.set('path', state.selectedFile);
+  } else if (state.selectedFolder) {
+    params.set('folderPath', state.selectedFolder);
   }
 
   if (!params.has('path') && !params.has('folderPath')) {
@@ -663,13 +1621,381 @@ async function refreshGraph() {
   renderGraph(state.graph);
 }
 
+function normalizeGraphGlobalNodes(graph) {
+  const nodes = [...(graph?.nodes ?? [])];
+  return nodes.sort((left, right) => {
+    if (left.kind !== right.kind) {
+      if (left.kind === 'folder') return -1;
+      if (right.kind === 'folder') return 1;
+      return left.label.localeCompare(right.label, 'pt-BR');
+    }
+
+    if (left.kind === 'note') {
+      return right.score - left.score || left.label.localeCompare(right.label, 'pt-BR');
+    }
+
+    return left.label.localeCompare(right.label, 'pt-BR');
+  });
+}
+
+function fibonacciSpherePoint(index, total) {
+  if (total <= 1) return { x: 0, y: 0, z: 1 };
+  const offset = 2 / total;
+  const increment = Math.PI * (3 - Math.sqrt(5));
+  const y = (index * offset) - 1 + offset / 2;
+  const radius = Math.sqrt(Math.max(0, 1 - (y * y)));
+  const phi = index * increment;
+  return {
+    x: Math.cos(phi) * radius,
+    y,
+    z: Math.sin(phi) * radius
+  };
+}
+
+function rotateGlobalPoint(point) {
+  let { x, y, z } = point;
+
+  const yaw = graphGlobalViewport.yaw;
+  const pitch = graphGlobalViewport.pitch;
+  const roll = graphGlobalViewport.roll;
+
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const cp = Math.cos(pitch);
+  const sp = Math.sin(pitch);
+  const cr = Math.cos(roll);
+  const sr = Math.sin(roll);
+
+  let rx = (x * cy) - (z * sy);
+  let rz = (x * sy) + (z * cy);
+  let ry = (y * cp) - (rz * sp);
+  rz = (y * sp) + (rz * cp);
+
+  const finalX = (rx * cr) - (ry * sr);
+  const finalY = (rx * sr) + (ry * cr);
+
+  return { x: finalX, y: finalY, z: rz };
+}
+
+function projectGlobalPoint(point, width, height) {
+  const minDim = Math.min(width, height);
+  const radius = Math.max(260, minDim * 0.34) * graphGlobalViewport.scale;
+  const depthBoost = 1 + ((point.z + 1) / 2) * 0.3;
+
+  return {
+    x: point.x * radius * 1.18,
+    y: point.y * radius * 0.84,
+    z: point.z * radius * 0.78,
+    depth: depthBoost,
+    opacity: 0.18 + ((point.z + 1) / 2) * 0.82,
+    scale: 0.8 + ((point.z + 1) / 2) * 0.42
+  };
+}
+
+function hashGraphPath(value) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function getGlobalNodeColor(node) {
+  if (node.kind === 'folder') return 'rgba(88, 164, 255, 0.92)';
+  const score = Math.max(0, Math.min(1, Number(node.score ?? 0)));
+  const warm = Math.round(255 - (score * 72));
+  const cool = Math.round(150 + (score * 90));
+  return `rgba(${warm}, ${cool}, 255, 0.92)`;
+}
+
+function renderGlobalGraph(graph) {
+  graphGlobalScene.lastGraph = graph;
+  const stage = els.graphGlobalStage;
+  const sphere = els.graphGlobalSphere;
+  if (!stage || !sphere) return;
+
+  const rect = stage.getBoundingClientRect();
+  const width = Math.max(640, Math.round(rect.width || 920));
+  const height = Math.max(520, Math.round(rect.height || 760));
+
+  const nodes = normalizeGraphGlobalNodes(graph);
+  const edges = [...(graph?.edges ?? [])].sort((left, right) => {
+    const weight = { strong: 3, medium: 2, weak: 1, hidden: 0 };
+    return (weight[right.intensity] ?? 0) - (weight[left.intensity] ?? 0) || Number(right.score ?? 0) - Number(left.score ?? 0);
+  });
+
+  if (els.graphGlobalCount) {
+    els.graphGlobalCount.textContent = `${nodes.length} nós`;
+  }
+
+  sphere.style.transform = `rotateX(${graphGlobalViewport.pitch * 24}deg) rotateY(${graphGlobalViewport.yaw * 24}deg) rotateZ(${graphGlobalViewport.roll * 18}deg)`;
+
+  if (nodes.length === 0) {
+    sphere.innerHTML = '<div class="empty-inline graph-global-empty">Sem relações</div>';
+    if (els.graphGlobalOverlayTitle) els.graphGlobalOverlayTitle.textContent = 'Nenhuma nota';
+    if (els.graphGlobalOverlaySummary) els.graphGlobalOverlaySummary.textContent = 'Abra uma nota ou clique em um nó para ver o resumo.';
+    if (els.graphGlobalOverlayBadge) els.graphGlobalOverlayBadge.textContent = 'Nó selecionado';
+    if (els.graphGlobalOverlayStatus) els.graphGlobalOverlayStatus.textContent = '--';
+    if (els.graphGlobalOverlayLinks) els.graphGlobalOverlayLinks.textContent = '--';
+    if (els.graphGlobalOverlayLayer) els.graphGlobalOverlayLayer.textContent = '--';
+    return;
+  }
+
+  const vectors = nodes.map((node, index) => {
+    if (node.path === graph?.focusPath) {
+      return { node, base: { x: 0, y: 0, z: 1 } };
+    }
+
+    const sphereIndex = index + (graph?.focusPath ? 1 : 0);
+    const total = nodes.length + (graph?.focusPath ? 1 : 0);
+    return { node, base: fibonacciSpherePoint(sphereIndex, Math.max(1, total)) };
+  });
+
+  const projectedNodes = vectors.map(({ node, base }) => {
+    const rotated = rotateGlobalPoint(base);
+    const projected = projectGlobalPoint(rotated, width, height);
+    return { node, rotated, projected };
+  });
+
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  const activePath = graphGlobalScene.hoverPath || graph?.focusPath || '';
+  const activeNode = activePath
+    ? projectedNodes.find((entry) => entry.node.path === activePath) ?? null
+    : null;
+
+  graphGlobalScene.activePath = activePath;
+  const connectionCounts = new Map();
+  for (const edge of edges) {
+    connectionCounts.set(edge.from, (connectionCounts.get(edge.from) ?? 0) + 1);
+    connectionCounts.set(edge.to, (connectionCounts.get(edge.to) ?? 0) + 1);
+  }
+
+  const connectedPaths = new Set(graphGlobalScene.activePath ? [graphGlobalScene.activePath] : []);
+  const activeEdges = new Set();
+  for (const edge of edges) {
+    if (!graphGlobalScene.activePath) continue;
+    if (edge.from === graphGlobalScene.activePath || edge.to === graphGlobalScene.activePath) {
+      connectedPaths.add(edge.from);
+      connectedPaths.add(edge.to);
+      activeEdges.add(`${edge.from}->${edge.to}:${edge.kind}`);
+    }
+  }
+
+  const projectedByPath = new Map(projectedNodes.map((entry) => [entry.node.path, entry]));
+  const linesMarkup = edges.map((edge) => {
+    const from = projectedByPath.get(edge.from);
+    const to = projectedByPath.get(edge.to);
+    if (!from || !to) return '';
+
+    const isConnected = !graphGlobalScene.activePath || connectedPaths.has(edge.from) || connectedPaths.has(edge.to);
+    const isFeatured = activeEdges.has(`${edge.from}->${edge.to}:${edge.kind}`);
+    const depth = (from.projected.z + to.projected.z) / 2;
+    const opacity = graphGlobalScene.activePath
+      ? (isConnected ? Math.max(0.15, 0.2 + ((depth + 1) / 2) * 0.48) : 0.06)
+      : Math.max(0.12, 0.18 + ((depth + 1) / 2) * 0.48);
+    const width = edge.kind === 'manual' ? 2.1 : edge.kind === 'folder' ? 1.25 : 1.45;
+    return `
+      <line
+        class="graph-global-connection ${escapeHtml(edge.kind)}${isFeatured ? ' featured' : ''}"
+        x1="${(from.projected.x + centerX).toFixed(2)}"
+        y1="${(from.projected.y + centerY).toFixed(2)}"
+        x2="${(to.projected.x + centerX).toFixed(2)}"
+        y2="${(to.projected.y + centerY).toFixed(2)}"
+        style="--opacity:${opacity.toFixed(3)}; stroke-width:${width};"
+      />
+    `;
+  }).join('');
+
+  const nodesMarkup = projectedNodes.map(({ node, projected }) => {
+    const active = node.path === graphGlobalScene.activePath;
+    const connected = !graphGlobalScene.activePath || connectedPaths.has(node.path);
+    const kindClass = node.kind === 'folder' ? 'gray' : 'blue';
+    const pathHash = hashGraphPath(node.path);
+    const floatPhase = (graphGlobalScene.motionTime / 1200) + (pathHash % 360) * 0.0174533;
+    const floatLift = Math.sin(floatPhase) * (node.kind === 'folder' ? 1.4 : 2.2);
+    const floatScale = 1 + (Math.sin(floatPhase * 0.85) * (active ? 0.024 : 0.012));
+    const opacity = active
+      ? 1
+      : connected
+        ? Math.max(0.24, Math.min(1, projected.opacity))
+        : Math.max(0.14, Math.min(0.4, projected.opacity * 0.34));
+    const scale = node.kind === 'folder'
+      ? 0.82 + (projected.depth * 0.16)
+      : Math.max(0.64, Math.min(1.55, projected.scale));
+    const connections = connectionCounts.get(node.path) ?? 0;
+    return `
+      <button
+        type="button"
+        class="graph-global-node ${kindClass}${active ? ' active' : ''}${connected ? '' : ' dimmed'}"
+        data-path="${escapeHtml(node.path)}"
+        data-kind="${escapeHtml(node.kind)}"
+        data-title="${escapeHtml(node.label)}"
+        data-connections="${connections}"
+        data-active="${active ? 'true' : 'false'}"
+        aria-label="Abrir ${escapeHtml(node.label)}"
+        title="${escapeHtml(node.label)} · ${connections} conexões"
+        style="--x:${projected.x.toFixed(2)}px; --y:${projected.y.toFixed(2)}px; --float-y:${floatLift.toFixed(2)}px; --scale:${(scale * floatScale).toFixed(3)}; opacity:${opacity.toFixed(3)}; z-index:${Math.round((projected.z + 1) * 100)};"
+      ></button>
+    `;
+  }).join('');
+
+  sphere.innerHTML = `
+    <svg class="graph-global-connections" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
+      ${linesMarkup}
+    </svg>
+    <div class="graph-global-nodes">${nodesMarkup}</div>
+  `;
+
+  if (els.graphGlobalOverlayTitle) {
+    els.graphGlobalOverlayTitle.textContent = activeNode?.node.label || 'Nenhuma nota selecionada';
+  }
+  if (els.graphGlobalOverlaySummary) {
+    els.graphGlobalOverlaySummary.textContent = activeNode?.node.summary || 'Passe o mouse ou clique em um nó para ver o resumo.';
+  }
+  if (els.graphGlobalOverlayBadge) {
+    els.graphGlobalOverlayBadge.textContent = activeNode?.node.kind === 'folder' ? 'Nó de pasta' : activeNode ? 'Nó de nota' : 'Nó selecionado';
+  }
+  if (els.graphGlobalOverlayStatus) {
+    els.graphGlobalOverlayStatus.textContent = activeNode?.node.kind === 'folder' ? 'Pasta' : activeNode ? 'Core' : '--';
+  }
+  if (els.graphGlobalOverlayLinks) {
+    els.graphGlobalOverlayLinks.textContent = activeNode ? String(connectionCounts.get(activeNode.node.path) ?? 0) : '--';
+  }
+  if (els.graphGlobalOverlayLayer) {
+    els.graphGlobalOverlayLayer.textContent = activeNode ? (activeNode.projected.z > 0 ? 'Frente' : 'Fundo') : '--';
+  }
+}
+
+function resetGlobalGraphViewport() {
+  graphGlobalViewport.scale = 1;
+  graphGlobalViewport.yaw = 0.65;
+  graphGlobalViewport.pitch = -0.22;
+  graphGlobalViewport.roll = 0;
+}
+
+function zoomGlobalGraph(delta) {
+  graphGlobalViewport.scale = Math.min(2.3, Math.max(0.72, graphGlobalViewport.scale + delta));
+}
+
+function startGlobalGraphDrag(clientX, clientY) {
+  graphGlobalViewport.dragging = true;
+  graphGlobalViewport.lastX = clientX;
+  graphGlobalViewport.lastY = clientY;
+}
+
+function moveGlobalGraphDrag(clientX, clientY) {
+  if (!graphGlobalViewport.dragging) return;
+  const dx = clientX - graphGlobalViewport.lastX;
+  const dy = clientY - graphGlobalViewport.lastY;
+  graphGlobalViewport.lastX = clientX;
+  graphGlobalViewport.lastY = clientY;
+  graphGlobalViewport.yaw += dx * 0.006;
+  graphGlobalViewport.pitch += dy * 0.005;
+  graphGlobalViewport.pitch = Math.max(-1.2, Math.min(1.2, graphGlobalViewport.pitch));
+  graphGlobalViewport.roll += dx * 0.0012;
+  renderGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+}
+
+function stopGlobalGraphDrag() {
+  graphGlobalViewport.dragging = false;
+}
+
+function getGlobalGraphNode(target) {
+  return target instanceof HTMLElement ? target.closest('.graph-global-node') : null;
+}
+
+function openGlobalGraphNode(node) {
+  if (!node) return;
+
+  if (node.kind === 'folder') {
+    state.selectedFolder = node.path;
+    state.selectedFile = '';
+    state.graphContext = { kind: 'folder', path: node.path };
+    setView('workspace');
+    syncWorkspaceState();
+    void refreshWorkspace('', false).then(() => refreshGraph()).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir pasta'));
+    return;
+  }
+
+  setView('workspace');
+  void loadNote(node.path, { recordActivity: true, kind: 'open' }).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir nota do graph'));
+}
+
+function renderGlobalGraphFrame() {
+  graphGlobalScene.animationFrame = null;
+  if (state.view !== 'relations' && !graphGlobalViewport.dragging) return;
+  graphGlobalScene.motionTime = performance.now();
+  renderGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+
+  if (state.view === 'relations' || graphGlobalViewport.dragging) {
+    graphGlobalScene.animationFrame = window.requestAnimationFrame(renderGlobalGraphFrame);
+  }
+}
+
+function startGlobalGraphAnimation() {
+  if (graphGlobalScene.animationFrame !== null) return;
+  graphGlobalScene.animationFrame = window.requestAnimationFrame(renderGlobalGraphFrame);
+}
+
+function stopGlobalGraphAnimation() {
+  if (graphGlobalScene.animationFrame !== null) {
+    window.cancelAnimationFrame(graphGlobalScene.animationFrame);
+    graphGlobalScene.animationFrame = null;
+  }
+}
+
+async function refreshGlobalGraph() {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot) {
+    state.graphGlobal = { vaultRoot: '', nodes: [], edges: [] };
+    renderGlobalGraph(state.graphGlobal);
+    return;
+  }
+
+  const params = new URLSearchParams({ vaultRoot });
+  if (state.selectedFile) params.set('focusPath', state.selectedFile);
+  else if (state.selectedFolder) params.set('focusPath', state.selectedFolder);
+  const data = await api(`/api/graph-global?${params.toString()}`);
+  state.graphGlobal = data;
+  renderGlobalGraph(state.graphGlobal);
+}
+
+async function refreshRelationsSurface() {
+  await loadRelatedData();
+  await loadLinkSuggestions();
+  await refreshGlobalGraph();
+}
+
+async function openRelationsView() {
+  if (!getConfiguredVaultRoot()) {
+    if (isDesktopShell) {
+      await startVault().catch(() => null);
+    }
+
+    if (!getConfiguredVaultRoot()) {
+      setView('setup');
+      showError('Abra ou crie um vault antes de ver relações.');
+      return;
+    }
+  }
+
+  setView('relations');
+  resetGlobalGraphViewport();
+  await refreshRelationsSurface();
+  startGlobalGraphAnimation();
+}
+
 async function loadTemplates() {
-  if (!state.vaultPath) {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot) {
     state.templates = [];
     return;
   }
 
-  const params = new URLSearchParams({ vaultRoot: state.vaultPath });
+  const params = new URLSearchParams({ vaultRoot });
   const data = await api(`/api/templates?${params.toString()}`);
   state.templates = data.templates ?? [];
 }
@@ -731,7 +2057,8 @@ function renderSearchResults(matches) {
 }
 
 async function runSearch() {
-  if (!state.vaultPath) {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot) {
     showError('Abra ou crie um vault antes de buscar.');
     return;
   }
@@ -744,7 +2071,7 @@ async function runSearch() {
   searchState.phrase = phrase;
   searchState.tags = tags;
 
-  const searchParams = new URLSearchParams({ vaultRoot: state.vaultPath });
+  const searchParams = new URLSearchParams({ vaultRoot });
   if (query) searchParams.set('query', query);
   if (phrase) searchParams.set('phrase', phrase);
   if (tags) searchParams.set('tags', tags);
@@ -817,6 +2144,7 @@ function bytesToCompactLabel(bytes) {
 }
 
 function updateVaultSummary(summary) {
+  state.overviewSummary = summary ?? { fileCount: 0, folderCount: 0, markdownFileCount: 0, totalBytes: 0, issues: [] };
   const data = summary ?? { fileCount: 0, folderCount: 0, markdownFileCount: 0, totalBytes: 0, issues: [] };
   els.metricNotes.textContent = String(data.fileCount ?? 0);
   els.metricFolders.textContent = String(data.folderCount ?? 0);
@@ -830,9 +2158,12 @@ function updateVaultSummary(summary) {
     const height = Math.max(16, Math.min(100, ((values[index] ?? 0) * 14) + 16));
     bar.style.setProperty('--bar-height', `${height}%`);
   });
+
+  renderOverviewDashboard();
 }
 
 function renderProjectSlide() {
+  if (!els.projectSlideTag || !els.projectSlideTitle || !els.projectSlideBody || !els.projectSlideDots) return;
   const slide = projectSlides[projectSlideIndex % projectSlides.length];
   els.projectSlideTag.textContent = slide.tag;
   els.projectSlideTitle.textContent = slide.title;
@@ -841,6 +2172,7 @@ function renderProjectSlide() {
 }
 
 function startProjectSlide() {
+  if (!els.projectSlideTag || !els.projectSlideTitle || !els.projectSlideBody || !els.projectSlideDots) return;
   renderProjectSlide();
   if (projectSlideTimer) clearInterval(projectSlideTimer);
   projectSlideTimer = setInterval(() => {
@@ -857,6 +2189,10 @@ function closeInputDialog() {
 
 function openInputDialog({ eyebrow, title, message, label, value = '', multiline = false }) {
   return new Promise((resolve) => {
+    if (inputDialogSession) {
+      inputDialogSession.finish(null);
+    }
+
     els.inputDialogEyebrow.textContent = eyebrow;
     els.inputDialogTitle.textContent = title;
     els.inputDialogMessage.textContent = message;
@@ -867,9 +2203,13 @@ function openInputDialog({ eyebrow, title, message, label, value = '', multiline
     els.inputDialogTextarea.hidden = !multiline;
 
     const cleanup = () => {
-      els.inputDialog.removeEventListener('cancel', onCancel);
-      els.inputDialogConfirm.removeEventListener('click', onConfirm);
-      els.inputDialogCancel.removeEventListener('click', onCancelClick);
+      if (inputDialogSession?.cleanup === cleanup) {
+        inputDialogSession = null;
+      }
+
+      els.inputDialog.oncancel = null;
+      els.inputDialogConfirm.onclick = null;
+      els.inputDialogCancel.onclick = null;
     };
 
     const finish = (result) => {
@@ -890,9 +2230,11 @@ function openInputDialog({ eyebrow, title, message, label, value = '', multiline
 
     const onCancelClick = () => finish(null);
 
-    els.inputDialog.addEventListener('cancel', onCancel, { once: true });
-    els.inputDialogConfirm.addEventListener('click', onConfirm, { once: true });
-    els.inputDialogCancel.addEventListener('click', onCancelClick, { once: true });
+    inputDialogSession = { cleanup, finish };
+
+    els.inputDialog.oncancel = onCancel;
+    els.inputDialogConfirm.onclick = onConfirm;
+    els.inputDialogCancel.onclick = onCancelClick;
     els.inputDialog.showModal();
     if (multiline) {
       els.inputDialogTextarea.focus();
@@ -902,29 +2244,79 @@ function openInputDialog({ eyebrow, title, message, label, value = '', multiline
   });
 }
 
-async function openVaultFromBootstrap(vaultRoot) {
-  state.vaultPath = vaultRoot;
-  els.vaultPathInput.value = vaultRoot;
-  updateVault(vaultRoot);
+function applyActiveVaultRoot(vaultRoot) {
+  const normalizedVaultRoot = String(vaultRoot ?? '').trim();
+  state.defaultVaultPath = normalizedVaultRoot;
+  state.vaultPath = normalizedVaultRoot;
+  els.vaultPathInput.value = normalizedVaultRoot;
+  document.body.dataset.activeVaultRoot = normalizedVaultRoot;
+  updateVault(normalizedVaultRoot);
+  sendDebugState('applyActiveVaultRoot', { appliedVaultRoot: normalizedVaultRoot });
+}
+
+async function openVaultFromBootstrap(vaultRoot, { autoOpenFirstNote = true } = {}) {
+  applyActiveVaultRoot(vaultRoot);
+  await syncDesktopActiveVaultRoot(vaultRoot);
+  setDesktopReady(false);
   setView('workspace');
   syncWorkspaceState();
 
   try {
-    await refreshWorkspace();
+    await refreshWorkspace('', autoOpenFirstNote);
     await loadPinnedPaths();
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Falha ao carregar vault ativo');
+    console.error('Falha ao iniciar vault', error);
+  }
+
+  try {
     await loadTemplates();
   } catch (error) {
-    setView('setup');
-    state.vaultPath = '';
-    showError(error instanceof Error ? error.message : 'Falha ao carregar vault ativo');
+    console.error('Falha ao carregar modelos', error);
   }
+
+  try {
+    await loadAgenda();
+  } catch (error) {
+    console.error('Falha ao carregar agenda', error);
+    showError(error instanceof Error ? error.message : 'Falha ao carregar agenda');
+  } finally {
+    setDesktopReady(true);
+    if (window.marikaDesktop && typeof window.marikaDesktop.markDesktopReady === 'function') {
+      window.marikaDesktop.markDesktopReady();
+    }
+  }
+
+  ensureAgendaReminderPolling();
+}
+
+async function openDesktopDefaultVault(autoOpenFirstNote = true) {
+  sendDebugState('desktopBootstrap.start');
+  const bootstrap = await loadDesktopBootstrap();
+  const vaultRoot = String(bootstrap.vaultRoot ?? startupVaultRoot ?? '').trim();
+
+  if (!vaultRoot) {
+    throw new Error('Vault padrão não configurado');
+  }
+
+  const result = await api('/api/setup', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'open', vaultRoot })
+  });
+
+  sendDebugState('desktopBootstrap.open', {
+    bootstrapVaultRoot: vaultRoot,
+    responseVaultRoot: String(result.vaultRoot ?? vaultRoot)
+  });
+
+  await openVaultFromBootstrap(String(result.vaultRoot ?? vaultRoot), { autoOpenFirstNote });
 }
 
 async function openSearchResult(relativePath) {
   closeSearchDialog();
   setView('workspace');
   try {
-    await loadNote(relativePath);
+    await loadNote(relativePath, { recordActivity: true, kind: 'open' });
   } catch (error) {
     showError(error instanceof Error ? error.message : 'Falha ao abrir resultado');
   }
@@ -935,6 +2327,8 @@ function closeMenus() {
   els.folderContextMenu.classList.remove('open');
   els.noteOptionsMenu?.classList.add('hidden');
   els.noteOptionsButton?.setAttribute('aria-expanded', 'false');
+  closeAgendaOptionsMenu();
+  closeOverviewOptionsMenu();
 }
 
 function openMenu(menu, x, y) {
@@ -1002,12 +2396,30 @@ function showFolderContextMenu(relativePath, x, y) {
 }
 
 function syncWorkspaceState() {
-  const active = Boolean(state.vaultPath);
+  const active = Boolean(getConfiguredVaultRoot());
+  const bootingDesktopVault = isDesktopShell && !active && !desktopBootstrapComplete;
   els.workspaceEmpty.classList.toggle('active', state.view === 'workspace' && !active);
   els.workspaceView.querySelector('.workspace-layout').classList.toggle('active', state.view === 'workspace' && active);
 
+  if (state.view === 'workspace' && bootingDesktopVault) {
+    els.editorStatus.textContent = 'Carregando vault padrao...';
+  }
+
   const disabled = !active;
-  [els.newNoteButton, els.newFolderButton, els.saveButton, els.templatesButton, els.dailyNoteButton, els.desktopSearchButton, els.summaryOverviewButton, els.summaryGraphButton, els.noteOptionsButton].forEach((button) => {
+  [
+    els.sidebarNewNoteButton,
+    els.newNoteButton,
+    els.newFolderButton,
+    els.saveButton,
+    els.templatesButton,
+    els.dailyNoteButton,
+    els.desktopSearchButton,
+    els.summaryOverviewButton,
+    els.summaryGraphButton,
+    els.noteOptionsButton,
+    els.agendaOptionsButton,
+  ].forEach((button) => {
+    if (!button) return;
     button.disabled = disabled;
   });
   els.desktopCommandsButton.disabled = false;
@@ -1032,25 +2444,16 @@ function renderTree(tree) {
   const fileTemplate = document.getElementById('fileTemplate');
   els.tree.innerHTML = '';
 
-  const renderEntry = (entry, container) => {
+  const renderEntry = (entry, container, level = 0) => {
     if (entry.kind === 'folder') {
       const folder = folderTemplate.content.firstElementChild.cloneNode(true);
       const folderPath = normalizeRelativePath(entry.relativePath);
       folder.dataset.path = folderPath;
+      folder.style.setProperty('--tree-level', String(level));
       const nameSpan = folder.querySelector('.folder-name');
-      const countSpan = folder.querySelector('.folder-count');
+      const metaSpan = folder.querySelector('.folder-meta');
       nameSpan.textContent = entry.name;
-      countSpan.textContent = `${entry.children?.length ?? 0} itens`;
-
-      const summary = folder.querySelector('summary');
-      const caret = document.createElement('span');
-      caret.className = 'folder-caret';
-      caret.textContent = '▸';
-      const nameWrap = document.createElement('span');
-      nameWrap.className = 'folder-name-wrap';
-      nameWrap.append(caret, nameSpan);
-      summary.textContent = '';
-      summary.append(nameWrap, countSpan);
+      metaSpan.textContent = `${(entry.children ?? []).length} item(ns)`;
 
       const items = folder.querySelector('.folder-items');
       folder.querySelector('summary').addEventListener('click', () => selectFolder(folderPath));
@@ -1059,50 +2462,8 @@ function renderTree(tree) {
         showFolderContextMenu(folderPath, event.clientX, event.clientY);
       });
       const children = sortEntries(entry.children ?? []);
-      const childFolders = children.filter((child) => child.kind === 'folder');
-      const childFiles = children.filter((child) => child.kind === 'file' && child.name.toLowerCase().endsWith('.md'));
-
-      if (childFolders.length > 0) {
-        const section = document.createElement('div');
-        section.className = 'folder-section';
-        section.innerHTML = '<span class="folder-section-label">Pastas</span>';
-        const sectionList = document.createElement('div');
-        sectionList.className = 'folder-section-list';
-
-        for (const child of childFolders) {
-          renderEntry(child, sectionList);
-        }
-
-        section.appendChild(sectionList);
-        items.appendChild(section);
-      }
-
-      if (childFolders.length > 0 && childFiles.length > 0) {
-        const divider = document.createElement('div');
-        divider.className = 'folder-divider';
-        items.appendChild(divider);
-      }
-
-      if (childFiles.length > 0) {
-        const section = document.createElement('div');
-        section.className = 'folder-section';
-        section.innerHTML = '<span class="folder-section-label">Notas</span>';
-        const sectionList = document.createElement('div');
-        sectionList.className = 'folder-section-list';
-
-        for (const child of childFiles) {
-          renderEntry(child, sectionList);
-        }
-
-        section.appendChild(sectionList);
-        items.appendChild(section);
-      }
-
       for (const child of children) {
-        if (child.kind === 'folder' || (child.kind === 'file' && child.name.toLowerCase().endsWith('.md'))) {
-          continue;
-        }
-        renderEntry(child, items);
+        renderEntry(child, items, level + 1);
       }
 
       container.appendChild(folder);
@@ -1114,11 +2475,11 @@ function renderTree(tree) {
     const filePath = normalizeRelativePath(entry.relativePath);
     const file = fileTemplate.content.firstElementChild.cloneNode(true);
     file.dataset.path = filePath;
-    file.querySelector('.file-name').textContent = fileLabel(filePath);
-    file.querySelector('.file-meta').textContent = '';
+    file.style.setProperty('--tree-level', String(level));
+    file.querySelector('.file-name').textContent = entry.name;
     file.classList.toggle('active', filePath === state.selectedFile);
     file.title = filePath;
-    file.addEventListener('click', () => loadNote(filePath));
+    file.addEventListener('click', () => loadNote(filePath, { recordActivity: true, kind: 'open' }));
     container.appendChild(file);
   };
 
@@ -1128,7 +2489,8 @@ function renderTree(tree) {
 }
 
 async function refreshWorkspace(preferredPath = state.selectedFile, autoOpenFirstNote = true) {
-  if (!state.vaultPath) {
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot) {
     els.tree.innerHTML = '';
     state.selectedFile = '';
     state.selectedFolder = '';
@@ -1141,9 +2503,19 @@ async function refreshWorkspace(preferredPath = state.selectedFile, autoOpenFirs
     return;
   }
 
-  const data = await api(`/api/workspace?vaultRoot=${encodeURIComponent(state.vaultPath)}`);
+  const data = await api(`/api/workspace?vaultRoot=${encodeURIComponent(vaultRoot)}`);
+  if (data?.vaultRoot) {
+    applyActiveVaultRoot(data.vaultRoot);
+  }
   state.tree = data.tree;
   renderTree(data.tree);
+  reconcileVaultScopedState(data.tree);
+  sendDebugState('refreshWorkspace.response', {
+    requestedVaultRoot: vaultRoot,
+    responseVaultRoot: data?.vaultRoot ?? '',
+    responseChildCount: data?.tree?.children?.length ?? null,
+    preferredPath
+  });
 
   if (preferredPath) {
     state.selectedFolder = pathDirectory(preferredPath) || state.selectedFolder;
@@ -1186,9 +2558,10 @@ async function refreshWorkspace(preferredPath = state.selectedFile, autoOpenFirs
   }
 }
 
-async function loadNote(relativePath) {
+async function loadNote(relativePath, options = {}) {
   const normalizedPath = normalizeRelativePath(relativePath);
-  const data = await api(`/api/file?vaultRoot=${encodeURIComponent(state.vaultPath)}&path=${encodeURIComponent(normalizedPath)}`);
+  const vaultRoot = getConfiguredVaultRoot();
+  const data = await api(`/api/file?vaultRoot=${encodeURIComponent(vaultRoot)}&path=${encodeURIComponent(normalizedPath)}`);
   state.selectedFile = normalizeRelativePath(data.path);
   state.selectedFolder = pathDirectory(state.selectedFile);
   els.noteTitle.textContent = fileLabel(state.selectedFile);
@@ -1205,6 +2578,18 @@ async function loadNote(relativePath) {
   updatePinButton();
   await refreshBacklinks();
   await refreshGraph();
+  await loadRelatedData();
+  await loadLinkSuggestions();
+  state.linkPreview = null;
+  renderLinkPreview();
+
+  if (state.view === 'relations') {
+    await refreshGlobalGraph();
+  }
+
+  if (options.recordActivity) {
+    recordActivity(options.kind || 'open', options.title || fileLabel(state.selectedFile), state.selectedFile);
+  }
 }
 
 async function askRelativePath(message, fallback = '') {
@@ -1235,44 +2620,82 @@ async function askMultiline(message, fallback = '') {
   return String(value);
 }
 
-async function activateVault(mode) {
-  let vaultRoot = els.vaultPathInput.value.trim();
-
-  if (!vaultRoot) {
-    vaultRoot = 'C:\\MarikaVault';
-    els.vaultPathInput.value = vaultRoot;
-    els.setupHint.textContent = 'Usando o caminho padrão do vault.';
+async function startVault() {
+  const activeVaultRoot = getConfiguredVaultRoot();
+  if (desktopBootstrapPromise && !desktopBootstrapComplete) {
+    await desktopBootstrapPromise.catch(() => null);
+    const resolvedVaultRoot = getConfiguredVaultRoot();
+    if (resolvedVaultRoot) return;
   }
 
-  const valid = isValidVaultPath(vaultRoot);
-  updateVault(vaultRoot);
-  if (!valid) return;
+  if (isDesktopShell) {
+    await openDesktopDefaultVault(true);
+    els.setupHint.textContent = `Vault padrão aberto em ${getConfiguredVaultRoot()}.`;
+    return;
+  }
+
+  const bootstrap = await loadDesktopBootstrap();
+  const requestedVaultRoot = els.vaultPathInput.value.trim();
+  const currentVaultRoot = activeVaultRoot || String(bootstrap.vaultRoot ?? '').trim() || state.defaultVaultPath || '';
+  const vaultRoot = isDesktopShell
+    ? String(bootstrap.vaultRoot ?? currentVaultRoot).trim()
+    : (activeVaultRoot ? currentVaultRoot : (requestedVaultRoot || currentVaultRoot));
+
+  if (!vaultRoot) {
+    throw new Error('Vault padrão ainda não carregado');
+  }
 
   const result = await api('/api/setup', {
     method: 'POST',
-    body: JSON.stringify({ vaultRoot, action: mode })
+    body: JSON.stringify({ action: 'open', vaultRoot })
   });
 
-  state.vaultPath = result.vaultRoot;
-  els.setupHint.textContent = mode === 'create'
-    ? `Vault preparado em ${result.vaultRoot}.`
-    : `Vault aberto em ${result.vaultRoot}.`;
-  setView('workspace');
-  syncWorkspaceState();
-  await refreshWorkspace();
-  await loadPinnedPaths();
-  await loadTemplates();
+  await openVaultFromBootstrap(String(result.vaultRoot ?? vaultRoot));
+  els.setupHint.textContent = `Vault padrão aberto em ${vaultRoot}.`;
+}
+
+async function ensureActiveVaultReady(actionLabel) {
+  const activeVaultRoot = getConfiguredVaultRoot();
+  if (activeVaultRoot) return activeVaultRoot;
+
+  if (isDesktopShell) {
+    await startVault();
+    const resolvedVaultRoot = getConfiguredVaultRoot();
+    if (resolvedVaultRoot) return resolvedVaultRoot;
+  }
+
+  throw new Error(`Aguarde o vault padrao terminar de abrir antes de ${actionLabel}.`);
+}
+
+function beginDesktopBootstrap() {
+  if (!isDesktopShell || desktopBootstrapPromise) return;
+
+  desktopBootstrapPromise = (async () => {
+    try {
+      await openDesktopDefaultVault(true);
+    } catch (error) {
+      showError(error instanceof Error ? error.message : 'Falha ao iniciar interface');
+      sendDebugState('desktopBootstrap.error', {
+        message: error instanceof Error ? error.message : 'Falha ao iniciar interface'
+      });
+    } finally {
+      desktopBootstrapComplete = true;
+      syncWorkspaceState();
+    }
+  })();
 }
 
 async function createFolder() {
+  const vaultRoot = await ensureActiveVaultReady('criar uma pasta');
   const base = containerForSelection();
   const name = await askRelativePath('Nova pasta', 'Nova Pasta');
   if (!name) return;
   const value = joinRelativePath(base, name);
+  sendDebugState('createFolder.before', { vaultRoot, path: value, base });
 
   await api('/api/folder', {
     method: 'POST',
-    body: JSON.stringify({ vaultRoot: state.vaultPath, path: value })
+    body: JSON.stringify({ vaultRoot, path: value })
   });
 
   state.selectedFolder = normalizeRelativePath(value);
@@ -1280,11 +2703,13 @@ async function createFolder() {
 }
 
 async function createNote() {
+  const vaultRoot = await ensureActiveVaultReady('criar uma nota');
   const base = containerForSelection();
   const name = await askRelativePath('Nova nota', 'nova-nota');
   if (!name) return;
   const fileName = name.toLowerCase().endsWith('.md') ? name : `${name}.md`;
   const pathValue = joinRelativePath(base, fileName);
+  sendDebugState('createNote.before', { vaultRoot, path: pathValue, base });
 
   const fallbackContent = state.selectedTemplate?.content ?? '# Nova nota\n\n';
   const content = await askMultiline(
@@ -1294,12 +2719,15 @@ async function createNote() {
   if (content === null) return;
   await api('/api/file', {
     method: 'POST',
-    body: JSON.stringify({ vaultRoot: state.vaultPath, path: pathValue, content, operation: 'create' })
+    body: JSON.stringify({ vaultRoot, path: pathValue, content, operation: 'create' })
   });
 
   state.selectedFolder = pathDirectory(pathValue);
+  recordActivity('create', `Criada ${fileLabel(pathValue)}`, pathValue);
   await refreshWorkspace(pathValue);
 }
+
+beginDesktopBootstrap();
 
 async function saveCurrentAsTemplate() {
   if (!state.selectedFile) return;
@@ -1315,10 +2743,11 @@ async function confirmTemplateSave() {
   const baseTemplate = baseIndex === '' ? null : state.templates[Number(baseIndex)] ?? null;
   const templatePath = joinRelativePath('Templates', templateName.toLowerCase().endsWith('.md') ? templateName : `${templateName}.md`);
   const content = els.templatePickerContent.value || baseTemplate?.content || els.noteEditor.value || '';
+  const vaultRoot = getConfiguredVaultRoot();
 
   await api('/api/file', {
     method: 'POST',
-    body: JSON.stringify({ vaultRoot: state.vaultPath, path: templatePath, content, operation: 'create' })
+    body: JSON.stringify({ vaultRoot, path: templatePath, content, operation: 'create' })
   });
 
   els.templatePickerDialog.close();
@@ -1340,35 +2769,51 @@ async function togglePinSelectedNote() {
 }
 
 async function openDailyNote() {
-  if (!state.vaultPath) return;
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot) return;
 
-  const data = await api(`/api/daily?vaultRoot=${encodeURIComponent(state.vaultPath)}`);
+  const data = await api(`/api/daily?vaultRoot=${encodeURIComponent(vaultRoot)}`);
   setView('workspace');
+  recordActivity('daily', 'Nota diária aberta', String(data.path ?? ''));
   await refreshWorkspace(data.path);
 }
 
 async function saveNote() {
   if (!state.selectedFile) return;
 
+  const vaultRoot = getConfiguredVaultRoot();
+  if (!vaultRoot) {
+    showError('Abra um vault antes de salvar notas.');
+    return;
+  }
+
   await api('/api/file', {
     method: 'POST',
-    body: JSON.stringify({ vaultRoot: state.vaultPath, path: state.selectedFile, content: els.noteEditor.value, operation: 'edit' })
+    body: JSON.stringify({ vaultRoot, path: state.selectedFile, content: els.noteEditor.value, operation: 'edit' })
   });
 
   els.editorStatus.textContent = `Salvo em ${state.selectedFile}`;
-  await refreshWorkspace(state.selectedFile);
+  recordActivity('save', `Salva ${fileLabel(state.selectedFile)}`, state.selectedFile);
+
+  if (state.selectedFile.startsWith('Agenda/')) {
+    await loadAgenda();
+  } else {
+    renderOverviewDashboard();
+  }
 }
 
 async function renameNote() {
   if (!state.selectedFile) return;
   const nextPath = await askRelativePath('Renomear', state.selectedFile);
   if (!nextPath) return;
+  const vaultRoot = getConfiguredVaultRoot();
 
   await api('/api/rename', {
     method: 'POST',
-    body: JSON.stringify({ vaultRoot: state.vaultPath, source: state.selectedFile, destination: normalizeRelativePath(nextPath) })
+    body: JSON.stringify({ vaultRoot, source: state.selectedFile, destination: normalizeRelativePath(nextPath) })
   });
 
+  recordActivity('rename', `Renomeada ${fileLabel(nextPath)}`, nextPath);
   await refreshWorkspace(normalizeRelativePath(nextPath));
 }
 
@@ -1376,12 +2821,14 @@ async function moveNote() {
   if (!state.selectedFile) return;
   const nextPath = await askRelativePath('Mover', state.selectedFile);
   if (!nextPath) return;
+  const vaultRoot = getConfiguredVaultRoot();
 
   await api('/api/move', {
     method: 'POST',
-    body: JSON.stringify({ vaultRoot: state.vaultPath, source: state.selectedFile, destination: normalizeRelativePath(nextPath) })
+    body: JSON.stringify({ vaultRoot, source: state.selectedFile, destination: normalizeRelativePath(nextPath) })
   });
 
+  recordActivity('move', `Movida ${fileLabel(nextPath)}`, nextPath);
   await refreshWorkspace(normalizeRelativePath(nextPath));
 }
 
@@ -1394,6 +2841,29 @@ els.viewButtons.forEach((button) => {
 
     if (button.dataset.view === 'guide') {
       void openGuideDialog();
+      return;
+    }
+
+    if (button.dataset.view === 'agenda') {
+      setView('agenda');
+      void loadAgenda().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao carregar agenda'));
+      ensureAgendaReminderPolling();
+      return;
+    }
+
+    if (button.dataset.view === 'relations') {
+      void openRelationsView().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao carregar relações'));
+      return;
+    }
+
+    if (button.dataset.view === 'workspace' && !getConfiguredVaultRoot()) {
+      void startVault()
+        .catch((error) => showError(error instanceof Error ? error.message : 'Falha ao iniciar vault'))
+        .then(() => {
+          if (!getConfiguredVaultRoot()) {
+            setView('setup');
+          }
+        });
       return;
     }
 
@@ -1438,11 +2908,16 @@ els.desktopCommandsButton.addEventListener('click', openCommandsDialog);
 els.templatesButton.addEventListener('click', () => { openTemplatesDialog().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir modelos')); });
 els.dailyNoteButton.addEventListener('click', () => { openDailyNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir nota diária')); });
 els.desktopSearchButton.addEventListener('click', openSearchDialog);
-els.createVaultButton.addEventListener('click', () => { activateVault('create').catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar vault')); });
-els.openVaultButton.addEventListener('click', () => { activateVault('open').catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir vault')); });
-els.openWorkspaceButton.addEventListener('click', () => setView('workspace'));
-els.emptyCreateVaultButton.addEventListener('click', () => { activateVault('create').catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar vault')); });
-els.emptyOpenVaultButton.addEventListener('click', () => { activateVault('open').catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir vault')); });
+els.startVaultButton.addEventListener('click', () => { startVault().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao iniciar vault')); });
+els.openWorkspaceButton.addEventListener('click', () => {
+  if (!getConfiguredVaultRoot()) {
+    void startVault().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao iniciar vault'));
+    return;
+  }
+
+  setView('workspace');
+});
+els.emptyStartVaultButton.addEventListener('click', () => { startVault().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao iniciar vault')); });
 document.querySelectorAll('[data-quick-action]').forEach((button) => {
   button.addEventListener('click', () => {
     const action = button.getAttribute('data-quick-action');
@@ -1450,9 +2925,45 @@ document.querySelectorAll('[data-quick-action]').forEach((button) => {
       void createNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota'));
       return;
     }
+    if (action === 'create-agenda') {
+      if (!getConfiguredVaultRoot()) {
+        void startVault().then(() => {
+          setView('agenda');
+          els.agendaTitleInput.focus();
+        }).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao iniciar vault'));
+        return;
+      }
+
+      setView('agenda');
+      els.agendaTitleInput.focus();
+      return;
+    }
+    if (action === 'agenda') {
+      if (!getConfiguredVaultRoot()) {
+        void startVault().then(() => {
+          setView('agenda');
+          void loadAgenda().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao carregar agenda'));
+          ensureAgendaReminderPolling();
+        }).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao iniciar vault'));
+        return;
+      }
+
+      setView('agenda');
+      void loadAgenda().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao carregar agenda'));
+      ensureAgendaReminderPolling();
+      return;
+    }
+    if (action === 'relations') {
+      if (!getConfiguredVaultRoot()) {
+        void startVault().then(() => openRelationsView()).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao iniciar vault'));
+        return;
+      }
+
+      void openRelationsView().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao carregar relações'));
+      return;
+    }
     if (action === 'graph') {
-      setView('workspace');
-      setSummaryMode('graph');
+      void openRelationsView().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir graph'));
       return;
     }
     if (action === 'commands') {
@@ -1462,6 +2973,12 @@ document.querySelectorAll('[data-quick-action]').forEach((button) => {
 });
 els.newNoteButton.addEventListener('click', () => { createNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota')); });
 els.newFolderButton.addEventListener('click', () => { createFolder().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar pasta')); });
+els.relationsRefreshButton?.addEventListener('click', () => { refreshRelationsSurface().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar relações')); });
+els.relationsOpenSelectedButton?.addEventListener('click', () => {
+  if (state.selectedFile) {
+    void loadNote(state.selectedFile, { recordActivity: true, kind: 'open' }).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir nota'));
+  }
+});
 els.noteOptionsButton?.addEventListener('click', (event) => {
   event.stopPropagation();
   toggleNoteOptionsMenu();
@@ -1477,6 +2994,7 @@ els.noteOptionsMenu?.addEventListener('click', (event) => {
   if (action === 'save-template') void saveCurrentAsTemplate().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao salvar modelo'));
   if (action === 'rename-note') void renameNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao renomear'));
   if (action === 'move-note') void moveNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao mover'));
+  if (action === 'open-relations') void openRelationsView().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir relações'));
 });
 els.quickMenu.addEventListener('click', (event) => {
   event.stopPropagation();
@@ -1567,13 +3085,149 @@ els.pinnedList.addEventListener('click', (event) => {
   const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
   if (!(target instanceof HTMLElement)) return;
   const path = target.dataset.path;
-  if (path) void loadNote(path);
+  if (path) void loadNote(path, { recordActivity: true, kind: 'open' });
 });
 els.backlinksList.addEventListener('click', (event) => {
   const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
   if (!(target instanceof HTMLElement)) return;
   const path = target.dataset.path;
-  if (path) void loadNote(path);
+  if (path) void loadNote(path, { recordActivity: true, kind: 'open' });
+});
+els.manualLinksList.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
+  if (!(target instanceof HTMLElement)) return;
+  const path = target.dataset.path;
+  if (path) void loadNote(path, { recordActivity: true, kind: 'open' });
+});
+els.relatedList.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
+  if (!(target instanceof HTMLElement)) return;
+  const path = target.dataset.path;
+  if (path) void loadNote(path, { recordActivity: true, kind: 'open' });
+});
+els.relationsManualLinksList.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
+  if (!(target instanceof HTMLElement)) return;
+  const path = target.dataset.path;
+  if (path) {
+    setView('workspace');
+    void loadNote(path, { recordActivity: true, kind: 'open' });
+  }
+});
+els.relationsRelatedList.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
+  if (!(target instanceof HTMLElement)) return;
+  const path = target.dataset.path;
+  if (path) {
+    setView('workspace');
+    void loadNote(path, { recordActivity: true, kind: 'open' });
+  }
+});
+els.linkSuggestionsList.addEventListener('click', (event) => {
+  const button = event.target instanceof HTMLElement ? event.target.closest('[data-action]') : null;
+  if (!(button instanceof HTMLElement)) return;
+  const targetPath = button.dataset.targetPath;
+  const applicationMode = button.dataset.applicationMode === 'inline' ? 'inline' : 'section';
+
+  if (button.dataset.action === 'preview-link' && targetPath) {
+    void loadLinkPreview(targetPath, applicationMode).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao gerar preview'));
+    return;
+  }
+
+  if (button.dataset.action === 'apply-link' && targetPath) {
+    void applyPreviewLink(targetPath, applicationMode).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao aplicar link'));
+    return;
+  }
+
+  if (button.dataset.action === 'apply-preview-link' && targetPath) {
+    void applyPreviewLink(targetPath, applicationMode).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao aplicar preview'));
+  }
+});
+els.graphGlobalStage.addEventListener('pointerdown', (event) => {
+  const node = getGlobalGraphNode(event.target);
+  if (node) return;
+
+  graphGlobalScene.hoverPath = '';
+  graphGlobalScene.dragging = true;
+  graphGlobalScene.moved = false;
+  graphGlobalScene.startX = event.clientX;
+  graphGlobalScene.startY = event.clientY;
+  startGlobalGraphDrag(event.clientX, event.clientY);
+  els.graphGlobalStage.setPointerCapture(event.pointerId);
+});
+els.graphGlobalStage.addEventListener('pointermove', (event) => {
+  if (graphGlobalViewport.dragging) {
+    const dx = Math.abs(event.clientX - graphGlobalScene.startX);
+    const dy = Math.abs(event.clientY - graphGlobalScene.startY);
+    if (dx > 2 || dy > 2) {
+      graphGlobalScene.moved = true;
+    }
+    moveGlobalGraphDrag(event.clientX, event.clientY);
+    return;
+  }
+
+  const node = getGlobalGraphNode(event.target);
+  const path = node?.dataset.path || '';
+  if (path !== graphGlobalScene.hoverPath) {
+    graphGlobalScene.hoverPath = path;
+    renderGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+  }
+});
+els.graphGlobalStage.addEventListener('pointerleave', () => {
+  graphGlobalScene.hoverPath = '';
+  renderGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+});
+els.graphGlobalStage.addEventListener('pointerup', () => {
+  graphGlobalScene.dragging = false;
+  graphGlobalScene.moved = false;
+  stopGlobalGraphDrag();
+});
+els.graphGlobalStage.addEventListener('pointercancel', () => {
+  graphGlobalScene.dragging = false;
+  graphGlobalScene.moved = false;
+  stopGlobalGraphDrag();
+});
+els.graphGlobalStage.addEventListener('wheel', (event) => {
+  event.preventDefault();
+  const delta = event.deltaY > 0 ? -0.08 : 0.08;
+  zoomGlobalGraph(delta);
+  renderGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+}, { passive: false });
+els.graphGlobalStage.addEventListener('dblclick', () => {
+  resetGlobalGraphViewport();
+  renderGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+});
+els.graphGlobalSphere.addEventListener('click', (event) => {
+  const node = getGlobalGraphNode(event.target);
+  if (!node || graphGlobalScene.moved) return;
+
+  const selected = (graphGlobalScene.lastGraph?.nodes ?? []).find((entry) => entry.path === node.dataset.path);
+  openGlobalGraphNode(selected ?? null);
+});
+els.graphGlobalSphere.addEventListener('pointerover', (event) => {
+  const node = getGlobalGraphNode(event.target);
+  const path = node?.dataset.path || '';
+  if (path !== graphGlobalScene.hoverPath) {
+    graphGlobalScene.hoverPath = path;
+    renderGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+  }
+});
+els.graphGlobalSphere.addEventListener('pointerout', (event) => {
+  const related = event.relatedTarget instanceof HTMLElement ? event.relatedTarget.closest('.graph-global-node') : null;
+  if (related) return;
+  if (!graphGlobalViewport.dragging && graphGlobalScene.hoverPath) {
+    graphGlobalScene.hoverPath = '';
+    renderGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+  }
+});
+els.graphGlobalSphere.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const node = getGlobalGraphNode(event.target);
+  if (!node) return;
+
+  event.preventDefault();
+  const selected = (graphGlobalScene.lastGraph?.nodes ?? []).find((entry) => entry.path === node.dataset.path);
+  openGlobalGraphNode(selected ?? null);
 });
 els.templatesDialogClose.addEventListener('click', () => els.templatesDialog.close());
 els.templatesDialog.addEventListener('cancel', (event) => {
@@ -1598,20 +3252,125 @@ els.templatePickerSelect.addEventListener('change', () => {
   els.templatePickerContent.value = baseTemplate?.content ?? els.noteEditor.value ?? '';
 });
 els.aiDialogClose.addEventListener('click', closeAiDialog);
+els.overviewOptionsButton.addEventListener('click', (event) => {
+  event.stopPropagation();
+  toggleOverviewOptionsMenu();
+});
+els.agendaForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  void createAgendaNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota com data'));
+});
+document.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest('#agendaCreateButton') : null;
+  if (!(target instanceof HTMLElement)) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  void createAgendaNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota com data'));
+});
+els.agendaResetButton.addEventListener('click', () => {
+  els.agendaTitleInput.value = '';
+  els.agendaBodyInput.value = '';
+  els.agendaStatusInput.value = 'pending';
+  els.agendaDueInput.value = formatAgendaInputValue(new Date(Date.now() + (60 * 60 * 1000)));
+});
+els.agendaOptionsButton.addEventListener('click', (event) => {
+  event.stopPropagation();
+  toggleAgendaOptionsMenu();
+});
+els.agendaOptionsPanel.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const target = event.target instanceof HTMLElement ? event.target.closest('[data-agenda-action], [data-agenda-filter]') : null;
+  if (!(target instanceof HTMLElement)) return;
+
+  const action = target.dataset.agendaAction;
+  const filter = target.dataset.agendaFilter;
+
+  if (action === 'refresh') {
+    closeAgendaOptionsMenu();
+    void loadAgenda().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar agenda'));
+    return;
+  }
+
+  if (action === 'focus-form') {
+    closeAgendaOptionsMenu();
+    els.agendaTitleInput.focus();
+    return;
+  }
+
+  if (filter) {
+    state.agendaFilter = filter;
+    closeAgendaOptionsMenu();
+    renderAgendaList();
+  }
+});
+els.agendaList.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest('[data-action]') : null;
+  const item = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
+  if (!(item instanceof HTMLElement) || !(target instanceof HTMLElement)) return;
+  const pathValue = item.dataset.path;
+  const action = target.dataset.action;
+  const agendaItem = state.agendaItems.find((entry) => entry.path === pathValue);
+  if (!pathValue || !agendaItem) return;
+  if (action === 'open') void openAgendaItem(pathValue).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir nota da agenda'));
+  if (action === 'toggle') void toggleAgendaItemStatus(pathValue, agendaItem.status).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar status'));
+});
+els.overviewDueList?.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
+  if (!(target instanceof HTMLElement)) return;
+  const pathValue = target.dataset.path;
+  if (pathValue) void openAgendaItem(pathValue).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir prazo'));
+});
+els.overviewRecentList?.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
+  if (!(target instanceof HTMLElement)) return;
+  const pathValue = target.dataset.path;
+  if (pathValue) void loadNote(pathValue, { recordActivity: true, kind: 'open' }).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir atividade'));
+});
 els.noteEditor.addEventListener('input', () => {
   els.editorStatus.textContent = 'Alterações não salvas.';
 });
 
-updateVault(state.vaultPath);
-setView('setup');
+state.recentActivity = loadRecentActivity();
+els.agendaDueInput.value = formatAgendaInputValue(new Date(Date.now() + (60 * 60 * 1000)));
+state.agendaReminderKeys = loadAgendaReminderKeys();
+
+updateVault(getConfiguredVaultRoot());
+setView(startupView);
+setDesktopReady(false);
 syncWorkspaceState();
 setSummaryMode('overview');
 startProjectSlide();
 updateVaultSummary(null);
+renderOverviewDashboard();
 restoreAiLauncherPosition();
 window.addEventListener('resize', () => {
   applyAiLauncherPosition(aiLauncherState.offsetX, aiLauncherState.offsetY);
+  if (state.view === 'relations') {
+    renderGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+  }
 });
+
+window.addEventListener('marika:agenda-saved', (event) => {
+  const detail = event instanceof CustomEvent ? event.detail : null;
+  if (detail?.path) {
+    void refreshAfterVaultChange(detail).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar vault'));
+  }
+});
+
+if (window.marikaDesktop && typeof window.marikaDesktop.onAgendaSaved === 'function') {
+  window.marikaDesktop.onAgendaSaved((payload) => {
+    if (!payload?.path) return;
+    void refreshAfterVaultChange(payload).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar vault'));
+  });
+}
+
+if (window.marikaDesktop && typeof window.marikaDesktop.onVaultChanged === 'function') {
+  window.marikaDesktop.onVaultChanged((payload) => {
+    void refreshAfterVaultChange(payload).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar vault'));
+  });
+}
 
 if (!localStorage.getItem('marika-ai-popup-seen')) {
   setTimeout(() => {
@@ -1621,11 +3380,3 @@ if (!localStorage.getItem('marika-ai-popup-seen')) {
     }
   }, 400);
 }
-
-api('/api/bootstrap')
-  .then((bootstrap) => {
-    if (bootstrap.vaultRoot) {
-      void openVaultFromBootstrap(String(bootstrap.vaultRoot));
-    }
-  })
-  .catch((error) => showError(error instanceof Error ? error.message : 'Falha ao iniciar interface'));

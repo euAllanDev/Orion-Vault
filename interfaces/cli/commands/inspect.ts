@@ -7,10 +7,10 @@ export interface InspectCommandOptions {
   readonly vaultRoot?: string;
 }
 
-export async function executeInspectCommand(options: InspectCommandOptions): Promise<void> {
+export async function executeInspectCommand(_options: InspectCommandOptions): Promise<void> {
   const config = loadAppConfig();
   const service = new VaultVerificationService(new NodeVaultScanner());
-  const report = await service.verify(options.vaultRoot ?? config.vaultRoot);
+  const report = await service.verify(config.vaultRoot);
 
   presentVaultInspection(report);
 }

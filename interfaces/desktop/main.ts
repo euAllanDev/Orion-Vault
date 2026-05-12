@@ -1,7 +1,10 @@
-import { app, BrowserWindow, ipcMain, session } from 'electron';
+import { app, BrowserWindow, Notification, ipcMain, session } from 'electron';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadAppConfig } from '../../infra/config/app-config';
+import { NodeVaultWorkspace } from '../../infra/filesystem/workspace/node-vault-workspace';
 import { startWebServer } from '../web/server';
 
 const desktopShell = {
@@ -19,19 +22,81 @@ const desktopShell = {
 } as const;
 
 const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url));
+const agendaReminderSoundPath = 'C:\\Users\\as409\\Marika\\sounds\\notificacao_lembrete_premium_leve (online-audio-converter.com).mp3';
+const appConfig = loadAppConfig();
+
+function getDesktopVaultRoot(): string {
+  return appConfig.vaultRoot;
+}
+
+const desktopWorkspace = new NodeVaultWorkspace();
+const desktopWebOptions: { desktopSessionPath?: string; activeVaultRoot?: string } = {
+  activeVaultRoot: getDesktopVaultRoot()
+};
 
 let mainWindow: BrowserWindow | null = null;
 let webServer: Awaited<ReturnType<typeof startWebServer>>['server'] | null = null;
 let desktopUrl = 'http://127.0.0.1:4173';
+let desktopPort = 4173;
 const appRoot = path.resolve(process.cwd());
+let desktopWindowReady = false;
 
 app.commandLine.appendSwitch('disable-http-cache');
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 function getDesktopSessionPath(): string {
   return path.join(app.getPath('userData'), 'desktop-session.json');
 }
 
+async function normalizeDesktopSessionFile(sessionPath: string): Promise<void> {
+  let pinnedPaths: string[] = [];
+
+  try {
+    const raw = await fs.readFile(sessionPath, 'utf8');
+    const parsed = JSON.parse(raw) as { pinnedPaths?: unknown };
+    if (Array.isArray(parsed.pinnedPaths)) {
+      pinnedPaths = parsed.pinnedPaths.map((value) => String(value).replace(/\\/g, '/').trim()).filter(Boolean);
+    }
+  } catch {
+    pinnedPaths = [];
+  }
+
+  await fs.mkdir(path.dirname(sessionPath), { recursive: true });
+  await fs.writeFile(sessionPath, JSON.stringify({ vaultRoot: getDesktopVaultRoot(), pinnedPaths }, null, 2), 'utf8');
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function getAgendaReminderSoundDataUrl(): Promise<string | null> {
+  const candidates = [
+    agendaReminderSoundPath,
+    path.join(appRoot, 'sounds', 'notificacao_lembrete_premium_leve.wav')
+  ];
+
+  for (const soundPath of candidates) {
+    if (!(await fileExists(soundPath))) continue;
+
+    const data = await fs.readFile(soundPath);
+    const ext = path.extname(soundPath).toLowerCase();
+    const mime = ext === '.wav' ? 'audio/wav' : 'audio/mpeg';
+    return `data:${mime};base64,${data.toString('base64')}`;
+  }
+
+  return null;
+}
+
 function createWindow(): BrowserWindow {
+  const startupUrl = new URL(desktopUrl);
+  startupUrl.searchParams.set('shell', 'desktop');
+  startupUrl.searchParams.set('vaultRoot', getDesktopVaultRoot());
+
   const window = new BrowserWindow({
     width: desktopShell.defaultWindow.width,
     height: desktopShell.defaultWindow.height,
@@ -39,6 +104,7 @@ function createWindow(): BrowserWindow {
     minHeight: desktopShell.defaultWindow.minHeight,
     backgroundColor: '#141518',
     title: desktopShell.title,
+    show: false,
     titleBarStyle: 'default',
     webPreferences: {
       contextIsolation: true,
@@ -47,7 +113,7 @@ function createWindow(): BrowserWindow {
     }
   });
 
-  window.loadURL(desktopUrl).catch((error) => {
+  window.loadURL(startupUrl.toString()).catch((error) => {
     console.error('Failed to load Marika desktop UI', error);
   });
 
@@ -60,11 +126,45 @@ function createWindow(): BrowserWindow {
   return window;
 }
 
+async function waitForWorkspaceReady(window: BrowserWindow, timeoutMs = 10000): Promise<void> {
+  const startedAt = Date.now();
+
+  while (!window.isDestroyed() && Date.now() - startedAt < timeoutMs) {
+    try {
+      const ready = await window.webContents.executeJavaScript(`(() => {
+        const body = document.body;
+        const workspaceEmpty = document.getElementById('workspaceEmpty');
+        return Boolean(body && body.dataset.view === 'workspace' && body.dataset.desktopReady === 'true' && workspaceEmpty && !workspaceEmpty.classList.contains('active'));
+      })()`, true);
+
+      if (ready) {
+        window.show();
+        window.focus();
+        return;
+      }
+    } catch {
+      // keep waiting until the web app is ready
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+
+  if (!window.isDestroyed()) {
+    window.show();
+  }
+}
+
+function revealDesktopWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || !desktopWindowReady) return;
+  mainWindow.show();
+  mainWindow.focus();
+}
+
 function openPowerShellInDirectory(cwd: string, vaultRoot: string): void {
   const systemRoot = process.env.SystemRoot ?? 'C:\\Windows';
   const powerShellPath = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   const startupScript = path.join(appRoot, 'scripts', 'start-ai-terminal.ps1');
-  const wtCommand = ['new-tab', '--title', 'Marika AI', '--startingDirectory', appRoot, 'powershell.exe', '-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', startupScript, '-AppRoot', appRoot, '-VaultRoot', vaultRoot];
+  const wtCommand = ['new-tab', '--title', 'Marika AI', '--startingDirectory', cwd, 'powershell.exe', '-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', startupScript, '-AppRoot', appRoot, '-VaultRoot', vaultRoot];
   const env = { ...process.env, MARIKA_VAULT_ROOT: vaultRoot };
 
   const tryWindowsTerminal = (): boolean => {
@@ -116,19 +216,85 @@ function openPowerShellInDirectory(cwd: string, vaultRoot: string): void {
   }
 }
 
-ipcMain.handle('ai-terminal:open', (_event, requestedVaultRoot?: string) => {
-  const vaultRoot = requestedVaultRoot && requestedVaultRoot.trim() ? path.resolve(requestedVaultRoot) : appRoot;
-  openPowerShellInDirectory(appRoot, vaultRoot);
-  return { cwd: appRoot, vaultRoot };
+ipcMain.handle('ai-terminal:open', (_event, _requestedVaultRoot?: string) => {
+  const vaultRoot = getDesktopVaultRoot();
+  openPowerShellInDirectory(vaultRoot, vaultRoot);
+  return { cwd: vaultRoot, vaultRoot };
+});
+
+ipcMain.handle('agenda:notify', async (_event, payload?: { title?: string; body?: string }) => {
+  const title = String(payload?.title ?? 'Lembrete');
+  const body = String(payload?.body ?? '');
+  const soundDataUrl = await getAgendaReminderSoundDataUrl();
+  if (soundDataUrl) {
+    mainWindow?.webContents.send('agenda:notify-sound', { src: soundDataUrl });
+  }
+  if (Notification.isSupported()) {
+    new Notification({ title, body, silent: true }).show();
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('agenda:play-sound', async () => {
+  const soundDataUrl = await getAgendaReminderSoundDataUrl();
+  if (soundDataUrl) {
+    mainWindow?.webContents.send('agenda:notify-sound', { src: soundDataUrl });
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('agenda:create', async (_event, payload?: { vaultRoot?: string; path?: string; content?: string }) => {
+  const vaultRoot = getDesktopVaultRoot();
+  const filePath = String(payload?.path ?? '').trim();
+  const content = String(payload?.content ?? '');
+
+  if (!vaultRoot) {
+    throw new Error('Vault root is required');
+  }
+
+  if (!filePath) {
+    throw new Error('Agenda path is required');
+  }
+
+  await desktopWorkspace.createMarkdownFile(vaultRoot, filePath, content);
+  mainWindow?.webContents.send('agenda:saved', { vaultRoot, path: filePath });
+  mainWindow?.webContents.send('vault:changed', { vaultRoot, path: filePath, kind: 'agenda' });
+  return { ok: true, vaultRoot, path: filePath };
+});
+
+ipcMain.handle('vault:activate', async (_event, vaultRoot?: string) => {
+  void vaultRoot;
+  desktopWebOptions.activeVaultRoot = getDesktopVaultRoot();
+  return { ok: true, vaultRoot: getDesktopVaultRoot() };
+});
+
+ipcMain.on('desktop:ready', (event) => {
+  if (mainWindow && event.sender.id === mainWindow.webContents.id) {
+    desktopWindowReady = true;
+    revealDesktopWindow();
+  }
 });
 
 async function startDesktop(): Promise<void> {
   const sessionPath = getDesktopSessionPath();
   await session.defaultSession.clearCache();
-  const started = await startWebServer(0, { desktopSessionPath: sessionPath });
+  await normalizeDesktopSessionFile(sessionPath);
+  desktopWebOptions.desktopSessionPath = sessionPath;
+  const started = await startWebServer(0, desktopWebOptions);
   webServer = started.server;
   desktopUrl = `http://127.0.0.1:${started.port}`;
+  desktopPort = started.port;
+  desktopWindowReady = false;
   mainWindow = createWindow();
+  const window = mainWindow;
+
+  window?.webContents.once('did-finish-load', () => {
+    setTimeout(() => {
+      if (!desktopWindowReady && window && !window.isDestroyed()) {
+        window.show();
+      }
+    }, 15000);
+  });
 }
 
 app.setName(desktopShell.appName);
@@ -139,7 +305,7 @@ app.whenReady().then(() => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    mainWindow = createWindow();
+    void startDesktop();
   }
 });
 

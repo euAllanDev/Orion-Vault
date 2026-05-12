@@ -1,0 +1,7 @@
+- [ ] Definir a representação vetorial local de cada nota
+- [ ] Construir índice incremental de relações e sinais de similaridade
+- [ ] Adicionar comando `related` para listar notas relacionadas com score e motivo
+- [ ] Renderizar links manuais como navegação clicável na interface
+- [ ] Expor sugestões de links automáticos com preview antes de editar o markdown
+- [ ] Adicionar graph global com notas, pastas e escala visual frio-quente
+- [ ] Validar performance, legibilidade visual e comportamento local-first

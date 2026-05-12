@@ -7,6 +7,7 @@ Lista de changes OpenSpec registradas no projeto.
 - `vault-interface` - draft
 - `desktop-app` - draft
 - `ai-cli-bridge` - draft
+- `semantic-note-links` - draft
 
 ## Modules
 - `domain/notes`

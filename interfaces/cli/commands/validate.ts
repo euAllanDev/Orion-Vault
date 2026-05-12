@@ -6,10 +6,10 @@ export interface ValidateCommandOptions {
   readonly vaultRoot?: string;
 }
 
-export async function executeValidateCommand(options: ValidateCommandOptions): Promise<void> {
+export async function executeValidateCommand(_options: ValidateCommandOptions): Promise<void> {
   const config = loadAppConfig();
   const service = new VaultVerificationService(new NodeVaultScanner());
-  const report = await service.verify(options.vaultRoot ?? config.vaultRoot);
+  const report = await service.verify(config.vaultRoot);
 
   console.log(`Vault valid: ${report.issues.length === 0 ? 'yes' : 'no'}`);
   console.log(`Vault: ${report.vaultRoot}`);

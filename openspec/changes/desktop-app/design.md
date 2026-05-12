@@ -10,13 +10,20 @@ O app desktop é um shell instalável em TypeScript com estética dark, tátil e
 - `interfaces/desktop` e `interfaces/web`: janela, navegação, apresentação e eventos de UI
 
 ## Superfície do app
-- tela de setup com criação/abertura do vault
+- tela de setup/home com criação/abertura do vault como fallback
 - workspace com árvore, editor central e painel auxiliar
 - busca global local
 - graph view local
 - painel de comandos agrupados por intenção
 - launcher e onboarding da IA local
 - cards de métricas, novidades e estado do vault
+
+Na experiência desktop, o workspace deve ser a primeira superfície visível quando o vault ativo já existir; `Home` fica como resumo/fallback e entrada de recuperação.
+
+## Linguagem visual
+- superfícies e painéis principais usam o tom base `#131316`
+- a cor dos painéis deve permanecer consistente entre workspace, editor e telas auxiliares
+- contrastes e acentos continuam vindo da paleta existente, sem alterar a hierarquia visual
 
 ## Princípios do shell desktop
 - local-first por padrão
@@ -30,6 +37,24 @@ O app desktop é um shell instalável em TypeScript com estética dark, tátil e
 - notas e pastas permanecem no filesystem do usuário
 - configurações do app ficam localmente
 - o shell não deve depender de um banco para o MVP
+
+## Bootstrap do vault padrão
+- o desktop deve tratar `config.vaultRoot` como raiz autoritativa do shell
+- o frontend não deve assumir que o vault já está pronto apenas por receber uma query string ou montar a tela
+- o bootstrap automático precisa passar pelo mesmo contrato local de abertura (`bootstrap` + `setup/open`) usado depois pela interface
+- a árvore do workspace só deve ser considerada pronta depois que o backend devolver a raiz validada e o refresh real do vault terminar
+- enquanto esse bootstrap estiver em andamento, botões de criação e outras escritas precisam permanecer bloqueados ou aguardar a conclusão
+
+## Estado visual e sincronização
+- o estado visual inicial do workspace deve preferir `loading` controlado a um vazio enganoso
+- a raiz ativa mostrada pela UI precisa ser sincronizada com a raiz devolvida pelo backend após cada refresh do workspace
+- criar uma pasta vazia deve atualizar a árvore no refresh seguinte, sem depender de abrir outra tela
+- a lista local de atividade e outros estados auxiliares não devem sugerir outro vault nem reidratar caminhos que não existam na árvore atual
+
+## Diálogos internos
+- os diálogos internos de input precisam operar com apenas uma sessão ativa por vez
+- abrir um novo diálogo deve invalidar callbacks pendentes do anterior
+- essa regra evita ações cruzadas, como confirmar uma criação de pasta e disparar também uma criação de nota pendente
 
 ## Alternativas consideradas
 ### Manter apenas web

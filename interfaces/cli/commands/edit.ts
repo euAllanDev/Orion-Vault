@@ -10,6 +10,6 @@ export async function executeEditCommand(options: EditCommandOptions): Promise<v
   const { config, service } = createVaultWorkspaceService();
   const filePath = options.path ?? '';
 
-  await service.editMarkdownFile(options.vaultRoot ?? config.vaultRoot, filePath, options.content ?? '');
+  await service.editMarkdownFile(config.vaultRoot, filePath, options.content ?? '');
   console.log(`File updated: ${filePath}`);
 }

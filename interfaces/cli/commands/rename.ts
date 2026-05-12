@@ -11,6 +11,6 @@ export async function executeRenameCommand(options: RenameCommandOptions): Promi
   const source = options.source ?? '';
   const destination = options.destination ?? '';
 
-  await service.renamePath(options.vaultRoot ?? config.vaultRoot, source, destination);
+  await service.renamePath(config.vaultRoot, source, destination);
   console.log(`Renamed: ${source} -> ${destination}`);
 }

@@ -6,17 +6,22 @@
 - [ ] Formalizar o contrato entre UI desktop e aplicação local
 
 ## Vault flow
-- [ ] Permitir criar e abrir vault no desktop
-- [ ] Conectar a árvore de pastas e notas ao filesystem local
-- [ ] Conectar criar, editar, renomear e mover ao vault local
-- [ ] Restaurar o último vault ativo ao iniciar o desktop
+- [x] Abrir automaticamente o vault padrão no desktop
+- [x] Conectar a árvore de pastas e notas ao filesystem local
+- [x] Conectar criar, editar, renomear e mover ao vault local
+- [ ] Tratar fallback quando o vault padrão estiver ausente
+- [x] Reusar o mesmo fluxo de `setup/open` no bootstrap automático do desktop
+- [x] Bloquear ações de escrita até o vault ativo terminar de abrir
+- [x] Sincronizar a raiz visual da UI com a raiz retornada pelo backend local
+- [x] Refletir pastas vazias recém-criadas no refresh seguinte da árvore
+- [x] Impedir que diálogos internos acumulem callbacks de sessões anteriores
 
 ## UI
 - [ ] Levar a interface de setup e workspace para a janela desktop
 - [ ] Manter navegação limpa, sem depender do navegador como produto final
 - [ ] Preservar o visual discreto e a listagem limpa das notas
 - [ ] Melhorar os ícones da sidebar com linguagem minimalista premium
-- [ ] Exibir métricas e cards no setup inicial
+- [ ] Exibir métricas e cards no setup de fallback
 - [ ] Exibir card rotativo de novidades do projeto
 - [ ] Refinar modais e encaixe visual do desktop
 - [ ] Listar comandos disponíveis em um hub visual no desktop
@@ -34,4 +39,9 @@
 ## Quality
 - [ ] Garantir operação local-first sem internet obrigatória
 - [ ] Cobrir erros de configuração e fronteira com mensagens controladas
-- [ ] Atualizar specs conforme o comportamento desktop evoluir
+- [x] Atualizar specs conforme o comportamento desktop evoluir
+
+## Notes
+- O bug mais importante encontrado no fluxo desktop não era troca real de vault, mas bootstrap tardio combinado com ações de criação liberadas cedo demais.
+- O backend já escrevia no vault padrão correto; o problema era a UI parecer pronta antes da árvore real ser carregada.
+- O próximo agente deve preservar a regra: nenhuma escrita no desktop antes do vault ativo ficar explicitamente pronto.

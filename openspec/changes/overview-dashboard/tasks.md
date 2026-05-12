@@ -1,0 +1,7 @@
+- [x] Definir os dados que alimentam o Overview
+- [x] Criar layout bento para os cards principais
+- [x] Adicionar card de próximos prazos
+- [x] Adicionar card de atividade recente
+- [x] Adicionar card de resumo do vault
+- [x] Integrar gráficos visuais no canto do Overview
+- [x] Validar responsividade e consistência visual

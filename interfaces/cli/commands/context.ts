@@ -45,7 +45,7 @@ export async function executeContextCommand(options: ContextCommandOptions): Pro
   const config = loadAppConfig();
   const service = new VaultVerificationService(new NodeVaultScanner());
   const noteReader = new NodeNoteReader();
-  const report = await service.verify(options.vaultRoot ?? config.vaultRoot);
+  const report = await service.verify(config.vaultRoot);
   const notes = await noteReader.listNotes(report.vaultRoot);
 
   console.log(`Vault: ${report.vaultRoot}`);

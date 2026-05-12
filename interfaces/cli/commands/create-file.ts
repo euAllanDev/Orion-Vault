@@ -10,6 +10,6 @@ export async function executeCreateFileCommand(options: CreateFileCommandOptions
   const { config, service } = createVaultWorkspaceService();
   const filePath = options.path ?? '';
 
-  await service.createMarkdownFile(options.vaultRoot ?? config.vaultRoot, filePath, options.content ?? '');
+  await service.createMarkdownFile(config.vaultRoot, filePath, options.content ?? '');
   console.log(`File created: ${filePath}`);
 }

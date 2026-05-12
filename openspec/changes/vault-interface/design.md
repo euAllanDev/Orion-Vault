@@ -17,7 +17,7 @@ O app continua dividido em duas superfícies principais:
 - cards, modais e menus com profundidade e separação clara
 
 ## Página 1: Vault Setup
-Objetivo: ativar o vault com segurança e clareza.
+Objetivo: validar e abrir o vault padrão automaticamente, usando setup/home apenas como fallback.
 
 Componentes principais:
 - campo visível para caminho do vault
@@ -32,7 +32,11 @@ Regras de comportamento:
 - a raiz escolhida deve ser validada antes de ficar ativa
 - caminhos inválidos ou fora da fronteira devem ser rejeitados
 - se o vault não existir, a interface pode orientar sua criação
-- o setup deve funcionar como entrada principal e sem modais aninhados desnecessários
+- o vault padrão deve ser aberto automaticamente ao iniciar o app
+- na experiência desktop, o workspace deve aparecer primeiro quando houver um vault válido
+- o setup deve funcionar como fallback e sem modais aninhados desnecessários
+- o bootstrap automático deve usar a mesma rotina de `open` usada depois pelas ações da interface
+- até a abertura terminar, o workspace deve permanecer em estado de carregamento ou vazio controlado, sem habilitar escrita
 
 ## Página 2: Vault Workspace
 Objetivo: concentrar leitura, edição e organização.
@@ -56,6 +60,8 @@ Regras de comportamento:
 - a interface deve mostrar preview, no-ops, conflitos e erros
 - o usuário precisa ver claramente o vault ativo antes de executar qualquer comando
 - o grafo e a busca precisam ser acessíveis sem sair do workspace
+- a árvore deve refletir pastas vazias recém-criadas assim que o refresh local terminar
+- diálogos internos de criação, renomeação e movimento devem invalidar sessões anteriores para evitar callbacks acumulados
 
 ## Estados
 - vazio: nenhum vault selecionado

@@ -10,24 +10,48 @@ import { VaultVerificationService } from '../../vault/services/vault-verificatio
 import type { VaultEntryDto } from '../../vault/dto/vault-entry.dto';
 import { resolveExistingWithinRoot } from '../../infra/filesystem/path-resolution/path-boundary';
 import { buildSearchMatches } from '../../interfaces/cli/commands/search';
+import { createSemanticNoteRelationsService, parseLinks } from '../../application/services/semantic-note-relations.service';
 
 const config = loadAppConfig();
 const webRoot = path.resolve('interfaces/web');
 const commandsGuidePath = path.resolve('comandos.md');
+const desktopDebugLogPath = path.join(process.env.TEMP ?? process.cwd(), 'marika-desktop-vault-debug.log');
+const agendaFolderPath = 'Agenda';
 const workspace = new NodeVaultWorkspace();
 const scanner = new NodeVaultScanner();
 const noteReader = new NodeNoteReader();
 const verifier = new VaultVerificationService(scanner);
+const semanticRelations = createSemanticNoteRelationsService();
 
 type JsonValue = Record<string, unknown>;
 
 type WebServerOptions = {
   desktopSessionPath?: string;
+  activeVaultRoot?: string;
 };
 
 type DesktopSessionData = {
   vaultRoot: string;
   pinnedPaths: string[];
+};
+
+function isDesktopShellRequest(options: WebServerOptions): boolean {
+  return Boolean(options.desktopSessionPath);
+}
+
+function getDesktopDefaultVaultRoot(): string {
+  return config.vaultRoot;
+}
+
+type AgendaStatus = 'pending' | 'done' | 'overdue';
+
+type AgendaItemDto = {
+  path: string;
+  title: string;
+  due: string;
+  status: AgendaStatus;
+  excerpt: string;
+  isAgendaFolder: boolean;
 };
 
 function sendJson(res: http.ServerResponse, statusCode: number, body: JsonValue): void {
@@ -73,20 +97,42 @@ async function ensureVaultRoot(vaultRoot: string): Promise<void> {
   await fs.mkdir(vaultRoot, { recursive: true });
 }
 
-async function readDesktopSessionData(sessionPath?: string): Promise<DesktopSessionData> {
-  if (!sessionPath) return { vaultRoot: '', pinnedPaths: [] };
+async function ensureAgendaFolder(vaultRoot: string): Promise<void> {
+  await fs.mkdir(path.resolve(vaultRoot, agendaFolderPath), { recursive: true });
+}
+
+async function appendDesktopDebugLog(options: WebServerOptions, event: string, payload: Record<string, unknown> = {}): Promise<void> {
+  if (!isDesktopShellRequest(options)) return;
+
+  const entry = JSON.stringify({
+    at: new Date().toISOString(),
+    event,
+    ...payload
+  });
+
+  try {
+    await fs.appendFile(desktopDebugLogPath, `${entry}\n`, 'utf8');
+  } catch {
+    // Debug logging must never break the desktop flow.
+  }
+}
+
+async function readDesktopSessionData(sessionPath?: string, forcedVaultRoot?: string): Promise<DesktopSessionData> {
+  if (!sessionPath) {
+    return { vaultRoot: forcedVaultRoot ?? '', pinnedPaths: [] };
+  }
 
   try {
     const raw = await fs.readFile(sessionPath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<DesktopSessionData>;
     return {
-      vaultRoot: typeof parsed.vaultRoot === 'string' ? parsed.vaultRoot.trim() : '',
+      vaultRoot: forcedVaultRoot ?? (typeof parsed.vaultRoot === 'string' ? parsed.vaultRoot.trim() : ''),
       pinnedPaths: Array.isArray(parsed.pinnedPaths)
         ? parsed.pinnedPaths.map((value) => String(value).replace(/\\/g, '/').trim()).filter(Boolean)
         : []
     };
   } catch {
-    return { vaultRoot: '', pinnedPaths: [] };
+    return { vaultRoot: forcedVaultRoot ?? '', pinnedPaths: [] };
   }
 }
 
@@ -97,25 +143,109 @@ async function writeDesktopSessionData(sessionPath: string | undefined, data: De
   await fs.writeFile(sessionPath, JSON.stringify(data, null, 2), 'utf8');
 }
 
+async function resolveActiveVaultRoot(options: WebServerOptions): Promise<string> {
+  if (isDesktopShellRequest(options)) return getDesktopDefaultVaultRoot();
+  if (options.activeVaultRoot) return options.activeVaultRoot;
+  return config.vaultRoot;
+}
+
+function pickVaultRoot(candidate: string | undefined, fallback: string): string {
+  return String(candidate ?? '').trim() || fallback;
+}
+
+function resolveRequestVaultRoot(options: WebServerOptions, candidate: string | undefined, fallback: string): string {
+  if (isDesktopShellRequest(options)) return getDesktopDefaultVaultRoot();
+  return pickVaultRoot(candidate, fallback);
+}
+
 function normalizeApiPath(value: string): string {
   return value.replace(/\\/g, '/').replace(/^\.\//, '').trim();
 }
 
-function normalizeLinkTarget(value: string): string {
-  return normalizeApiPath(value).replace(/\.(md|markdown)$/i, '').replace(/#.*$/, '').toLowerCase();
-}
+function parseFrontmatter(content: string): { fields: Record<string, string>; body: string } {
+  const lines = content.split(/\r?\n/);
+  if (lines[0] !== '---') {
+    return { fields: {}, body: content };
+  }
 
-function collectWikiTargets(content: string): string[] {
-  const targets = new Set<string>();
+  const fields: Record<string, string> = {};
+  let index = 1;
 
-  for (const match of content.matchAll(/\[\[([^\]]+)\]\]/g)) {
-    const target = String(match[1] ?? '').split('|')[0]?.trim();
-    if (target) {
-      targets.add(target);
+  for (; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (line === '---') {
+      index += 1;
+      break;
+    }
+
+    const match = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+    if (match) {
+      const key = String(match[1] ?? '').toLowerCase();
+      const value = String(match[2] ?? '').trim().replace(/^['"`]|['"`]$/g, '');
+      fields[key] = value;
     }
   }
 
-  return [...targets];
+  return { fields, body: lines.slice(index).join('\n') };
+}
+
+function normalizeAgendaStatus(value: string): AgendaStatus {
+  const normalized = value.trim().toLowerCase();
+  if (['done', 'completed', 'complete', 'concluida', 'concluída', 'concluido', 'concluído'].includes(normalized)) {
+    return 'done';
+  }
+
+  if (normalized === 'overdue' || normalized === 'atrasado' || normalized === 'em atraso') {
+    return 'overdue';
+  }
+
+  return 'pending';
+}
+
+function normalizeRootPath(value: string): string {
+  return path.resolve(String(value ?? '').trim()).replace(/\\/g, '/').toLowerCase();
+}
+
+function extractBodyExcerpt(body: string): string {
+  return body
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => Boolean(line) && !line.startsWith('# '))
+    ?.slice(0, 140) ?? '';
+}
+
+function buildAgendaItem(note: { relativePath: string; title?: string; content: string }, activeVaultRoot: string): AgendaItemDto | null {
+  const { fields, body } = parseFrontmatter(note.content);
+  const dueValue = fields.due ?? fields.date ?? '';
+  if (!dueValue) return null;
+
+  const due = new Date(dueValue);
+  if (Number.isNaN(due.getTime())) return null;
+
+  const storedStatus = normalizeAgendaStatus(fields.status ?? 'pending');
+  const isOverdue = storedStatus !== 'done' && due.getTime() < Date.now();
+
+  return {
+    path: normalizeApiPath(note.relativePath),
+    title: note.title ?? path.basename(note.relativePath, path.extname(note.relativePath)),
+    due: due.toISOString(),
+    status: isOverdue ? 'overdue' : storedStatus,
+    excerpt: extractBodyExcerpt(body),
+    isAgendaFolder: normalizeApiPath(note.relativePath).startsWith('Agenda/')
+  };
+}
+
+function normalizeLinkTarget(value: string): string {
+  return normalizeApiPath(path.posix.normalize(value))
+    .replace(/^\.\/+/, '')
+    .replace(/^(\.\.\/)+/g, '')
+    .replace(/\.(md|markdown)$/i, '')
+    .replace(/#.*$/, '')
+    .toLowerCase();
+}
+
+function collectWikiTargets(content: string): string[] {
+  return [...new Set(parseLinks(content).map((link) => link.target).filter(Boolean))];
 }
 
 function buildNoteIdentifiers(relativePath: string, title?: string): string[] {
@@ -181,23 +311,41 @@ async function serveStatic(res: http.ServerResponse, requestPath: string): Promi
     ext === '.html' ? 'text/html; charset=utf-8' :
     ext === '.css' ? 'text/css; charset=utf-8' :
     ext === '.js' ? 'text/javascript; charset=utf-8' :
+    ext === '.svg' ? 'image/svg+xml; charset=utf-8' :
+    ext === '.png' ? 'image/png' :
+    ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+    ext === '.gif' ? 'image/gif' :
+    ext === '.webp' ? 'image/webp' :
+    ext === '.ico' ? 'image/x-icon' :
     'application/octet-stream';
 
-  sendText(res, 200, await fs.readFile(absolutePath, 'utf8'), contentType);
+  if (contentType.startsWith('text/') || contentType.startsWith('image/svg+xml')) {
+    sendText(res, 200, await fs.readFile(absolutePath, 'utf8'), contentType);
+    return true;
+  }
+
+  res.writeHead(200, { 'Content-Type': contentType });
+  res.end(await fs.readFile(absolutePath));
   return true;
 }
 
 async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL, options: WebServerOptions): Promise<void> {
   if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
-    const sessionData = await readDesktopSessionData(options.desktopSessionPath);
-    const vaultRoot = sessionData.vaultRoot || process.env.MARIKA_VAULT_ROOT?.trim() || '';
+    const vaultRoot = await resolveActiveVaultRoot(options);
+    const sessionData = await readDesktopSessionData(options.desktopSessionPath, vaultRoot);
+    await appendDesktopDebugLog(options, 'api.bootstrap', { vaultRoot, pinnedCount: sessionData.pinnedPaths.length });
     sendJson(res, 200, { vaultRoot, pinnedPaths: sessionData.pinnedPaths, defaultDryRun: config.defaultDryRun });
     return;
   }
 
   if (req.method === 'GET' && url.pathname === '/api/workspace') {
-    const vaultRoot = url.searchParams.get('vaultRoot') ?? config.vaultRoot;
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
     const exists = await fileExists(vaultRoot);
+    await appendDesktopDebugLog(options, 'api.workspace.request', {
+      requestedVaultRoot: url.searchParams.get('vaultRoot') ?? '',
+      resolvedVaultRoot: vaultRoot,
+      exists
+    });
 
     if (!exists) {
       sendJson(res, 200, { vaultRoot, exists: false, tree: null, summary: null });
@@ -205,6 +353,11 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
     }
 
     const report = await verifier.verify(vaultRoot);
+    await appendDesktopDebugLog(options, 'api.workspace.response', {
+      vaultRoot,
+      childCount: report.root.kind === 'folder' ? report.root.children.length : 0,
+      firstChildren: report.root.kind === 'folder' ? report.root.children.slice(0, 8).map((child) => child.relativePath) : []
+    });
     sendJson(res, 200, {
       vaultRoot,
       exists: true,
@@ -221,7 +374,7 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
   }
 
   if (req.method === 'GET' && url.pathname === '/api/file') {
-    const vaultRoot = url.searchParams.get('vaultRoot') ?? config.vaultRoot;
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
     const relativePath = url.searchParams.get('path') ?? '';
     const absolutePath = await resolveExistingWithinRoot(vaultRoot, relativePath);
     const content = await fs.readFile(absolutePath, 'utf8');
@@ -230,7 +383,7 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
   }
 
   if (req.method === 'GET' && url.pathname === '/api/search') {
-    const vaultRoot = url.searchParams.get('vaultRoot') ?? config.vaultRoot;
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
     const query = url.searchParams.get('query')?.trim() || undefined;
     const phrase = url.searchParams.get('phrase')?.trim() || undefined;
     const tags = (url.searchParams.get('tags') ?? '')
@@ -290,17 +443,15 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
 
   if (req.method === 'POST' && url.pathname === '/api/setup') {
     const body = await readBody(req);
-    const vaultRoot = String(body.vaultRoot ?? '').trim();
     const action = String(body.action ?? 'open');
-
-    if (!vaultRoot) {
-      sendJson(res, 400, { error: 'vaultRoot is required' });
-      return;
-    }
+    const requestedVaultRoot = String(body.vaultRoot ?? '').trim();
+    const vaultRoot = resolveRequestVaultRoot(options, requestedVaultRoot, await resolveActiveVaultRoot(options));
+    const sessionData = await readDesktopSessionData(options.desktopSessionPath, vaultRoot);
+    await appendDesktopDebugLog(options, 'api.setup', { action, requestedVaultRoot, resolvedVaultRoot: vaultRoot });
 
     if (action === 'create') {
       await ensureVaultRoot(vaultRoot);
-      const sessionData = await readDesktopSessionData(options.desktopSessionPath);
+      await ensureAgendaFolder(vaultRoot);
       await writeDesktopSessionData(options.desktopSessionPath, { vaultRoot, pinnedPaths: sessionData.pinnedPaths });
       sendJson(res, 200, { vaultRoot, created: true });
       return;
@@ -311,14 +462,14 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
       return;
     }
 
-    const sessionData = await readDesktopSessionData(options.desktopSessionPath);
+    await ensureAgendaFolder(vaultRoot);
     await writeDesktopSessionData(options.desktopSessionPath, { vaultRoot, pinnedPaths: sessionData.pinnedPaths });
     sendJson(res, 200, { vaultRoot, opened: true });
     return;
   }
 
   if (req.method === 'GET' && url.pathname === '/api/pins') {
-    const sessionData = await readDesktopSessionData(options.desktopSessionPath);
+    const sessionData = await readDesktopSessionData(options.desktopSessionPath, await resolveActiveVaultRoot(options));
     sendJson(res, 200, { pinnedPaths: sessionData.pinnedPaths });
     return;
   }
@@ -326,7 +477,7 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
   if (req.method === 'POST' && url.pathname === '/api/pins') {
     const body = await readBody(req);
     const pathValue = normalizeApiPath(String(body.path ?? ''));
-    const sessionData = await readDesktopSessionData(options.desktopSessionPath);
+    const sessionData = await readDesktopSessionData(options.desktopSessionPath, await resolveActiveVaultRoot(options));
     const current = new Set(sessionData.pinnedPaths.map((value) => normalizeApiPath(value)));
 
     if (current.has(pathValue)) {
@@ -336,13 +487,13 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
     }
 
     const pinnedPaths = [...current].sort((left, right) => left.localeCompare(right, 'pt-BR'));
-    await writeDesktopSessionData(options.desktopSessionPath, { vaultRoot: sessionData.vaultRoot, pinnedPaths });
+    await writeDesktopSessionData(options.desktopSessionPath, { vaultRoot: await resolveActiveVaultRoot(options), pinnedPaths });
     sendJson(res, 200, { pinnedPaths });
     return;
   }
 
   if (req.method === 'GET' && url.pathname === '/api/templates') {
-    const vaultRoot = url.searchParams.get('vaultRoot') ?? config.vaultRoot;
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
     const notes = await noteReader.listNotes(vaultRoot);
     const templates = notes
       .filter((note) => normalizeApiPath(note.relativePath).startsWith('Templates/'))
@@ -356,27 +507,103 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/agenda') {
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
+
+    await ensureAgendaFolder(vaultRoot);
+
+    if (!(await fileExists(vaultRoot))) {
+      sendJson(res, 200, { vaultRoot, items: [] });
+      return;
+    }
+
+    const notes = await noteReader.listNotes(vaultRoot);
+    const items = notes
+      .filter((note) => normalizeApiPath(note.relativePath).startsWith('Agenda/'))
+      .map((note) => buildAgendaItem(note, vaultRoot))
+      .filter((item): item is AgendaItemDto => Boolean(item))
+      .sort((left, right) => {
+        const leftTime = new Date(left.due).getTime();
+        const rightTime = new Date(right.due).getTime();
+        if (leftTime !== rightTime) return leftTime - rightTime;
+        return left.title.localeCompare(right.title, 'pt-BR');
+      });
+
+    sendJson(res, 200, { vaultRoot, items });
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/backlinks') {
-    const vaultRoot = url.searchParams.get('vaultRoot') ?? config.vaultRoot;
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
     const relativePath = normalizeApiPath(url.searchParams.get('path') ?? '');
     const notes = await noteReader.listNotes(vaultRoot);
-    const current = notes.find((note) => normalizeApiPath(note.relativePath) === relativePath);
-    const currentCandidates = buildNoteIdentifiers(relativePath, current?.title);
-
-    const backlinks = notes
-      .filter((note) => normalizeApiPath(note.relativePath) !== relativePath)
-      .flatMap((note) => {
-        const targets = collectWikiTargets(note.content);
-        const matched = targets.some((target) => matchesIdentifiers(target, currentCandidates));
-        return matched ? [{ path: normalizeApiPath(note.relativePath), title: note.title ?? path.basename(note.relativePath, path.extname(note.relativePath)) }] : [];
-      });
+    const backlinks = semanticRelations.getRelated(vaultRoot, notes, relativePath).backlinks.map((item) => ({
+      path: item.targetPath ?? '',
+      title: item.label
+    })).filter((item) => Boolean(item.path));
 
     sendJson(res, 200, { backlinks });
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/related') {
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
+    const relativePath = normalizeApiPath(url.searchParams.get('path') ?? '');
+    const limit = Number.parseInt(url.searchParams.get('limit') ?? '12', 10);
+    const notes = await noteReader.listNotes(vaultRoot);
+    const related = semanticRelations.getRelated(vaultRoot, notes, relativePath, Number.isFinite(limit) ? limit : 12);
+    sendJson(res, 200, related as unknown as JsonValue);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/link-suggestions') {
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
+    const relativePath = normalizeApiPath(url.searchParams.get('path') ?? '');
+    const limit = Number.parseInt(url.searchParams.get('limit') ?? '8', 10);
+    const notes = await noteReader.listNotes(vaultRoot);
+    const suggestions = semanticRelations.suggestLinks(vaultRoot, notes, relativePath, Number.isFinite(limit) ? limit : 8);
+    sendJson(res, 200, { vaultRoot, sourcePath: relativePath, suggestions });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/link-preview') {
+    const body = await readBody(req);
+    const vaultRoot = resolveRequestVaultRoot(options, String(body.vaultRoot ?? ''), await resolveActiveVaultRoot(options));
+    const sourcePath = normalizeApiPath(String(body.path ?? ''));
+    const targetPath = normalizeApiPath(String(body.targetPath ?? ''));
+    const mode = String(body.mode ?? 'section') === 'inline' ? 'inline' : 'section';
+    const notes = await noteReader.listNotes(vaultRoot);
+    const preview = semanticRelations.previewLinkApplication(vaultRoot, notes, sourcePath, targetPath, mode);
+    sendJson(res, 200, preview as unknown as JsonValue);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/link-apply') {
+    const body = await readBody(req);
+    const vaultRoot = resolveRequestVaultRoot(options, String(body.vaultRoot ?? ''), await resolveActiveVaultRoot(options));
+    const sourcePath = normalizeApiPath(String(body.path ?? ''));
+    const targetPath = normalizeApiPath(String(body.targetPath ?? ''));
+    const mode = String(body.mode ?? 'section') === 'inline' ? 'inline' : 'section';
+    const notes = await noteReader.listNotes(vaultRoot);
+    const preview = semanticRelations.previewLinkApplication(vaultRoot, notes, sourcePath, targetPath, mode);
+    await workspace.editMarkdownFile(vaultRoot, sourcePath, preview.proposedContent);
+    sendJson(res, 200, { ok: true, preview });
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/graph-global') {
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
+    const focusPath = normalizeApiPath(url.searchParams.get('focusPath') ?? '');
+    const limitValue = url.searchParams.get('limit');
+    const limit = limitValue === null ? Number.POSITIVE_INFINITY : Number.parseInt(limitValue, 10);
+    const notes = await noteReader.listNotes(vaultRoot);
+    const graph = semanticRelations.buildGlobalGraph(vaultRoot, notes, focusPath || undefined, Number.isFinite(limit) ? limit : Number.POSITIVE_INFINITY);
+    sendJson(res, 200, graph as unknown as JsonValue);
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/graph') {
-    const vaultRoot = url.searchParams.get('vaultRoot') ?? config.vaultRoot;
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
     const relativePath = normalizeApiPath(url.searchParams.get('path') ?? '');
     const folderPath = normalizeApiPath(url.searchParams.get('folderPath') ?? '');
     const notes = await noteReader.listNotes(vaultRoot);
@@ -484,6 +711,49 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
 
     nodeMap.set(currentNode.id, currentNode);
 
+    const addEdge = (from: string, to: string): void => {
+      const key = `${from}->${to}`;
+      if (edgeKeys.has(key)) return;
+      edgeKeys.add(key);
+      edges.push({ from, to });
+    };
+
+    const ensureFolderNode = (folderPath: string): string => {
+      const normalizedFolder = normalizeFolderPath(folderPath);
+      const id = `folder:${normalizedFolder}`;
+      if (!nodeMap.has(id)) {
+        nodeMap.set(id, {
+          id,
+          label: normalizedFolder ? path.basename(normalizedFolder) : 'Vault',
+          path: normalizedFolder,
+          kind: 'folder'
+        });
+      }
+      return id;
+    };
+
+    const linkFolderChain = (folderPath: string): string => {
+      const normalizedFolder = normalizeFolderPath(folderPath);
+      const rootId = ensureFolderNode('');
+      let parentId = rootId;
+
+      if (!normalizedFolder) {
+        return rootId;
+      }
+
+      const chain = folderAncestors(normalizedFolder, '').reverse();
+      for (const folder of chain) {
+        const folderId = ensureFolderNode(folder);
+        addEdge(parentId, folderId);
+        parentId = folderId;
+      }
+
+      return parentId;
+    };
+
+    const currentFolderId = linkFolderChain(folderParent(current.relativePath));
+    addEdge(currentFolderId, currentNode.id);
+
     for (const note of notes) {
       const notePath = normalizeApiPath(note.relativePath);
       if (notePath === currentNode.id) {
@@ -504,22 +774,16 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
           path: notePath,
           kind: 'linked'
         });
+        const linkedFolderId = linkFolderChain(folderParent(note.relativePath));
+        addEdge(linkedFolderId, notePath);
       }
 
       if (outgoingMatch) {
-        const key = `${currentNode.id}->${notePath}`;
-        if (!edgeKeys.has(key)) {
-          edgeKeys.add(key);
-          edges.push({ from: currentNode.id, to: notePath });
-        }
+        addEdge(currentNode.id, notePath);
       }
 
       if (incomingMatch) {
-        const key = `${notePath}->${currentNode.id}`;
-        if (!edgeKeys.has(key)) {
-          edgeKeys.add(key);
-          edges.push({ from: notePath, to: currentNode.id });
-        }
+        addEdge(notePath, currentNode.id);
       }
     }
 
@@ -528,7 +792,7 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
   }
 
   if (req.method === 'GET' && url.pathname === '/api/daily') {
-    const vaultRoot = url.searchParams.get('vaultRoot') ?? config.vaultRoot;
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
     const day = new Date().toISOString().slice(0, 10);
     const relativePath = `Daily/${day}.md`;
     const absolutePath = path.resolve(vaultRoot, relativePath);
@@ -546,17 +810,24 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
 
   if (req.method === 'POST' && url.pathname === '/api/folder') {
     const body = await readBody(req);
-    await workspace.createFolder(String(body.vaultRoot ?? ''), String(body.path ?? ''));
+    const vaultRoot = resolveRequestVaultRoot(options, String(body.vaultRoot ?? ''), await resolveActiveVaultRoot(options));
+    await workspace.createFolder(vaultRoot, String(body.path ?? ''));
     sendJson(res, 200, { ok: true });
     return;
   }
 
   if (req.method === 'POST' && url.pathname === '/api/file') {
     const body = await readBody(req);
-    const vaultRoot = String(body.vaultRoot ?? '');
+    const vaultRoot = resolveRequestVaultRoot(options, String(body.vaultRoot ?? ''), await resolveActiveVaultRoot(options));
     const filePath = String(body.path ?? '');
     const content = String(body.content ?? '');
     const operation = String(body.operation ?? 'edit');
+    await appendDesktopDebugLog(options, 'api.file', {
+      requestedVaultRoot: String(body.vaultRoot ?? ''),
+      resolvedVaultRoot: vaultRoot,
+      filePath,
+      operation
+    });
 
     if (operation === 'create') {
       await workspace.createMarkdownFile(vaultRoot, filePath, content);
@@ -571,14 +842,38 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
 
   if (req.method === 'POST' && url.pathname === '/api/rename') {
     const body = await readBody(req);
-    await workspace.renamePath(String(body.vaultRoot ?? ''), String(body.source ?? ''), String(body.destination ?? ''));
+    const vaultRoot = resolveRequestVaultRoot(options, String(body.vaultRoot ?? ''), await resolveActiveVaultRoot(options));
+    await appendDesktopDebugLog(options, 'api.rename', {
+      requestedVaultRoot: String(body.vaultRoot ?? ''),
+      resolvedVaultRoot: vaultRoot,
+      source: String(body.source ?? ''),
+      destination: String(body.destination ?? '')
+    });
+    await workspace.renamePath(vaultRoot, String(body.source ?? ''), String(body.destination ?? ''));
     sendJson(res, 200, { ok: true });
     return;
   }
 
   if (req.method === 'POST' && url.pathname === '/api/move') {
     const body = await readBody(req);
-    await workspace.movePath(String(body.vaultRoot ?? ''), String(body.source ?? ''), String(body.destination ?? ''));
+    const vaultRoot = resolveRequestVaultRoot(options, String(body.vaultRoot ?? ''), await resolveActiveVaultRoot(options));
+    await appendDesktopDebugLog(options, 'api.move', {
+      requestedVaultRoot: String(body.vaultRoot ?? ''),
+      resolvedVaultRoot: vaultRoot,
+      source: String(body.source ?? ''),
+      destination: String(body.destination ?? '')
+    });
+    await workspace.movePath(vaultRoot, String(body.source ?? ''), String(body.destination ?? ''));
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/debug/client-state') {
+    const body = await readBody(req);
+    await appendDesktopDebugLog(options, 'client.state', {
+      label: String(body.label ?? ''),
+      state: body.state && typeof body.state === 'object' ? body.state : {}
+    });
     sendJson(res, 200, { ok: true });
     return;
   }

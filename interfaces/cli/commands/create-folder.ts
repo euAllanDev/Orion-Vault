@@ -9,6 +9,6 @@ export async function executeCreateFolderCommand(options: CreateFolderCommandOpt
   const { config, service } = createVaultWorkspaceService();
   const folderPath = options.path ?? '';
 
-  await service.createFolder(options.vaultRoot ?? config.vaultRoot, folderPath);
+  await service.createFolder(config.vaultRoot, folderPath);
   console.log(`Folder created: ${folderPath}`);
 }

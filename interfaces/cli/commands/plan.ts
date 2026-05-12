@@ -8,7 +8,7 @@ export interface PlanCommandOptions {
 export async function executePlanCommand(options: PlanCommandOptions): Promise<void> {
   const { useCase, config } = createOrganizeUseCase();
   const result = await useCase.execute({
-    vaultRoot: options.vaultRoot ?? config.vaultRoot,
+    vaultRoot: config.vaultRoot,
     dryRun: true
   });
 

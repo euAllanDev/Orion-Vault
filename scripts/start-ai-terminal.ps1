@@ -27,7 +27,12 @@ if (-not $VaultRoot) {
   $VaultRoot = $env:MARIKA_VAULT_ROOT
 }
 
-Set-Location -LiteralPath $AppRoot
+if ($VaultRoot) {
+  New-Item -ItemType Directory -Force -Path $VaultRoot | Out-Null
+  Set-Location -LiteralPath $VaultRoot
+} else {
+  Set-Location -LiteralPath $AppRoot
+}
 Write-Host ''
 Write-Host 'Marika AI ready.'
 if ($VaultRoot) {

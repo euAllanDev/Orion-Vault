@@ -4,13 +4,24 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Marika Vault</title>
+  <script>
+    (function () {
+      try {
+        if (new URLSearchParams(window.location.search).get('shell') === 'desktop') {
+          document.documentElement.classList.add('shell-desktop');
+        }
+      } catch (_) {}
+    })();
+  </script>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <div class="app">
     <aside class="rail glass">
       <div class="rail-brand">
-        <div class="brand-mark">M</div>
+        <div class="brand-mark">
+          <img class="brand-art" src="./assets/marika-art.png" alt="" aria-hidden="true" />
+        </div>
         <div>
           <div class="brand-title">Marika</div>
           <div class="brand-subtitle">Local-first notes</div>
@@ -21,19 +32,33 @@
         <strong>New Note</strong>
       </button>
       <nav class="rail-nav" aria-label="Navegação global">
-        <button class="rail-btn active" data-view="setup" title="Vault" aria-label="Vault">
+        <button class="rail-btn" data-view="setup" title="Home" aria-label="Home">
           <span class="rail-btn-back rail-btn-back-purple"></span>
           <span class="rail-btn-front">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1z"/></svg>
           </span>
-          <span class="rail-label">Vault</span>
+          <span class="rail-label">Home</span>
         </button>
-        <button class="rail-btn" data-view="workspace" title="Workspace" aria-label="Workspace">
+        <button class="rail-btn active" data-view="workspace" title="Vault" aria-label="Vault">
           <span class="rail-btn-back rail-btn-back-indigo"></span>
           <span class="rail-btn-front">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h6v6H5zM13 5.5h6v3h-6zM13 10.5h6v8h-6zM5 13.5h6v5H5z"/></svg>
           </span>
-          <span class="rail-label">Workspace</span>
+          <span class="rail-label">Vault</span>
+        </button>
+        <button class="rail-btn" data-view="agenda" title="Agenda" aria-label="Agenda">
+          <span class="rail-btn-back rail-btn-back-gold"></span>
+          <span class="rail-btn-front">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5v3M17 3.5v3M4.5 8h15M6 6.5h12A1.5 1.5 0 0 1 19.5 8v10A1.5 1.5 0 0 1 18 19.5H6A1.5 1.5 0 0 1 4.5 18V8A1.5 1.5 0 0 1 6 6.5Z"/><path d="M8 12h3M8 15.5h5"/></svg>
+          </span>
+          <span class="rail-label">Agenda</span>
+        </button>
+        <button class="rail-btn" data-view="relations" title="Relações" aria-label="Relações">
+          <span class="rail-btn-back rail-btn-back-purple"></span>
+          <span class="rail-btn-front">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="8" r="2.4"/><circle cx="16.8" cy="6.8" r="2.4"/><circle cx="15.2" cy="15.8" r="2.4"/><path d="M9.5 8.5 14.7 7.2M9.2 9.4l4.4 5.1M17 9l-1.3 4.5"/></svg>
+          </span>
+          <span class="rail-label">Relações</span>
         </button>
         <button class="rail-btn" data-view="search" title="Busca" aria-label="Busca">
           <span class="rail-btn-back rail-btn-back-pink"></span>
@@ -73,8 +98,8 @@
       <header class="topbar glass">
         <div class="topbar-title">
           <span class="eyebrow">Marika Vault</span>
-          <h1 id="pageTitle">Vault Setup</h1>
-          <p id="pageSubtitle">Crie ou abra um vault local com a fronteira explícita.</p>
+          <h1 id="pageTitle">Workspace</h1>
+          <p id="pageSubtitle">Árvore de notas, editor central e painéis auxiliares.</p>
         </div>
 
         <div class="topbar-actions">
@@ -85,9 +110,31 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
             </span>
           </div>
+          <div class="overview-actions">
+            <button id="overviewOptionsButton" class="overview-options-button" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="overviewOptionsPanel">
+              <span class="overview-options-icon" aria-hidden="true">
+                <span></span>
+                <span></span>
+              </span>
+              <span class="overview-options-copy">
+                <strong>Quick Actions</strong>
+                <small>Ações rápidas</small>
+              </span>
+            </button>
+            <div id="overviewOptionsPanel" class="overview-options-panel is-closed" aria-hidden="true">
+              <section class="overview-options-card">
+                <span class="overview-options-card-label">Ações</span>
+                <button type="button" data-quick-action="create-note">Create New Note</button>
+                <button type="button" data-quick-action="create-agenda">Nova nota com data</button>
+                <button type="button" data-quick-action="agenda">Abrir agenda</button>
+                <button type="button" data-quick-action="relations">Abrir relações</button>
+                <button type="button" data-quick-action="graph">Open Graph View</button>
+              </section>
+            </div>
+          </div>
           <label class="path-box" for="vaultPathInput">
             <span>Vault</span>
-            <input id="vaultPathInput" type="text" placeholder="C:\\MarikaVault" autocomplete="off" />
+            <input id="vaultPathInput" type="text" placeholder="C:\MarikaVault" autocomplete="off" />
           </label>
           <button id="desktopCommandsButton" class="action">Comandos</button>
           <button id="templatesButton" class="action">Modelos</button>
@@ -97,166 +144,138 @@
         </div>
       </header>
 
-      <section class="view active" id="setupView">
+      <section class="view" id="setupView">
         <div class="setup-layout">
           <section class="setup-hero glass">
+            <img class="setup-art" src="./assets/marika-art.png" alt="" aria-hidden="true" />
             <div class="setup-copy">
               <span class="eyebrow">Vault onboarding</span>
-              <h2>Comece pelo root seguro.</h2>
-              <p>
-                Crie ou abra o vault e mantenha a navegação simples, local e previsível.
-                A interface de trabalho segue a lógica de um editor de notas, com árvore de arquivos e conteúdo central.
-              </p>
-              <div class="actions-row">
-                <button id="createVaultButton" class="action primary">Criar vault</button>
-                <button id="openVaultButton" class="action">Abrir vault</button>
-              </div>
+              <h2>Inicie pelo root seguro.</h2>
+                <p>
+                  O app abre automaticamente o vault padrão do usuário e mantém uma fronteira local clara.
+                  A interface de trabalho segue a lógica de um editor de notas, com árvore de arquivos e conteúdo central.
+                </p>
+                <div class="actions-row">
+                  <button id="startVaultButton" class="action primary">Iniciar</button>
+                </div>
             </div>
           </section>
 
           <aside class="setup-side">
-            <section class="card glass quick-actions-card">
-              <div class="card-head">
-                <div>
-                  <span class="eyebrow">Quick Actions</span>
-                  <h3>Ações rápidas</h3>
-                </div>
-              </div>
-              <div class="quick-actions-list">
-                <button class="action primary" type="button" data-quick-action="create-note">Create New Note</button>
-                <button class="action" type="button" data-quick-action="graph">Open Graph View</button>
-                <button class="action" type="button" data-quick-action="commands">Sync Vault</button>
-              </div>
-            </section>
-
-            <section class="card glass metrics-card">
-              <div class="card-head">
-                <div>
-                  <span class="eyebrow">Vault Stats</span>
-                  <h3>Notas e arquivos</h3>
-                </div>
-                <span class="pill" id="vaultHealthPill">idle</span>
-              </div>
-              <div class="metric-grid">
-                <article class="metric-tile">
-                  <span>Notas</span>
-                  <strong id="metricNotes">0</strong>
-                </article>
-                <article class="metric-tile">
-                  <span>Pastas</span>
-                  <strong id="metricFolders">0</strong>
-                </article>
-                <article class="metric-tile">
-                  <span>Markdown</span>
-                  <strong id="metricMarkdown">0</strong>
-                </article>
-                <article class="metric-tile">
-                  <span>Tamanho</span>
-                  <strong id="metricBytes">0 KB</strong>
-                </article>
-              </div>
-              <div class="mini-chart" aria-hidden="true">
-                <span></span><span></span><span></span><span></span><span></span>
-              </div>
-            </section>
-
-            <section class="card glass vault-summary-card">
-              <span class="eyebrow">Vault ativo</span>
-              <h3 id="vaultName">MarikaVault</h3>
-              <div class="meta-list">
-                <div>
-                  <span>Root</span>
-                  <strong id="vaultRootDisplay">C:\\MarikaVault</strong>
-                </div>
-                <div>
-                  <span>Status</span>
-                  <strong id="vaultStateText">válido</strong>
-                </div>
-              </div>
-              <p id="setupHint" class="hint">O vault está pronto para inspeção e organização.</p>
-            </section>
-
-            <section class="card glass template-card">
-              <div class="card-head">
-                <div>
-                  <span class="eyebrow">Modelo atual</span>
-                  <h3 id="templateSelectionLabel">Nenhum modelo</h3>
-                </div>
-                <button id="templateSelectionClear" class="pill subtle" type="button">limpar</button>
-              </div>
-              <p id="templateSelectionBody" class="hint">A próxima nota começa vazia.</p>
-              <p id="templateSelectionHint" class="hint">Escolha um modelo para acelerar a criação.</p>
-            </section>
-
-            <section class="card glass announcement-card">
-              <div class="card-head">
-                <div>
-                  <span class="eyebrow">Announcement</span>
-                  <h3>Marika pulse</h3>
-                </div>
-                <span class="pill subtle">auto</span>
-              </div>
-              <div class="project-slide">
-                <span class="project-slide-tag" id="projectSlideTag">desktop</span>
-                <h4 id="projectSlideTitle">Shell local-first</h4>
-                <p id="projectSlideBody">A experiência desktop está sendo refinada com foco em vault local, leitura limpa e ações rápidas.</p>
-              </div>
-              <div class="project-dots" id="projectSlideDots" aria-hidden="true"></div>
-            </section>
-
-            <section class="card glass recent-activity-card">
-              <div class="card-head">
-                <div>
-                  <span class="eyebrow">Recent Activity</span>
-                  <h3>Atividade recente</h3>
-                </div>
-                <button class="action" type="button">...</button>
-              </div>
-              <div class="recent-activity-list">
-                <article class="recent-item">
-                  <span class="recent-icon">M</span>
+            <div class="overview-summary-column">
+              <section class="card glass vault-summary-card overview-summary-card">
+                <span class="eyebrow">Fronteira local</span>
+                <h3 id="vaultName">MarikaVault</h3>
+                <div class="meta-list">
                   <div>
-                    <strong>Project_Alpha_Spec.md</strong>
-                    <p>Modified 10 mins ago</p>
+                    <span>Root</span>
+                    <strong id="vaultRootDisplay">C:\MarikaVault</strong>
                   </div>
-                </article>
-                <article class="recent-item">
-                  <span class="recent-icon">✎</span>
                   <div>
-                    <strong>Daily_Journal_Oct24.excalidraw</strong>
-                    <p>Modified 2 hours ago</p>
+                    <span>Status</span>
+                    <strong id="vaultStateText">válido</strong>
                   </div>
-                </article>
-                <article class="recent-item">
-                  <span class="recent-icon">▦</span>
-                  <div>
-                    <strong>Budget_Q4.csv</strong>
-                    <p>Modified yesterday</p>
-                  </div>
-                </article>
-              </div>
-            </section>
+                </div>
+                <p id="setupHint" class="hint">A fronteira do vault está pronta para inspeção e organização.</p>
+              </section>
 
-            <section class="card glass writing-activity-card">
-              <div class="card-head">
-                <div>
-                  <span class="eyebrow">Writing Activity</span>
-                  <h3>12 Days</h3>
+              <section class="card glass metrics-card overview-summary-card">
+                <div class="card-head">
+                  <div>
+                    <span class="eyebrow">Vault Stats</span>
+                    <h3>Notas e arquivos</h3>
+                  </div>
+                  <span class="pill" id="vaultHealthPill">idle</span>
                 </div>
-              </div>
-              <div class="writing-activity-row">
-                <div class="writing-streak">
-                  <strong>12</strong>
-                  <span>Days</span>
-                  <small>Current streak</small>
+                <div class="metric-grid">
+                  <article class="metric-tile">
+                    <span>Notas</span>
+                    <strong id="metricNotes">0</strong>
+                  </article>
+                  <article class="metric-tile">
+                    <span>Pastas</span>
+                    <strong id="metricFolders">0</strong>
+                  </article>
+                  <article class="metric-tile">
+                    <span>Markdown</span>
+                    <strong id="metricMarkdown">0</strong>
+                  </article>
+                  <article class="metric-tile">
+                    <span>Tamanho</span>
+                    <strong id="metricBytes">0 KB</strong>
+                  </article>
+                  <article class="metric-tile">
+                    <span>Prazos</span>
+                    <strong id="metricAgenda">0</strong>
+                  </article>
+                  <article class="metric-tile">
+                    <span>Atrasos</span>
+                    <strong id="metricOverdue">0</strong>
+                  </article>
                 </div>
-                <div class="writing-bars" aria-hidden="true">
-                  <span></span><span></span><span></span><span></span><span></span>
-                  <span></span><span></span><span></span><span></span><span></span>
+                <div class="mini-chart" aria-hidden="true">
                   <span></span><span></span><span></span><span></span><span></span>
                 </div>
-              </div>
-            </section>
+              </section>
+
+              <section class="card glass overview-charts-card overview-summary-card">
+                <div class="card-head">
+                  <div>
+                    <span class="eyebrow">Gráficos</span>
+                    <h3>Sinais do vault</h3>
+                  </div>
+                  <span class="pill subtle">live</span>
+                </div>
+                <div class="overview-chart-grid">
+                  <article class="overview-chart-card">
+                    <div class="overview-chart-head">
+                      <span class="eyebrow">Atividade 7d</span>
+                      <strong id="overviewActivityPeak">0 ações</strong>
+                    </div>
+                    <div class="writing-bars overview-bars" id="overviewActivityBars" aria-hidden="true">
+                      <span></span><span></span><span></span><span></span><span></span>
+                      <span></span><span></span>
+                    </div>
+                  </article>
+                  <article class="overview-chart-card overview-chart-ring-card">
+                    <div class="overview-chart-head">
+                      <span class="eyebrow">Status da agenda</span>
+                      <strong id="overviewAgendaRingLabel">0 itens</strong>
+                    </div>
+                    <div class="overview-ring-wrap">
+                      <div class="overview-ring" id="overviewAgendaRing" aria-hidden="true"></div>
+                      <div class="overview-ring-legend" id="overviewAgendaLegend"></div>
+                    </div>
+                  </article>
+                </div>
+              </section>
+            </div>
+
+            <div class="overview-main-column">
+              <section class="card glass agenda-due-card">
+                <div class="card-head">
+                  <div>
+                    <span class="eyebrow">Próximos prazos</span>
+                    <h3>Agenda urgente</h3>
+                  </div>
+                  <span class="pill subtle" id="overviewDueCount">0</span>
+                </div>
+                <div class="overview-due-list" id="overviewDueList"></div>
+                <div class="empty-inline hidden" id="overviewDueEmpty">Nenhum prazo próximo.</div>
+              </section>
+
+              <section class="card glass recent-activity-card">
+                <div class="card-head">
+                  <div>
+                    <span class="eyebrow">Atividade recente</span>
+                    <h3>Últimas ações</h3>
+                  </div>
+                  <span class="pill subtle" id="overviewActivityCount">0</span>
+                </div>
+                <div class="recent-activity-list" id="overviewRecentList"></div>
+                <div class="empty-inline hidden" id="overviewRecentEmpty">Nenhuma atividade recente.</div>
+              </section>
+            </div>
 
             <section class="card glass shortcuts-card">
               <span class="eyebrow">Atalhos</span>
@@ -273,18 +292,204 @@
         </div>
       </section>
 
-      <section class="view" id="workspaceView">
+      <section class="view" id="relationsView">
+        <div class="relations-layout">
+          <section class="relations-graph glass">
+            <div class="graph-panel-head">
+              <div>
+                <span class="eyebrow">Graph global</span>
+                <h3>Relações do vault</h3>
+                <p class="graph-panel-copy">Arraste para girar a rede, use scroll para zoom e clique em qualquer nó para abrir a nota ou pasta correspondente.</p>
+              </div>
+              <div class="pane-actions">
+                <button id="relationsRefreshButton" class="action" type="button">Atualizar</button>
+                <span class="pill subtle" id="graphGlobalCount">0 nós</span>
+              </div>
+            </div>
+            <div class="graph-global-wrap">
+              <div id="graphGlobalStage" class="graph-global-stage" role="img" aria-label="Graph global do vault">
+                <div id="graphGlobalSphere" class="graph-global-sphere"></div>
+              </div>
+              <div id="graphGlobalOverlay" class="graph-global-overlay">
+                <div class="card-top">
+                  <span class="badge" id="graphGlobalOverlayBadge">Nó selecionado</span>
+                </div>
+                <h3 id="graphGlobalOverlayTitle">Nenhuma nota</h3>
+                <p id="graphGlobalOverlaySummary">Abra uma nota ou clique em um nó para ver o resumo.</p>
+                <div class="metrics graph-global-metrics">
+                  <div class="metric">
+                    <strong id="graphGlobalOverlayStatus">--</strong>
+                    <small>status</small>
+                  </div>
+                  <div class="metric">
+                    <strong id="graphGlobalOverlayLinks">--</strong>
+                    <small>links</small>
+                  </div>
+                  <div class="metric">
+                    <strong id="graphGlobalOverlayLayer">--</strong>
+                    <small>camada</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <aside class="relations-sidebar">
+            <section class="card glass">
+              <div class="card-head">
+                <div>
+                  <span class="eyebrow">Atual</span>
+                  <h3 id="relationsNoteTitle">Nenhuma nota</h3>
+                </div>
+                <span class="pill subtle" id="relationsNoteScore">0.000</span>
+              </div>
+              <p id="relationsNoteSummary" class="hint">Selecione uma nota para ver links manuais, relações inferidas e sugestões.</p>
+              <button id="relationsOpenSelectedButton" class="action primary" type="button">Abrir nota selecionada</button>
+            </section>
+
+            <section class="card glass">
+              <div class="card-head">
+                <div>
+                  <span class="eyebrow">Links manuais</span>
+                  <h3>Saída direta</h3>
+                </div>
+              </div>
+              <div id="relationsManualLinksList" class="list-stack"></div>
+            </section>
+
+            <section class="card glass">
+              <div class="card-head">
+                <div>
+                  <span class="eyebrow">Relacionadas</span>
+                  <h3>Ranking inferido</h3>
+                </div>
+              </div>
+              <div id="relationsRelatedList" class="list-stack"></div>
+            </section>
+
+            <section class="card glass">
+              <div class="card-head">
+                <div>
+                  <span class="eyebrow">Sugestões</span>
+                  <h3>Auto-link</h3>
+                </div>
+              </div>
+              <div id="linkSuggestionsList" class="list-stack"></div>
+            </section>
+
+            <section class="card glass">
+              <div class="card-head">
+                <div>
+                  <span class="eyebrow">Preview</span>
+                  <h3>Diff do link</h3>
+                </div>
+              </div>
+              <div id="linkPreviewPanel" class="link-preview-panel">
+                <div class="empty-inline">Escolha uma sugestão para ver o preview.</div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="agendaView">
+        <div class="agenda-layout">
+          <section class="agenda-hero glass">
+            <div class="agenda-hero-head">
+              <div>
+                <span class="eyebrow">Agenda local</span>
+                <h2>Notas com prazo</h2>
+                <p>
+                  Crie notas no folder <code>Agenda/</code> com status e prazo. O desktop avisa em 1 dia, 1 hora e no horário.
+                </p>
+              </div>
+              <div class="agenda-stats">
+                <span class="pill" id="agendaCount">0 itens</span>
+                <span class="pill subtle" id="agendaPendingCount">0 pendentes</span>
+                <span class="pill subtle" id="agendaDoneCount">0 concluídas</span>
+                <span class="pill subtle" id="agendaOverdueCount">0 em atraso</span>
+              </div>
+            </div>
+
+            <form id="agendaForm" class="agenda-form">
+              <label>
+                <span>Título</span>
+                <input id="agendaTitleInput" type="text" placeholder="Reunião com cliente" autocomplete="off" />
+              </label>
+              <label>
+                <span>Prazo</span>
+                <input id="agendaDueInput" type="datetime-local" />
+              </label>
+              <label>
+                <span>Status inicial</span>
+                <select id="agendaStatusInput">
+                  <option value="pending">Pendente</option>
+                  <option value="done">Concluída</option>
+                </select>
+              </label>
+              <label class="agenda-body-field">
+                <span>Conteúdo</span>
+                <textarea id="agendaBodyInput" rows="8" placeholder="Detalhes, contexto e próximos passos"></textarea>
+              </label>
+              <div class="agenda-form-actions">
+                <button id="agendaCreateButton" class="action primary" type="button">Criar nota com data</button>
+                <button id="agendaResetButton" class="action" type="button">Limpar</button>
+              </div>
+              <p id="agendaStatusMessage" class="agenda-status-message" aria-live="polite"></p>
+            </form>
+          </section>
+
+          <section class="agenda-board glass">
+            <div class="pane-head">
+              <div>
+                <span class="eyebrow">Itens agendados</span>
+                <h3>Fila de prazos</h3>
+              </div>
+              <div class="agenda-nav" id="agendaNav">
+                <button id="agendaOptionsButton" class="agenda-options-button" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="agendaOptionsPanel">
+                  <span class="agenda-options-icon" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                  </span>
+                  <span class="agenda-options-copy">
+                    <strong>Opções</strong>
+                    <small id="agendaOptionsLabel">Todos</small>
+                  </span>
+                </button>
+                <div id="agendaOptionsPanel" class="agenda-options-panel is-closed" aria-hidden="true">
+                  <section class="agenda-options-card">
+                    <span class="agenda-options-card-label">Ações</span>
+                    <button type="button" data-agenda-action="refresh">Atualizar</button>
+                    <button type="button" data-agenda-action="focus-form">Nova nota</button>
+                  </section>
+                  <section class="agenda-options-card">
+                    <span class="agenda-options-card-label">Filtro</span>
+                    <button type="button" data-agenda-filter="all">Todos</button>
+                    <button type="button" data-agenda-filter="pending">Pendentes</button>
+                    <button type="button" data-agenda-filter="done">Concluídas</button>
+                    <button type="button" data-agenda-filter="overdue">Em atraso</button>
+                  </section>
+                </div>
+              </div>
+            </div>
+            <div id="agendaList" class="agenda-list"></div>
+            <p id="agendaEmpty" class="agenda-empty hidden">Nenhuma nota com prazo ainda.</p>
+          </section>
+        </div>
+      </section>
+
+      <section class="view active" id="workspaceView">
         <section id="workspaceEmpty" class="workspace-empty glass">
           <div class="workspace-empty-card">
+            <img class="empty-art" src="./assets/marika-art.png" alt="" aria-hidden="true" />
             <span class="eyebrow">Workspace vazio</span>
-            <h2>Crie ou abra um vault para começar.</h2>
+            <h2>Inicie o vault padrão para começar.</h2>
             <p>
-              A visualização vai permanecer limpa até você escolher um root.
+              A visualização vai permanecer limpa até o vault padrão ser aberto.
               Depois disso, a árvore, a nota e o painel auxiliar aparecem aqui.
             </p>
             <div class="actions-row center">
-              <button id="emptyCreateVaultButton" class="action primary">Criar vault</button>
-              <button id="emptyOpenVaultButton" class="action">Abrir vault</button>
+              <button id="emptyStartVaultButton" class="action primary">Iniciar</button>
             </div>
           </div>
         </section>
@@ -344,6 +549,13 @@
                           <small>Reposiciona dentro do vault</small>
                         </span>
                       </button>
+                      <button class="note-option-item" type="button" data-action="open-relations">
+                        <span class="note-option-badge note-option-badge-purple">⟲</span>
+                        <span class="note-option-copy">
+                          <strong>Relações</strong>
+                          <small>Abre graph e sugestões</small>
+                        </span>
+                      </button>
                     </div>
                   </div>
                   <button id="saveButton" class="action primary">Salvar</button>
@@ -397,6 +609,26 @@
                 </div>
                 <div id="backlinksList" class="list-stack"></div>
               </section>
+
+              <section class="side-card">
+                <div class="card-head">
+                  <div>
+                    <span class="eyebrow">Links</span>
+                    <h3>Saída manual</h3>
+                  </div>
+                </div>
+                <div id="manualLinksList" class="list-stack"></div>
+              </section>
+
+              <section class="side-card">
+                <div class="card-head">
+                  <div>
+                    <span class="eyebrow">Relações</span>
+                    <h3>Notas inferidas</h3>
+                  </div>
+                </div>
+                <div id="relatedList" class="list-stack"></div>
+              </section>
             </div>
 
             <section id="graphPanel" class="graph-panel hidden">
@@ -419,8 +651,16 @@
   <template id="folderTemplate">
     <details class="folder" open>
       <summary>
-        <span class="folder-name"></span>
-        <span class="folder-count"></span>
+        <span class="folder-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h4.3l1.7 1.8h6A2 2 0 0 1 19.5 9.3v7.2a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2Z" />
+            <path d="M3.5 9.2h16" />
+          </svg>
+        </span>
+        <span class="folder-label-wrap">
+          <span class="folder-name"></span>
+          <span class="folder-meta"></span>
+        </span>
       </summary>
       <div class="folder-items"></div>
     </details>
@@ -428,11 +668,8 @@
 
   <template id="fileTemplate">
     <button class="file-item" type="button">
-      <span class="file-icon">M</span>
-      <span class="file-meta-block">
-        <span class="file-name"></span>
-        <span class="file-meta"></span>
-      </span>
+      <span class="file-icon" aria-hidden="true">MD</span>
+      <span class="file-name"></span>
     </button>
   </template>
 

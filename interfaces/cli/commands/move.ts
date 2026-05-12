@@ -11,6 +11,6 @@ export async function executeMoveCommand(options: MoveCommandOptions): Promise<v
   const source = options.source ?? '';
   const destination = options.destination ?? '';
 
-  await service.movePath(options.vaultRoot ?? config.vaultRoot, source, destination);
+  await service.movePath(config.vaultRoot, source, destination);
   console.log(`Moved: ${source} -> ${destination}`);
 }

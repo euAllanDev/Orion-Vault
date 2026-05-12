@@ -10,7 +10,7 @@ export async function executeOrganizeCommand(options: OrganizeCommandOptions): P
   const { useCase, config } = createOrganizeUseCase();
 
   const result = await useCase.execute({
-    vaultRoot: options.vaultRoot ?? config.vaultRoot,
+    vaultRoot: config.vaultRoot,
     dryRun: options.dryRun ?? config.defaultDryRun
   });
 

@@ -6,10 +6,10 @@ export interface DoctorCommandOptions {
   readonly vaultRoot?: string;
 }
 
-export async function executeDoctorCommand(options: DoctorCommandOptions): Promise<void> {
+export async function executeDoctorCommand(_options: DoctorCommandOptions): Promise<void> {
   const config = loadAppConfig();
   const service = new VaultVerificationService(new NodeVaultScanner());
-  const report = await service.verify(options.vaultRoot ?? config.vaultRoot);
+  const report = await service.verify(config.vaultRoot);
 
   console.log('Doctor: OK');
   console.log(`Vault root: ${report.vaultRoot}`);

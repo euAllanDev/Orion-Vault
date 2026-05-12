@@ -13,6 +13,7 @@ import { executeCreateFileCommand } from './commands/create-file';
 import { executeEditCommand } from './commands/edit';
 import { executeRenameCommand } from './commands/rename';
 import { executeMoveCommand } from './commands/move';
+import { executeRelatedCommand } from './commands/related';
 import { ZodError } from 'zod';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -32,7 +33,8 @@ function parseArgs(argv: string[]) {
   const source = readOption('--source');
   const destination = readOption('--destination');
   const content = readOption('--content');
-  const valueOptions = new Set(['--vault', '--query', '--phrase', '--path', '--source', '--destination', '--content', '--tag']);
+  const limit = readOption('--limit');
+  const valueOptions = new Set(['--vault', '--query', '--phrase', '--path', '--source', '--destination', '--content', '--tag', '--limit']);
   const plainArgs: string[] = [];
 
   for (let index = 1; index < argv.length; index += 1) {
@@ -54,7 +56,7 @@ function parseArgs(argv: string[]) {
     }
   }
 
-  return { command, vaultRoot, dryRun, query, phrase, path: pathValue, source, destination, content, tags: tagValues, plainArgs };
+  return { command, vaultRoot, dryRun, query, phrase, path: pathValue, source, destination, content, limit, tags: tagValues, plainArgs };
 }
 
 async function main(): Promise<void> {
@@ -150,8 +152,18 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (slashCommand === 'related') {
+      await executeRelatedCommand({ vaultRoot: args.vaultRoot, path: args.path ?? (positionalInput || undefined), limit: args.limit ? Number.parseInt(args.limit, 10) : undefined });
+      return;
+    }
+
     if (args.command === 'search') {
       await executeSearchCommand({ vaultRoot: args.vaultRoot, query: args.query, phrase: args.phrase, tags: args.tags });
+      return;
+    }
+
+    if (args.command === 'related') {
+      await executeRelatedCommand({ vaultRoot: args.vaultRoot, path: args.path ?? (positionalInput || undefined), limit: args.limit ? Number.parseInt(args.limit, 10) : undefined });
       return;
     }
 
@@ -184,6 +196,7 @@ async function main(): Promise<void> {
     console.log('       /guide');
     console.log('       /context [--vault <path>] [--path <note>]');
     console.log('       /search [--vault <path>] [--query <text>] [--phrase <text>] [--tag <tag>]');
+    console.log('       /related [--vault <path>] [--path <note.md>] [--limit <n>]');
     console.log('       /plan [--vault <path>]');
     console.log('       /preview [--vault <path>]');
     console.log('       /apply [--vault <path>]');
@@ -198,6 +211,7 @@ async function main(): Promise<void> {
     console.log('       context [--vault <path>]');
     console.log('       doctor [--vault <path>]');
     console.log('       search [--vault <path>] [--query <text>] [--phrase <text>] [--tag <tag>]');
+    console.log('       related [--vault <path>] [--path <note.md>] [--limit <n>]');
     console.log('       plan [--vault <path>]');
     console.log('       diff [--vault <path>]');
     console.log('       sync');

@@ -223,8 +223,8 @@ export function buildSearchMatches(notes: readonly NoteSnapshotDto[], criteria: 
 export async function executeSearchCommand(options: SearchCommandOptions): Promise<void> {
   const config = loadAppConfig();
   const service = new VaultVerificationService(new NodeVaultScanner());
-  const report = await service.verify(options.vaultRoot ?? config.vaultRoot);
-  const notes = await new NodeNoteReader().listNotes(options.vaultRoot ?? config.vaultRoot);
+  const report = await service.verify(config.vaultRoot);
+  const notes = await new NodeNoteReader().listNotes(config.vaultRoot);
   const query = options.query?.trim();
   const phrase = options.phrase?.trim();
   const tags = normalizeCriteriaTags(options.tags);
