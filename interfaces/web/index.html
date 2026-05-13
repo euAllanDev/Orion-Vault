@@ -299,9 +299,78 @@
               <div>
                 <span class="eyebrow">Graph global</span>
                 <h3>Relações do vault</h3>
-                <p class="graph-panel-copy">Arraste para girar a rede, use scroll para zoom e clique em qualquer nó para abrir a nota ou pasta correspondente.</p>
+                <p class="graph-panel-copy">Cada ilha representa um assunto principal do vault. Clique para focar, dê duplo clique em notas ou pastas para abrir e use scroll para zoom.</p>
               </div>
-              <div class="pane-actions">
+              <div class="pane-actions relations-pane-actions">
+                <div class="relations-details-nav">
+                  <button id="relationsDetailsButton" class="relations-details-button" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="relationsDetailsPanel">
+                    <span class="relations-details-icon" aria-hidden="true">
+                      <span></span>
+                      <span></span>
+                    </span>
+                    <span class="relations-details-copy">
+                      <strong>Listas</strong>
+                      <small>Links, ranking e preview</small>
+                    </span>
+                  </button>
+                  <div id="relationsDetailsPanel" class="relations-details-panel is-closed" aria-hidden="true">
+                    <div class="relations-sidebar">
+                      <section class="card glass">
+                        <div class="card-head">
+                          <div>
+                            <span class="eyebrow">Atual</span>
+                            <h3 id="relationsNoteTitle">Nenhuma nota</h3>
+                          </div>
+                          <span class="pill subtle" id="relationsNoteScore">0.000</span>
+                        </div>
+                        <p id="relationsNoteSummary" class="hint">Selecione uma nota para ver links manuais, relações inferidas e sugestões.</p>
+                        <button id="relationsOpenSelectedButton" class="action primary" type="button">Abrir nota selecionada</button>
+                      </section>
+
+                      <section class="card glass">
+                        <div class="card-head">
+                          <div>
+                            <span class="eyebrow">Links manuais</span>
+                            <h3>Saída direta</h3>
+                          </div>
+                        </div>
+                        <div id="relationsManualLinksList" class="list-stack"></div>
+                      </section>
+
+                      <section class="card glass">
+                        <div class="card-head">
+                          <div>
+                            <span class="eyebrow">Relacionadas</span>
+                            <h3>Ranking inferido</h3>
+                          </div>
+                        </div>
+                        <div id="relationsRelatedList" class="list-stack"></div>
+                      </section>
+
+                      <section class="card glass">
+                        <div class="card-head">
+                          <div>
+                            <span class="eyebrow">Sugestões</span>
+                            <h3>Auto-link</h3>
+                          </div>
+                        </div>
+                        <div id="linkSuggestionsList" class="list-stack"></div>
+                      </section>
+
+                      <section class="card glass">
+                        <div class="card-head">
+                          <div>
+                            <span class="eyebrow">Preview</span>
+                            <h3>Diff do link</h3>
+                          </div>
+                        </div>
+                        <div id="linkPreviewPanel" class="link-preview-panel">
+                          <div class="empty-inline">Escolha uma sugestão para ver o preview.</div>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                </div>
                 <button id="relationsRefreshButton" class="action" type="button">Atualizar</button>
                 <span class="pill subtle" id="graphGlobalCount">0 nós</span>
               </div>
@@ -334,61 +403,6 @@
             </div>
           </section>
 
-          <aside class="relations-sidebar">
-            <section class="card glass">
-              <div class="card-head">
-                <div>
-                  <span class="eyebrow">Atual</span>
-                  <h3 id="relationsNoteTitle">Nenhuma nota</h3>
-                </div>
-                <span class="pill subtle" id="relationsNoteScore">0.000</span>
-              </div>
-              <p id="relationsNoteSummary" class="hint">Selecione uma nota para ver links manuais, relações inferidas e sugestões.</p>
-              <button id="relationsOpenSelectedButton" class="action primary" type="button">Abrir nota selecionada</button>
-            </section>
-
-            <section class="card glass">
-              <div class="card-head">
-                <div>
-                  <span class="eyebrow">Links manuais</span>
-                  <h3>Saída direta</h3>
-                </div>
-              </div>
-              <div id="relationsManualLinksList" class="list-stack"></div>
-            </section>
-
-            <section class="card glass">
-              <div class="card-head">
-                <div>
-                  <span class="eyebrow">Relacionadas</span>
-                  <h3>Ranking inferido</h3>
-                </div>
-              </div>
-              <div id="relationsRelatedList" class="list-stack"></div>
-            </section>
-
-            <section class="card glass">
-              <div class="card-head">
-                <div>
-                  <span class="eyebrow">Sugestões</span>
-                  <h3>Auto-link</h3>
-                </div>
-              </div>
-              <div id="linkSuggestionsList" class="list-stack"></div>
-            </section>
-
-            <section class="card glass">
-              <div class="card-head">
-                <div>
-                  <span class="eyebrow">Preview</span>
-                  <h3>Diff do link</h3>
-                </div>
-              </div>
-              <div id="linkPreviewPanel" class="link-preview-panel">
-                <div class="empty-inline">Escolha uma sugestão para ver o preview.</div>
-              </div>
-            </section>
-          </aside>
         </div>
       </section>
 
