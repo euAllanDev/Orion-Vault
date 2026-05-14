@@ -45,3 +45,5 @@
 - O bug mais importante encontrado no fluxo desktop não era troca real de vault, mas bootstrap tardio combinado com ações de criação liberadas cedo demais.
 - O backend já escrevia no vault padrão correto; o problema era a UI parecer pronta antes da árvore real ser carregada.
 - O próximo agente deve preservar a regra: nenhuma escrita no desktop antes do vault ativo ficar explicitamente pronto.
+- A direção atual do graph global no desktop deixou de ser esférica e passou a tratar assuntos principais como ilhas visuais derivadas das pastas top-level.
+- A interação alvo do graph global também mudou para foco por clique e abertura por duplo clique nos nós.

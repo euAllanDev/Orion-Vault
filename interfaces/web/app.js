@@ -430,6 +430,74 @@ function pathDirectory(relativePath) {
   return parts.join('/');
 }
 
+function collectVaultPaths(entry, paths = new Set()) {
+  if (!entry) return paths;
+
+  const relativePath = normalizeRelativePath(entry.relativePath ?? '').replace(/\/+$/g, '');
+  if (relativePath) {
+    paths.add(relativePath);
+  }
+
+  for (const child of entry.children ?? []) {
+    collectVaultPaths(child, paths);
+  }
+
+  return paths;
+}
+
+function splitRelativeLeaf(relativePath) {
+  const normalized = normalizeRelativePath(relativePath).replace(/\/+$/g, '');
+  const parts = normalized.split('/').filter(Boolean);
+  const leaf = parts.pop() ?? '';
+  return { parent: parts.join('/'), leaf };
+}
+
+function suffixRelativeLeaf(relativePath, suffix) {
+  const { parent, leaf } = splitRelativeLeaf(relativePath);
+  const dotIndex = leaf.lastIndexOf('.');
+  const hasExtension = dotIndex > 0;
+  const stem = hasExtension ? leaf.slice(0, dotIndex) : leaf;
+  const extension = hasExtension ? leaf.slice(dotIndex) : '';
+  const nextLeaf = `${stem}-${suffix}${extension}`;
+  return parent ? `${parent}/${nextLeaf}` : nextLeaf;
+}
+
+function makeUniqueVaultPath(base, name) {
+  const candidate = joinRelativePath(base, name);
+  const existingPaths = collectVaultPaths(state.tree);
+
+  if (!existingPaths.has(candidate)) {
+    return candidate;
+  }
+
+  for (let index = 1; index < 1000; index += 1) {
+    const nextCandidate = suffixRelativeLeaf(candidate, index);
+    if (!existingPaths.has(nextCandidate)) {
+      return nextCandidate;
+    }
+  }
+
+  return candidate;
+}
+
+function makeUniqueVaultPathForTarget(targetPath) {
+  const candidate = normalizeRelativePath(targetPath);
+  const existingPaths = collectVaultPaths(state.tree);
+
+  if (!existingPaths.has(candidate)) {
+    return candidate;
+  }
+
+  for (let index = 1; index < 1000; index += 1) {
+    const nextCandidate = suffixRelativeLeaf(candidate, index);
+    if (!existingPaths.has(nextCandidate)) {
+      return nextCandidate;
+    }
+  }
+
+  return candidate;
+}
+
 function containerForSelection() {
   if (state.selectedFolder) return state.selectedFolder;
   if (state.selectedFile) return pathDirectory(state.selectedFile);
@@ -1305,7 +1373,7 @@ async function createAgendaNote() {
   }
 
   setAgendaStatus('Salvando nota com data...');
-  const filePath = buildAgendaFilePath(title, dueValue);
+  const filePath = makeUniqueVaultPathForTarget(buildAgendaFilePath(title, dueValue));
   const content = buildAgendaMarkdown({ vaultRoot, title, dueValue, status, body });
 
   state.agendaReminderKeys = new Set([...state.agendaReminderKeys].filter((key) => !key.startsWith(`${filePath}|`)));
@@ -3126,7 +3194,7 @@ async function createFolder() {
   const base = containerForSelection();
   const name = await askRelativePath('Nova pasta', 'Nova Pasta');
   if (!name) return;
-  const value = joinRelativePath(base, name);
+  const value = makeUniqueVaultPath(base, name);
   sendDebugState('createFolder.before', { vaultRoot, path: value, base });
 
   await api('/api/folder', {
@@ -3144,7 +3212,7 @@ async function createNote() {
   const name = await askRelativePath('Nova nota', 'nova-nota');
   if (!name) return;
   const fileName = name.toLowerCase().endsWith('.md') ? name : `${name}.md`;
-  const pathValue = joinRelativePath(base, fileName);
+  const pathValue = makeUniqueVaultPath(base, fileName);
   sendDebugState('createNote.before', { vaultRoot, path: pathValue, base });
 
   const fallbackContent = state.selectedTemplate?.content ?? '# Nova nota\n\n';
@@ -3177,7 +3245,9 @@ async function confirmTemplateSave() {
 
   const baseIndex = els.templatePickerSelect.value.trim();
   const baseTemplate = baseIndex === '' ? null : state.templates[Number(baseIndex)] ?? null;
-  const templatePath = joinRelativePath('Templates', templateName.toLowerCase().endsWith('.md') ? templateName : `${templateName}.md`);
+  const templatePath = makeUniqueVaultPathForTarget(
+    joinRelativePath('Templates', templateName.toLowerCase().endsWith('.md') ? templateName : `${templateName}.md`)
+  );
   const content = els.templatePickerContent.value || baseTemplate?.content || els.noteEditor.value || '';
   const vaultRoot = getConfiguredVaultRoot();
 

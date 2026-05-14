@@ -26,20 +26,21 @@ O shell desktop deve reaproveitar o core local existente e expor a mesma frontei
 18. A interface desktop deve permitir fixar notas e manter essa lista localmente.
 19. A interface desktop deve abrir a nota diária local do dia em um fluxo rápido.
 20. A interface desktop deve mostrar um graph view local do vault ativo em uma superfície global dedicada.
-21. O graph view deve permitir zoom e arrastar, exibir todos os nós do vault ativo por padrão e mostrar notas e pastas como cards navegáveis.
-22. Pastas aninhadas no graph devem aparecer como entidades clicáveis que refocam a rede daquele contexto e permitem navegar diretamente até suas notas.
-23. A interface desktop deve expor uma ponte local para IA via CLI, permitindo ler contexto, buscar, planejar e propor ações sobre notas.
-24. A ponte de IA via CLI deve usar os mesmos contratos de comandos e respeitar a fronteira segura do vault antes de qualquer escrita.
-25. A tela inicial deve mostrar um popup amigável de onboarding da IA com atalho para abrir um terminal local visível no diretório certo.
-26. O popup de IA deve manter o fluxo de comandos e a lista de comandos dentro do próprio painel, sem depender de modais aninhados.
-27. O launcher de IA deve ficar como um botão flutuante arrastável, começando no canto inferior da tela.
-28. A experiência desktop deve reproduzir um som local de lembrete quando notificações de agenda forem disparadas, sem usar o som padrão do sistema operacional.
-29. O bootstrap do vault padrão no desktop deve usar o mesmo contrato de abertura usado depois pela interface, em vez de um caminho paralelo de inicialização.
-30. O vault padrão configurado pelo app deve ser a única raiz autoritativa usada pelo shell desktop durante bootstrap, leitura, criação e atualização da árvore.
-31. Enquanto o bootstrap do vault padrão não terminar, a interface desktop não deve permitir criar notas, criar pastas ou disparar outras ações de escrita no workspace.
-32. Quando o vault padrão estiver carregando, o workspace deve permanecer em estado de carregamento ou vazio controlado, sem parecer pronto de forma enganosa.
-33. Ao criar uma pasta vazia no vault ativo, a árvore do workspace deve refletir a nova pasta imediatamente após o refresh, sem exigir troca de tela.
-34. Os diálogos internos usados para criar, renomear, mover ou informar conteúdo devem operar com apenas uma sessão ativa por vez, evitando reaproveitar callbacks antigos.
+21. O graph view deve permitir zoom e arrastar, exibir todos os nós do vault ativo por padrão e organizar os assuntos principais em ilhas visuais derivadas das pastas top-level.
+22. Pastas aninhadas no graph devem aparecer como entidades clicáveis que refocam a rede daquele contexto e podem ser abertas a partir da própria superfície.
+23. No graph global, um clique deve priorizar foco visual no nó ou assunto atual, enquanto a abertura de nota ou pasta pode acontecer por duplo clique.
+24. A interface desktop deve expor uma ponte local para IA via CLI, permitindo ler contexto, buscar, planejar e propor ações sobre notas.
+25. A ponte de IA via CLI deve usar os mesmos contratos de comandos e respeitar a fronteira segura do vault antes de qualquer escrita.
+26. A tela inicial deve mostrar um popup amigável de onboarding da IA com atalho para abrir um terminal local visível no diretório certo.
+27. O popup de IA deve manter o fluxo de comandos e a lista de comandos dentro do próprio painel, sem depender de modais aninhados.
+28. O launcher de IA deve ficar como um botão flutuante arrastável, começando no canto inferior da tela.
+29. A experiência desktop deve reproduzir um som local de lembrete quando notificações de agenda forem disparadas, sem usar o som padrão do sistema operacional.
+30. O bootstrap do vault padrão no desktop deve usar o mesmo contrato de abertura usado depois pela interface, em vez de um caminho paralelo de inicialização.
+31. O vault padrão configurado pelo app deve ser a única raiz autoritativa usada pelo shell desktop durante bootstrap, leitura, criação e atualização da árvore.
+32. Enquanto o bootstrap do vault padrão não terminar, a interface desktop não deve permitir criar notas, criar pastas ou disparar outras ações de escrita no workspace.
+33. Quando o vault padrão estiver carregando, o workspace deve permanecer em estado de carregamento ou vazio controlado, sem parecer pronto de forma enganosa.
+34. Ao criar uma pasta vazia no vault ativo, a árvore do workspace deve refletir a nova pasta imediatamente após o refresh, sem exigir troca de tela.
+35. Os diálogos internos usados para criar, renomear, mover ou informar conteúdo devem operar com apenas uma sessão ativa por vez, evitando reaproveitar callbacks antigos.
 
 ## Pontos de atenção
 - O shell desktop deve reaproveitar a lógica atual em vez de reimplementar as regras de negócio.
@@ -146,7 +147,13 @@ And leva o usuário diretamente para edição
 Given uma nota ativa com conexões
 When o usuário abre o graph view
 Then a interface mostra a superfície global do vault com seus nós visíveis por padrão
-And permite abrir uma nota clicando em um nó
+And organiza os assuntos principais em ilhas visuais
+And permite focar uma nota clicando em um nó
+
+### Cenário 12a: abrir nota por duplo clique no graph
+Given um nó de nota visível no graph global
+When o usuário dá duplo clique nesse nó
+Then a nota correspondente é aberta no workspace
 
 ### Cenário 13: graph de pasta
 Given uma pasta selecionada no workspace
@@ -157,8 +164,14 @@ And o usuário pode arrastar e aplicar zoom no grafo
 ### Cenário 14: pasta aninhada como nó
 Given uma pasta com subpastas no graph view
 When o usuário clica em uma subpasta clicável
-Then a interface abre a rede local daquela subpasta
+Then a interface foca ou abre a rede local daquela subpasta
 And mostra as notas contidas nela
+
+### Cenário 14a: ilha principal foca assunto
+Given uma ilha principal visível no graph global
+When o usuário clica nessa ilha
+Then a interface foca o assunto correspondente
+And mantém a navegação dentro da própria superfície global
 
 ### Cenário 14b: vault vazio não bloqueia navegação
 Given o vault ativo está vazio ou sem notas navegáveis

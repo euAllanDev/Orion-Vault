@@ -794,12 +794,16 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
   if (req.method === 'GET' && url.pathname === '/api/daily') {
     const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
     const day = new Date().toISOString().slice(0, 10);
-    const relativePath = `Daily/${day}.md`;
-    const absolutePath = path.resolve(vaultRoot, relativePath);
-    const exists = await fileExists(absolutePath);
+    let relativePath = `Daily/${day}.md`;
+    let absolutePath = path.resolve(vaultRoot, relativePath);
 
-    if (!exists) {
-      await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    for (let index = 1; await fileExists(absolutePath); index += 1) {
+      relativePath = `Daily/${day}-${index}.md`;
+      absolutePath = path.resolve(vaultRoot, relativePath);
+    }
+
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    if (!(await fileExists(absolutePath))) {
       await fs.writeFile(absolutePath, `# ${day}\n\n`, 'utf8');
     }
 
