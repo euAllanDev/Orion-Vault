@@ -379,25 +379,79 @@
               <div id="graphGlobalStage" class="graph-global-stage" role="img" aria-label="Graph global do vault">
                 <div id="graphGlobalSphere" class="graph-global-sphere"></div>
               </div>
-              <div id="graphGlobalOverlay" class="graph-global-overlay">
-                <div class="card-top">
-                  <span class="badge" id="graphGlobalOverlayBadge">Nó selecionado</span>
+              <div id="graphGlobalOverlay" class="graph-global-overlay hidden" aria-hidden="true">
+                <header class="graph-global-top-row">
+                  <div class="graph-global-focus-badge">
+                    <span class="graph-global-pulse" aria-hidden="true"></span>
+                    <span id="graphGlobalOverlayBadge">Nota focada</span>
+                  </div>
+                  <span class="graph-global-subject-label" id="graphGlobalOverlayKicker">Assunto local</span>
+                </header>
+
+                <h3 class="graph-global-title" id="graphGlobalOverlayTitle">Nenhuma nota</h3>
+
+                <p class="graph-global-description" id="graphGlobalOverlaySummary">Abra uma nota ou clique em um nó para ver o resumo.</p>
+
+                <div class="graph-global-path-pill" title="Vault / caminho">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M4 7.5C4 6.67 4.67 6 5.5 6h4.1c.46 0 .9.18 1.23.51l1.16 1.16c.33.33.77.51 1.23.51h5.28c.83 0 1.5.67 1.5 1.5V18.5c0 .83-.67 1.5-1.5 1.5h-13c-.83 0-1.5-.67-1.5-1.5v-11Z" stroke="currentColor" stroke-width="1.8"/>
+                  </svg>
+                  <span id="graphGlobalOverlayPath">Vault / caminho</span>
                 </div>
-                <h3 id="graphGlobalOverlayTitle">Nenhuma nota</h3>
-                <p id="graphGlobalOverlaySummary">Abra uma nota ou clique em um nó para ver o resumo.</p>
-                <div class="metrics graph-global-metrics">
-                  <div class="metric">
-                    <strong id="graphGlobalOverlayStatus">--</strong>
-                    <small>status</small>
+
+                <section class="graph-global-info-grid">
+                  <div class="graph-global-info-item">
+                    <div class="graph-global-info-left">
+                      <strong id="graphGlobalOverlayStatus">--</strong>
+                      <span>Tipo</span>
+                    </div>
+                    <div class="graph-global-mini-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M8 6.5h5.5l2.5 2.5V17.5H8z" />
+                        <path d="M13.5 6.5V9H16" />
+                      </svg>
+                    </div>
                   </div>
-                  <div class="metric">
-                    <strong id="graphGlobalOverlayLinks">--</strong>
-                    <small>links</small>
+
+                  <div class="graph-global-info-item">
+                    <div class="graph-global-info-left">
+                      <strong id="graphGlobalOverlayLinks">--</strong>
+                      <span>Conexões</span>
+                    </div>
+                    <div class="graph-global-mini-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M9.5 9.5 14.5 14.5" />
+                        <path d="M7.75 13.75a2.75 2.75 0 1 1 0-5.5 2.75 2.75 0 0 1 0 5.5Z" />
+                        <path d="M16.25 18.25a2.75 2.75 0 1 1 0-5.5 2.75 2.75 0 0 1 0 5.5Z" />
+                      </svg>
+                    </div>
                   </div>
-                  <div class="metric">
-                    <strong id="graphGlobalOverlayLayer">--</strong>
-                    <small>camada</small>
+
+                  <div class="graph-global-info-item">
+                    <div class="graph-global-info-left">
+                      <strong id="graphGlobalOverlayLayer">--</strong>
+                      <span>Assunto</span>
+                    </div>
+                    <div class="graph-global-mini-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M12 5.5 17.5 8.75v6.5L12 18.5 6.5 15.25v-6.5Z" />
+                        <path d="M12 5.5v13" />
+                        <path d="M6.5 8.75 12 12l5.5-3.25" />
+                      </svg>
+                    </div>
                   </div>
+                </section>
+
+                <div class="graph-global-divider"></div>
+
+                <div class="graph-global-hint">
+                  <span class="graph-global-hint-dot" aria-hidden="true"></span>
+                  <p id="graphGlobalOverlayHint">Clique para focar. Duplo clique abre no workspace.</p>
+                </div>
+
+                <div class="graph-global-actions">
+                  <button id="graphGlobalOverlayOpenButton" class="graph-global-primary-btn" type="button">Abrir nota</button>
+                  <button id="graphGlobalOverlayFocusButton" class="graph-global-ghost-btn" type="button">Manter foco</button>
                 </div>
               </div>
             </div>
@@ -511,9 +565,10 @@
         <div class="workspace-layout">
           <aside class="tree-pane glass">
             <div class="pane-head">
-              <div>
-                <span class="eyebrow">Pastas e notas</span>
+              <div class="tree-pane-head-copy">
+                <span class="eyebrow">Biblioteca</span>
                 <h3>Vault</h3>
+                <p>Organize seu vault local</p>
               </div>
               <div class="pane-actions">
                 <button id="newNoteButton" title="Nova nota">＋</button>
@@ -664,7 +719,7 @@
 
   <template id="folderTemplate">
     <details class="folder" open>
-      <summary>
+      <summary class="folder-item">
         <span class="folder-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h4.3l1.7 1.8h6A2 2 0 0 1 19.5 9.3v7.2a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2Z" />
@@ -673,8 +728,8 @@
         </span>
         <span class="folder-label-wrap">
           <span class="folder-name"></span>
-          <span class="folder-meta"></span>
         </span>
+        <span class="folder-count"></span>
       </summary>
       <div class="folder-items"></div>
     </details>
@@ -682,7 +737,6 @@
 
   <template id="fileTemplate">
     <button class="file-item" type="button">
-      <span class="file-icon" aria-hidden="true">MD</span>
       <span class="file-name"></span>
     </button>
   </template>

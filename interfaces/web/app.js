@@ -194,12 +194,18 @@ const els = {
   graphGlobalStage: document.getElementById('graphGlobalStage'),
   graphGlobalSphere: document.getElementById('graphGlobalSphere'),
   graphGlobalCount: document.getElementById('graphGlobalCount'),
+  graphGlobalOverlay: document.getElementById('graphGlobalOverlay'),
   graphGlobalOverlayTitle: document.getElementById('graphGlobalOverlayTitle'),
   graphGlobalOverlaySummary: document.getElementById('graphGlobalOverlaySummary'),
   graphGlobalOverlayBadge: document.getElementById('graphGlobalOverlayBadge'),
+  graphGlobalOverlayKicker: document.getElementById('graphGlobalOverlayKicker'),
+  graphGlobalOverlayPath: document.getElementById('graphGlobalOverlayPath'),
   graphGlobalOverlayStatus: document.getElementById('graphGlobalOverlayStatus'),
   graphGlobalOverlayLinks: document.getElementById('graphGlobalOverlayLinks'),
   graphGlobalOverlayLayer: document.getElementById('graphGlobalOverlayLayer'),
+  graphGlobalOverlayHint: document.getElementById('graphGlobalOverlayHint'),
+  graphGlobalOverlayOpenButton: document.getElementById('graphGlobalOverlayOpenButton'),
+  graphGlobalOverlayFocusButton: document.getElementById('graphGlobalOverlayFocusButton'),
   relationsNoteTitle: document.getElementById('relationsNoteTitle'),
   relationsNoteSummary: document.getElementById('relationsNoteSummary'),
   relationsNoteScore: document.getElementById('relationsNoteScore'),
@@ -2340,27 +2346,13 @@ function ensureGlobalGraphSelection(layout, graph) {
     return;
   }
 
-  const focusedNode = graph?.focusPath ? layout.positions.get(graph.focusPath) : null;
-  if (focusedNode) {
-    graphGlobalScene.activePath = focusedNode.node.path;
-    graphGlobalScene.activeCluster = focusedNode.cluster.key;
-    return;
-  }
-
-  const focusClusterKey = graph?.focusPath ? graphGlobalClusterKeyForNode({ kind: 'folder', path: graph.focusPath, folderPath: graph.focusPath }) : '';
-  if (focusClusterKey && layout.clusterByKey.has(focusClusterKey)) {
-    graphGlobalScene.activePath = '';
-    graphGlobalScene.activeCluster = focusClusterKey;
-    return;
-  }
-
   if (graphGlobalScene.activeCluster && layout.clusterByKey.has(graphGlobalScene.activeCluster)) {
     graphGlobalScene.activePath = '';
     return;
   }
 
   graphGlobalScene.activePath = '';
-  graphGlobalScene.activeCluster = layout.clusters[0]?.key ?? '';
+  graphGlobalScene.activeCluster = '';
 }
 
 function buildGlobalGraphHighlights(layout) {
@@ -2401,42 +2393,63 @@ function buildGlobalGraphHighlights(layout) {
 }
 
 function updateGlobalGraphOverlay(layout, displayPath, displayCluster) {
+  const setOverlayVisible = (visible) => {
+    if (!els.graphGlobalOverlay) return;
+    els.graphGlobalOverlay.classList.toggle('hidden', !visible);
+    els.graphGlobalOverlay.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    if (!visible) {
+      els.graphGlobalOverlay.dataset.path = '';
+      els.graphGlobalOverlay.dataset.kind = '';
+    }
+  };
+
   if (displayPath && layout.positions.has(displayPath)) {
     const current = layout.positions.get(displayPath);
     const node = current?.node;
     if (!node) return;
-    if (els.graphGlobalOverlayTitle) els.graphGlobalOverlayTitle.textContent = node.label;
-    if (els.graphGlobalOverlaySummary) {
-      els.graphGlobalOverlaySummary.textContent = node.summary || `Nota do assunto ${current.cluster.label}. Clique para focar e dê duplo clique para abrir.`;
+    const isFolder = node.kind === 'folder';
+    const clusterLabel = current.cluster.label;
+    const summary = node.summary || (isFolder
+      ? `Pasta de navegação dentro do assunto ${clusterLabel}. Use este nó para refocar a malha e abrir esse contexto no workspace.`
+      : `Nota dentro do assunto ${clusterLabel}. Use este ponto para inspecionar o contexto e abrir a nota direto no workspace.`);
+
+    setOverlayVisible(true);
+    if (els.graphGlobalOverlay) {
+      els.graphGlobalOverlay.dataset.path = node.path;
+      els.graphGlobalOverlay.dataset.kind = node.kind;
     }
-    if (els.graphGlobalOverlayBadge) els.graphGlobalOverlayBadge.textContent = node.kind === 'folder' ? 'Pasta focada' : 'Nota focada';
-    if (els.graphGlobalOverlayStatus) els.graphGlobalOverlayStatus.textContent = node.kind === 'folder' ? 'Pasta' : 'Nota';
+    if (els.graphGlobalOverlayTitle) els.graphGlobalOverlayTitle.textContent = node.label;
+    if (els.graphGlobalOverlaySummary) els.graphGlobalOverlaySummary.textContent = summary;
+    if (els.graphGlobalOverlayBadge) els.graphGlobalOverlayBadge.textContent = isFolder ? 'Pasta focada' : 'Nota focada';
+    if (els.graphGlobalOverlayKicker) els.graphGlobalOverlayKicker.textContent = `Assunto ${clusterLabel}`;
+    if (els.graphGlobalOverlayPath) {
+      const pathLabel = prettyPath(node.path);
+      els.graphGlobalOverlayPath.textContent = pathLabel;
+      els.graphGlobalOverlayPath.setAttribute('title', pathLabel);
+    }
+    if (els.graphGlobalOverlayStatus) els.graphGlobalOverlayStatus.textContent = isFolder ? 'Pasta' : 'Nota';
     if (els.graphGlobalOverlayLinks) els.graphGlobalOverlayLinks.textContent = String(layout.connectionCounts.get(node.path) ?? 0);
-    if (els.graphGlobalOverlayLayer) els.graphGlobalOverlayLayer.textContent = current.cluster.label;
+    if (els.graphGlobalOverlayLayer) els.graphGlobalOverlayLayer.textContent = clusterLabel;
+    if (els.graphGlobalOverlayHint) {
+      els.graphGlobalOverlayHint.textContent = isFolder
+        ? 'Clique para manter o contexto visual. Duplo clique abre a pasta no workspace.'
+        : 'Clique para manter o foco visual. Duplo clique abre a nota no workspace.';
+    }
+    if (els.graphGlobalOverlayOpenButton) {
+      els.graphGlobalOverlayOpenButton.textContent = isFolder ? 'Abrir pasta' : 'Abrir nota';
+    }
+    if (els.graphGlobalOverlayFocusButton) {
+      els.graphGlobalOverlayFocusButton.textContent = isFolder ? 'Manter contexto' : 'Manter foco';
+    }
     return;
   }
 
   if (displayCluster && layout.clusterByKey.has(displayCluster)) {
-    const cluster = layout.clusterByKey.get(displayCluster);
-    if (!cluster) return;
-
-    if (els.graphGlobalOverlayTitle) els.graphGlobalOverlayTitle.textContent = cluster.label;
-    if (els.graphGlobalOverlaySummary) {
-      els.graphGlobalOverlaySummary.textContent = `Ilha principal do assunto ${cluster.label}, com ${cluster.noteCount} notas e ${cluster.folderCount} pastas relacionadas no mesmo contexto.`;
-    }
-    if (els.graphGlobalOverlayBadge) els.graphGlobalOverlayBadge.textContent = 'Assunto focado';
-    if (els.graphGlobalOverlayStatus) els.graphGlobalOverlayStatus.textContent = `${cluster.noteCount} notas`;
-    if (els.graphGlobalOverlayLinks) els.graphGlobalOverlayLinks.textContent = String(cluster.connectionCount || cluster.nodes.length);
-    if (els.graphGlobalOverlayLayer) els.graphGlobalOverlayLayer.textContent = 'Ilha';
+    setOverlayVisible(false);
     return;
   }
 
-  if (els.graphGlobalOverlayTitle) els.graphGlobalOverlayTitle.textContent = 'Nenhuma nota';
-  if (els.graphGlobalOverlaySummary) els.graphGlobalOverlaySummary.textContent = 'Clique numa ilha para focar um assunto. Clique num nó e dê duplo clique para abrir.';
-  if (els.graphGlobalOverlayBadge) els.graphGlobalOverlayBadge.textContent = 'Graph global';
-  if (els.graphGlobalOverlayStatus) els.graphGlobalOverlayStatus.textContent = '--';
-  if (els.graphGlobalOverlayLinks) els.graphGlobalOverlayLinks.textContent = '--';
-  if (els.graphGlobalOverlayLayer) els.graphGlobalOverlayLayer.textContent = '--';
+  setOverlayVisible(false);
 }
 
 function renderIslandGlobalGraph(graph) {
@@ -2463,8 +2476,8 @@ function renderIslandGlobalGraph(graph) {
   ensureGlobalGraphSelection(layout, graph);
   const { displayPath, displayCluster, highlightedPaths, featuredEdges } = buildGlobalGraphHighlights(layout);
   const starsMarkup = buildGlobalGraphStars(width, height);
-  const blobMarkup = layout.clusters.map((cluster, index) => `<path class="graph-global-blob${displayCluster === cluster.key ? ' active' : ''}${displayCluster && displayCluster !== cluster.key ? ' dimmed' : ''}" d="${graphGlobalBlobPath(cluster.x, cluster.y, cluster.rx, cluster.ry, index * 2.17)}" style="--blob-fill:${cluster.palette.blob}; --blob-stroke:${cluster.palette.stroke}; --blob-glow:${cluster.palette.glow};"></path>`).join('');
-  const clusterLabelMarkup = layout.clusters.map((cluster) => `<g class="graph-global-cluster-meta${displayCluster === cluster.key ? ' active' : ''}${displayCluster && displayCluster !== cluster.key ? ' dimmed' : ''}"><circle class="graph-global-cluster-beacon" cx="${(cluster.x - (cluster.rx * 0.5)).toFixed(2)}" cy="${(cluster.y - (cluster.ry * 0.58)).toFixed(2)}" r="7"></circle><text class="graph-global-cluster-label" x="${(cluster.x - (cluster.rx * 0.42)).toFixed(2)}" y="${(cluster.y - (cluster.ry * 0.52)).toFixed(2)}">${escapeHtml(cluster.label)}</text></g>`).join('');
+  const blobMarkup = layout.clusters.map((cluster, index) => `<path class="graph-global-blob${!displayCluster || displayCluster === cluster.key ? ' active' : ''}${displayCluster && displayCluster !== cluster.key ? ' dimmed' : ''}" d="${graphGlobalBlobPath(cluster.x, cluster.y, cluster.rx, cluster.ry, index * 2.17)}" style="--blob-fill:${cluster.palette.blob}; --blob-stroke:${cluster.palette.stroke}; --blob-glow:${cluster.palette.glow};"></path>`).join('');
+  const clusterLabelMarkup = layout.clusters.map((cluster) => `<g class="graph-global-cluster-meta${!displayCluster || displayCluster === cluster.key ? ' active' : ''}${displayCluster && displayCluster !== cluster.key ? ' dimmed' : ''}"><circle class="graph-global-cluster-beacon" cx="${(cluster.x - (cluster.rx * 0.5)).toFixed(2)}" cy="${(cluster.y - (cluster.ry * 0.58)).toFixed(2)}" r="7"></circle><text class="graph-global-cluster-label" x="${(cluster.x - (cluster.rx * 0.42)).toFixed(2)}" y="${(cluster.y - (cluster.ry * 0.52)).toFixed(2)}">${escapeHtml(cluster.label)}</text></g>`).join('');
   const edgeMarkup = layout.edges.map((edge) => {
     const from = layout.positions.get(edge.from);
     const to = layout.positions.get(edge.to);
@@ -2475,7 +2488,7 @@ function renderIslandGlobalGraph(graph) {
     const isFeatured = featuredEdges.has(featureKey);
     const clusterVisible = !displayCluster || from.cluster.key === displayCluster || to.cluster.key === displayCluster;
     const opacity = displayPath
-      ? (isFeatured ? 0.96 : highlightedPaths.has(edge.from) || highlightedPaths.has(edge.to) ? 0.22 : 0.06)
+      ? (isFeatured ? 0.96 : clusterVisible ? (sameCluster ? 0.34 : 0.18) : 0.06)
       : displayCluster
         ? (sameCluster && clusterVisible ? 0.48 : clusterVisible ? 0.14 : 0.05)
         : (sameCluster ? 0.34 : 0.18);
@@ -2483,10 +2496,10 @@ function renderIslandGlobalGraph(graph) {
     return `<line class="graph-global-connection ${escapeHtml(edge.kind)}${isFeatured ? ' featured' : ''}${displayCluster && !clusterVisible ? ' dimmed' : ''}" x1="${from.x.toFixed(2)}" y1="${from.y.toFixed(2)}" x2="${to.x.toFixed(2)}" y2="${to.y.toFixed(2)}" style="--opacity:${opacity.toFixed(3)}; stroke-width:${strokeWidth};"></line>`;
   }).join('');
   const haloMarkup = layout.nodeOrder.map((entry) => entry.node.path === displayPath ? `<circle class="graph-global-halo active" cx="${entry.x.toFixed(2)}" cy="${entry.y.toFixed(2)}" r="${(entry.size + 8).toFixed(2)}"></circle>` : '').join('');
-  const clusterHitsMarkup = layout.clusters.map((cluster) => `<button type="button" class="graph-global-cluster-hit${displayCluster === cluster.key ? ' active' : ''}${displayCluster && displayCluster !== cluster.key ? ' dimmed' : ''}" data-cluster="${escapeHtml(cluster.key)}" aria-label="Focar assunto ${escapeHtml(cluster.label)}" title="${escapeHtml(cluster.label)}" style="left:${(cluster.x - cluster.rx).toFixed(2)}px; top:${(cluster.y - cluster.ry).toFixed(2)}px; width:${(cluster.rx * 2).toFixed(2)}px; height:${(cluster.ry * 2).toFixed(2)}px;"></button>`).join('');
+  const clusterHitsMarkup = layout.clusters.map((cluster) => `<button type="button" class="graph-global-cluster-hit${!displayCluster || displayCluster === cluster.key ? ' active' : ''}${displayCluster && displayCluster !== cluster.key ? ' dimmed' : ''}" data-cluster="${escapeHtml(cluster.key)}" aria-label="Focar assunto ${escapeHtml(cluster.label)}" title="${escapeHtml(cluster.label)}" style="left:${(cluster.x - cluster.rx).toFixed(2)}px; top:${(cluster.y - cluster.ry).toFixed(2)}px; width:${(cluster.rx * 2).toFixed(2)}px; height:${(cluster.ry * 2).toFixed(2)}px;"></button>`).join('');
   const nodeMarkup = layout.nodeOrder.map((entry) => {
     const active = entry.node.path === displayPath;
-    const dimmed = displayPath ? !highlightedPaths.has(entry.node.path) : displayCluster ? entry.cluster.key !== displayCluster : false;
+    const dimmed = displayCluster ? entry.cluster.key !== displayCluster : false;
     const fill = entry.node.kind === 'folder' ? entry.cluster.palette.folder : entry.isHub ? entry.cluster.palette.nodeStrong : entry.cluster.palette.node;
     const glow = entry.isHub ? entry.cluster.palette.glow : 'rgba(255,255,255,0.16)';
     return `<button type="button" class="graph-global-node ${escapeHtml(entry.node.kind)}${entry.isHub ? ' hub' : ''}${active ? ' active' : ''}${dimmed ? ' dimmed' : ''}" data-path="${escapeHtml(entry.node.path)}" data-kind="${escapeHtml(entry.node.kind)}" data-cluster="${escapeHtml(entry.cluster.key)}" data-title="${escapeHtml(entry.node.label)}" title="${escapeHtml(entry.node.label)}" style="left:${entry.x.toFixed(2)}px; top:${entry.y.toFixed(2)}px; --size:${entry.size.toFixed(2)}px; --node-fill:${fill}; --node-glow:${glow};"></button>`;
@@ -2534,6 +2547,15 @@ function getIslandGlobalGraphNode(target) {
 
 function getIslandGlobalGraphCluster(target) {
   return target instanceof HTMLElement ? target.closest('.graph-global-cluster-hit') : null;
+}
+
+function getGraphGlobalOverlayNode() {
+  const overlay = els.graphGlobalOverlay;
+  if (!overlay) return null;
+
+  const pathValue = String(overlay.dataset.path ?? '').trim();
+  if (!pathValue) return null;
+  return (graphGlobalScene.lastGraph?.nodes ?? []).find((entry) => entry.path === pathValue) ?? null;
 }
 
 function focusIslandGlobalGraphNode(pathValue) {
@@ -2611,6 +2633,10 @@ async function openRelationsView() {
   setView('relations');
   closeRelationsDetailsMenu();
   resetIslandGlobalGraphViewport();
+  graphGlobalScene.activePath = '';
+  graphGlobalScene.activeCluster = '';
+  graphGlobalScene.hoverPath = '';
+  graphGlobalScene.hoverCluster = '';
   await refreshRelationsSurface();
   startIslandGlobalGraphAnimation();
 }
@@ -3113,9 +3139,9 @@ function renderTree(tree) {
       folder.dataset.path = folderPath;
       folder.style.setProperty('--tree-level', String(level));
       const nameSpan = folder.querySelector('.folder-name');
-      const metaSpan = folder.querySelector('.folder-meta');
+      const countSpan = folder.querySelector('.folder-count');
       nameSpan.textContent = entry.name;
-      metaSpan.textContent = `${(entry.children ?? []).length} item(ns)`;
+      countSpan.textContent = String((entry.children ?? []).length);
 
       const items = folder.querySelector('.folder-items');
       folder.querySelector('summary').addEventListener('click', () => selectFolder(folderPath));
@@ -3965,6 +3991,31 @@ els.graphGlobalSphere.addEventListener('keydown', (event) => {
   if (cluster?.dataset.cluster !== undefined) {
     focusIslandGlobalGraphCluster(cluster.dataset.cluster || '');
   }
+});
+els.graphGlobalOverlay?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (event.target instanceof HTMLElement && event.target.closest('button')) return;
+  const node = getGraphGlobalOverlayNode();
+  if (!node?.path) return;
+  focusIslandGlobalGraphNode(node.path);
+});
+els.graphGlobalOverlay?.addEventListener('dblclick', (event) => {
+  event.stopPropagation();
+  const node = getGraphGlobalOverlayNode();
+  if (!node) return;
+  openGlobalGraphNode(node);
+});
+els.graphGlobalOverlayOpenButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const node = getGraphGlobalOverlayNode();
+  if (!node) return;
+  openGlobalGraphNode(node);
+});
+els.graphGlobalOverlayFocusButton?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const node = getGraphGlobalOverlayNode();
+  if (!node?.path) return;
+  focusIslandGlobalGraphNode(node.path);
 });
 els.templatesDialogClose.addEventListener('click', () => els.templatesDialog.close());
 els.templatesDialog.addEventListener('cancel', (event) => {
