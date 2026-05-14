@@ -446,7 +446,7 @@
                 <textarea id="agendaBodyInput" rows="8" placeholder="Detalhes, contexto e próximos passos"></textarea>
               </label>
               <div class="agenda-form-actions">
-                <button id="agendaCreateButton" class="action primary" type="button">Criar nota com data</button>
+                <button id="agendaCreateButton" class="action primary" type="submit">Criar nota com data</button>
                 <button id="agendaResetButton" class="action" type="button">Limpar</button>
               </div>
               <p id="agendaStatusMessage" class="agenda-status-message" aria-live="polite"></p>
@@ -520,12 +520,12 @@
                 <button id="newFolderButton" title="Nova pasta">⌄</button>
               </div>
             </div>
-            <div class="tree-context">
-              <span class="eyebrow">Pasta ativa</span>
-              <p id="folderBreadcrumb">Nenhuma pasta selecionada</p>
-            </div>
-            <div id="tree" class="tree"></div>
-          </aside>
+              <div class="tree-context">
+                <span class="eyebrow">Pasta ativa</span>
+                <p id="folderBreadcrumb">Nenhuma pasta selecionada</p>
+              </div>
+              <div id="tree" class="tree"></div>
+            </aside>
 
           <section class="editor-pane glass">
             <div class="editor-head">
@@ -563,11 +563,11 @@
                           <small>Reposiciona dentro do vault</small>
                         </span>
                       </button>
-                      <button class="note-option-item" type="button" data-action="open-relations">
-                        <span class="note-option-badge note-option-badge-purple">⟲</span>
+                      <button class="note-option-item" type="button" data-action="link-note">
+                        <span class="note-option-badge note-option-badge-purple">⛓</span>
                         <span class="note-option-copy">
-                          <strong>Relações</strong>
-                          <small>Abre graph e sugestões</small>
+                          <strong>Linkar</strong>
+                          <small>Escolhe uma nota e insere o link</small>
                         </span>
                       </button>
                     </div>
@@ -743,6 +743,24 @@
         <button id="templatesDialogClose" class="action" type="button">Fechar</button>
       </div>
       <div id="templatesDialogList" class="commands-dialog-groups"></div>
+    </div>
+  </dialog>
+
+  <dialog id="linkPickerDialog" class="commands-dialog">
+    <div class="commands-dialog-panel">
+      <div class="commands-dialog-head">
+        <div>
+          <span class="eyebrow">Nota</span>
+          <h3>Linkar nota</h3>
+          <p>Escolha a nota que deve ser vinculada ao texto atual.</p>
+        </div>
+        <button id="linkPickerDialogClose" class="action" type="button">Fechar</button>
+      </div>
+      <label class="search-form" style="margin-bottom: 12px;">
+        <span>Filtrar notas</span>
+        <input id="linkPickerDialogQuery" type="text" placeholder="Digite para filtrar" autocomplete="off" />
+      </label>
+      <div id="linkPickerDialogList" class="commands-dialog-groups"></div>
     </div>
   </dialog>
 

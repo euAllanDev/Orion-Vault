@@ -14,6 +14,8 @@ O sistema deve tratar links entre notas como uma camada de navegação explícit
 8. Quando a inserção inline não for segura ou natural, o sistema pode adicionar os links aprovados em uma seção dedicada como `## Relacionadas`.
 9. A aplicação de links automáticos deve continuar respeitando a fronteira segura do vault e as regras de escrita já existentes.
 10. Relações aplicadas ao markdown devem gerar links persistentes que passam a contar como links manuais da nota.
+11. A interface deve permitir escolher uma nota de destino a partir de uma lista filtrável do vault ativo quando o usuário aciona `Linkar`.
+12. O link manual inserido pela interface deve ser gravado como wiki link no markdown, preferencialmente com alias legível quando houver texto selecionado ou rótulo de destino disponível.
 
 ## Pontos de atenção
 - Nem toda relação semântica forte deve virar link inline; o texto da nota precisa continuar natural para leitura humana.
@@ -52,6 +54,12 @@ Given uma sugestão automática com múltiplas notas possíveis para o mesmo tex
 When o usuário tenta aplicar o link
 Then o sistema exige escolha explícita do destino
 And não grava uma associação ambígua automaticamente
+
+### Cenário 6: link manual via seletor da interface
+Given uma nota aberta no editor desktop
+When o usuário aciona `Linkar` e escolhe uma nota da lista filtrável
+Then o sistema insere um wiki link no markdown da nota atual
+And grava a alteração no vault ativo
 
 ## Refinamento futuro
 - suportar aliases e âncoras de heading na aplicação de links

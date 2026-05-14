@@ -6,6 +6,9 @@ O sistema deve oferecer uma área dedicada para criar e acompanhar notas ligadas
 ### Requirement: Pasta fixa de agenda
 O sistema deve manter `Agenda/` como pasta estrutural fixa do vault para armazenar e listar todas as notas de prazo.
 
+### Requirement: Mesma raiz ativa do desktop
+O sistema deve usar a mesma raiz ativa do desktop para criar, salvar e listar notas de agenda, mantendo `Agenda/` como subpasta fixa dessa raiz.
+
 #### Scenario: Abrir menu de opções
 - **WHEN** o usuário clica no botão de opções da fila de prazos
 - **THEN** o sistema exibe um menu com ações rápidas e filtros visuais em cartões
@@ -26,6 +29,11 @@ O sistema deve manter `Agenda/` como pasta estrutural fixa do vault para armazen
 - **WHEN** uma nota nova é criada em `Agenda/`
 - **THEN** a lista da agenda é atualizada imediatamente
 - **AND** a nota fica visível sem exigir troca de tela
+
+#### Scenario: Agenda usa o vault ativo do desktop
+- **WHEN** o usuário salva uma nota de agenda no desktop
+- **THEN** o sistema grava a nota dentro de `Agenda/` da raiz ativa atual
+- **AND** a fila de prazos recarrega a partir da mesma raiz ativa
 
 #### Scenario: Filtrar fila de prazos
 - **WHEN** o usuário escolhe um filtro no menu de opções

@@ -15,6 +15,7 @@ O sistema deve permitir criar e editar a estrutura básica do vault local de for
 9. A criação de pastas e notas deve partir da pasta atualmente selecionada ou da raiz do vault quando nenhuma pasta estiver ativa.
 10. A interface de workspace deve apresentar apenas o nome da nota na listagem, sem repetir o caminho completo na linha principal.
 11. Pastas e notas devem permanecer visualmente separadas e ordenadas de forma consistente, com pastas antes de notas e nomes em ordem alfabética.
+12. A seleção de pasta deve ser removida ao clicar fora da árvore de pastas e notas, sem exigir um botão dedicado para desmarcar.
 
 ## Pontos de atenção
 - Escritas devem continuar precedidas por resolução canônica de caminho e checagem de fronteira.
@@ -57,6 +58,12 @@ Given uma operação com caminho inválido
 When o sistema valida a operação
 Then a operação é rejeitada
 And nenhum arquivo é alterado
+
+### Cenário 6: clique fora da árvore limpa a pasta ativa
+Given uma pasta está selecionada
+When o usuário clica fora da árvore de pastas e notas
+Then a seleção de pasta é limpa
+And a próxima criação volta a partir da raiz ou da nova seleção
 
 ## Refinamento futuro
 - adicionar delete com proteção contra perda acidental

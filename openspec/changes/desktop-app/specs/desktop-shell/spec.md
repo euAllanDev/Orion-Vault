@@ -23,26 +23,29 @@ O shell desktop deve reaproveitar o core local existente e expor a mesma frontei
 15. A interface desktop deve expor uma busca global local sobre notas Markdown do vault ativo.
 16. A interface desktop deve permitir selecionar modelos para novas notas e salvar notas como modelos.
 17. A interface desktop deve exibir backlinks da nota aberta no painel auxiliar.
-18. A interface desktop deve permitir fixar notas e manter essa lista localmente.
-19. A interface desktop deve abrir a nota diária local do dia em um fluxo rápido.
-20. A interface desktop deve mostrar um graph view local do vault ativo em uma superfície global dedicada.
-21. O graph view deve permitir zoom e arrastar, exibir todos os nós do vault ativo por padrão e organizar os assuntos principais em ilhas visuais derivadas das pastas top-level.
-22. Pastas aninhadas no graph devem aparecer como entidades clicáveis que refocam a rede daquele contexto e podem ser abertas a partir da própria superfície.
-23. No graph global, um clique deve priorizar foco visual no nó ou assunto atual, enquanto a abertura de nota ou pasta pode acontecer por duplo clique.
-24. A interface desktop deve expor uma ponte local para IA via CLI, permitindo ler contexto, buscar, planejar e propor ações sobre notas.
-25. A ponte de IA via CLI deve usar os mesmos contratos de comandos e respeitar a fronteira segura do vault antes de qualquer escrita.
-26. A tela inicial deve mostrar um popup amigável de onboarding da IA com atalho para abrir um terminal local visível no diretório certo.
-27. O popup de IA deve manter o fluxo de comandos e a lista de comandos dentro do próprio painel, sem depender de modais aninhados.
-28. O launcher de IA deve ficar como um botão flutuante arrastável, começando no canto inferior da tela.
-29. A experiência desktop deve reproduzir um som local de lembrete quando notificações de agenda forem disparadas, sem usar o som padrão do sistema operacional.
-30. O bootstrap do vault padrão no desktop deve usar o mesmo contrato de abertura usado depois pela interface, em vez de um caminho paralelo de inicialização.
-31. O vault padrão configurado pelo app deve ser a única raiz autoritativa usada pelo shell desktop durante bootstrap, leitura, criação e atualização da árvore.
-32. Enquanto o bootstrap do vault padrão não terminar, a interface desktop não deve permitir criar notas, criar pastas ou disparar outras ações de escrita no workspace.
-33. Quando o vault padrão estiver carregando, o workspace deve permanecer em estado de carregamento ou vazio controlado, sem parecer pronto de forma enganosa.
-34. Ao criar uma pasta vazia no vault ativo, a árvore do workspace deve refletir a nova pasta imediatamente após o refresh, sem exigir troca de tela.
-35. Os diálogos internos usados para criar, renomear, mover ou informar conteúdo devem operar com apenas uma sessão ativa por vez, evitando reaproveitar callbacks antigos.
+18. O menu de opções da nota no desktop deve expor uma ação `Linkar` que abre um seletor local de notas do vault ativo.
+19. A interface desktop deve permitir fixar notas e manter essa lista localmente.
+20. A interface desktop deve abrir a nota diária local do dia em um fluxo rápido.
+21. A interface desktop deve mostrar um graph view local do vault ativo em uma superfície global dedicada.
+22. O graph view deve permitir zoom e arrastar, exibir todos os nós do vault ativo por padrão e organizar os assuntos principais em ilhas visuais derivadas das pastas top-level.
+23. Pastas aninhadas no graph devem aparecer como entidades clicáveis que refocam a rede daquele contexto e podem ser abertas a partir da própria superfície.
+24. No graph global, um clique deve priorizar foco visual no nó ou assunto atual, enquanto a abertura de nota ou pasta pode acontecer por duplo clique.
+25. A interface desktop deve expor uma ponte local para IA via CLI, permitindo ler contexto, buscar, planejar e propor ações sobre notas.
+26. A ponte de IA via CLI deve usar os mesmos contratos de comandos e respeitar a fronteira segura do vault antes de qualquer escrita.
+27. A tela inicial deve mostrar um popup amigável de onboarding da IA com atalho para abrir um terminal local visível no diretório certo.
+28. O popup de IA deve manter o fluxo de comandos e a lista de comandos dentro do próprio painel, sem depender de modais aninhados.
+29. O launcher de IA deve ficar como um botão flutuante arrastável, começando no canto inferior da tela.
+30. A experiência desktop deve reproduzir um som local de lembrete quando notificações de agenda forem disparadas, sem usar o som padrão do sistema operacional.
+31. O bootstrap do vault padrão no desktop deve usar o mesmo contrato de abertura usado depois pela interface, em vez de um caminho paralelo de inicialização.
+32. O vault padrão configurado pelo app deve ser a única raiz autoritativa usada pelo shell desktop durante bootstrap, leitura, criação e atualização da árvore.
+33. Enquanto o bootstrap do vault padrão não terminar, a interface desktop não deve permitir criar notas, criar pastas ou disparar outras ações de escrita no workspace.
+34. Quando o vault padrão estiver carregando, o workspace deve permanecer em estado de carregamento ou vazio controlado, sem parecer pronto de forma enganosa.
+35. Ao criar uma pasta vazia no vault ativo, a árvore do workspace deve refletir a nova pasta imediatamente após o refresh, sem exigir troca de tela.
+36. Os diálogos internos usados para criar, renomear, mover, informar conteúdo e selecionar links devem operar com apenas uma sessão ativa por vez, evitando reaproveitar callbacks antigos.
 
 ## Pontos de atenção
+- Controles opcionais ausentes em uma superfície não devem abortar a inicialização do renderer nem impedir o registro dos handlers do desktop.
+- A seleção de pasta do workspace deve ser desfeita ao clicar fora da árvore de pastas e notas, sem depender de um botão dedicado.
 - O shell desktop deve reaproveitar a lógica atual em vez de reimplementar as regras de negócio.
 - A interface deve continuar simples e focada em leitura, organização e ação local.
 - A persistência do estado do app deve ser local e mínima.
@@ -56,6 +59,7 @@ O shell desktop deve reaproveitar o core local existente e expor a mesma frontei
 - Um bootstrap atrasado não pode permitir que a interface pareça vazia e só revele o conteúdo real depois de uma ação lateral do usuário.
 - Se uma escrita for tentada cedo demais, a interface deve esperar o vault ativo ou bloquear a ação com mensagem controlada; nunca deve cair silenciosamente em um estado parcial.
 - A atualização da árvore depois de criar uma pasta vazia precisa continuar cobrindo diretórios sem notas, não apenas arquivos Markdown.
+- Um controle opcional ausente não pode quebrar o bootstrap do renderer nem impedir os handlers da agenda.
 
 ## Cenários
 
@@ -87,6 +91,13 @@ When o usuário tenta criar uma nota ou pasta antes do bootstrap terminar
 Then a interface aguarda a abertura do vault ativo ou bloqueia a ação com feedback claro
 And nenhuma escrita ocorre em estado visual parcial
 And o workspace não parece pronto antes da árvore real ser carregada
+
+### Cenário 2e: controles opcionais não quebram o bootstrap
+Given a interface desktop contém controles opcionais ausentes em uma superfície secundária
+When o renderer inicializa
+Then o bootstrap do desktop continua normalmente
+And os handlers de agenda, workspace e comandos seguem registrados
+And a aplicação não aborta o carregamento por causa desse controle ausente
 
 ### Cenário 2b: vault padrão ausente
 Given o vault padrão não existe mais na máquina
@@ -216,6 +227,12 @@ When o usuário cria uma nova pasta vazia por meio da interface interna
 Then a pasta é criada dentro do vault padrão ativo
 And o refresh seguinte da árvore inclui essa pasta mesmo sem arquivos dentro dela
 And o usuário não precisa trocar de tela para enxergar o novo diretório
+
+### Cenário 21: clique fora da árvore limpa a seleção
+Given uma pasta está selecionada no workspace
+When o usuário clica em qualquer área fora da árvore de pastas e notas
+Then a seleção de pasta é limpa
+And o contexto da próxima criação volta para a raiz ou para outra seleção explícita
 
 ### Cenário 3: notas são salvas no dispositivo
 Given um vault ativo

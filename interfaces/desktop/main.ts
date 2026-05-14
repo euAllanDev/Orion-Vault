@@ -29,6 +29,10 @@ function getDesktopVaultRoot(): string {
   return appConfig.vaultRoot;
 }
 
+function getActiveDesktopVaultRoot(): string {
+  return desktopWebOptions.activeVaultRoot ?? getDesktopVaultRoot();
+}
+
 const desktopWorkspace = new NodeVaultWorkspace();
 const desktopWebOptions: { desktopSessionPath?: string; activeVaultRoot?: string } = {
   activeVaultRoot: getDesktopVaultRoot()
@@ -48,12 +52,16 @@ function getDesktopSessionPath(): string {
   return path.join(app.getPath('userData'), 'desktop-session.json');
 }
 
-async function normalizeDesktopSessionFile(sessionPath: string): Promise<void> {
+async function normalizeDesktopSessionFile(sessionPath: string, vaultRoot = getDesktopVaultRoot()): Promise<string> {
   let pinnedPaths: string[] = [];
+  let existingVaultRoot = '';
 
   try {
     const raw = await fs.readFile(sessionPath, 'utf8');
-    const parsed = JSON.parse(raw) as { pinnedPaths?: unknown };
+    const parsed = JSON.parse(raw) as { pinnedPaths?: unknown; vaultRoot?: unknown };
+    if (typeof parsed.vaultRoot === 'string') {
+      existingVaultRoot = String(parsed.vaultRoot).trim();
+    }
     if (Array.isArray(parsed.pinnedPaths)) {
       pinnedPaths = parsed.pinnedPaths.map((value) => String(value).replace(/\\/g, '/').trim()).filter(Boolean);
     }
@@ -62,7 +70,19 @@ async function normalizeDesktopSessionFile(sessionPath: string): Promise<void> {
   }
 
   await fs.mkdir(path.dirname(sessionPath), { recursive: true });
-  await fs.writeFile(sessionPath, JSON.stringify({ vaultRoot: getDesktopVaultRoot(), pinnedPaths }, null, 2), 'utf8');
+  const nextVaultRoot = String(vaultRoot || existingVaultRoot || getDesktopVaultRoot()).trim();
+  await fs.writeFile(sessionPath, JSON.stringify({ vaultRoot: nextVaultRoot, pinnedPaths }, null, 2), 'utf8');
+  return nextVaultRoot;
+}
+
+async function readDesktopSessionVaultRoot(sessionPath: string): Promise<string | null> {
+  try {
+    const raw = await fs.readFile(sessionPath, 'utf8');
+    const parsed = JSON.parse(raw) as { vaultRoot?: unknown };
+    return typeof parsed.vaultRoot === 'string' ? String(parsed.vaultRoot).trim() || null : null;
+  } catch {
+    return null;
+  }
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -95,7 +115,7 @@ async function getAgendaReminderSoundDataUrl(): Promise<string | null> {
 function createWindow(): BrowserWindow {
   const startupUrl = new URL(desktopUrl);
   startupUrl.searchParams.set('shell', 'desktop');
-  startupUrl.searchParams.set('vaultRoot', getDesktopVaultRoot());
+  startupUrl.searchParams.set('vaultRoot', getActiveDesktopVaultRoot());
 
   const window = new BrowserWindow({
     width: desktopShell.defaultWindow.width,
@@ -217,7 +237,7 @@ function openPowerShellInDirectory(cwd: string, vaultRoot: string): void {
 }
 
 ipcMain.handle('ai-terminal:open', (_event, _requestedVaultRoot?: string) => {
-  const vaultRoot = getDesktopVaultRoot();
+  const vaultRoot = String(_requestedVaultRoot ?? '').trim() || getActiveDesktopVaultRoot();
   openPowerShellInDirectory(vaultRoot, vaultRoot);
   return { cwd: vaultRoot, vaultRoot };
 });
@@ -244,7 +264,7 @@ ipcMain.handle('agenda:play-sound', async () => {
 });
 
 ipcMain.handle('agenda:create', async (_event, payload?: { vaultRoot?: string; path?: string; content?: string }) => {
-  const vaultRoot = getDesktopVaultRoot();
+  const vaultRoot = String(payload?.vaultRoot ?? '').trim() || getActiveDesktopVaultRoot();
   const filePath = String(payload?.path ?? '').trim();
   const content = String(payload?.content ?? '');
 
@@ -256,6 +276,8 @@ ipcMain.handle('agenda:create', async (_event, payload?: { vaultRoot?: string; p
     throw new Error('Agenda path is required');
   }
 
+  desktopWebOptions.activeVaultRoot = vaultRoot;
+  await normalizeDesktopSessionFile(getDesktopSessionPath(), vaultRoot);
   await desktopWorkspace.createMarkdownFile(vaultRoot, filePath, content);
   mainWindow?.webContents.send('agenda:saved', { vaultRoot, path: filePath });
   mainWindow?.webContents.send('vault:changed', { vaultRoot, path: filePath, kind: 'agenda' });
@@ -263,9 +285,10 @@ ipcMain.handle('agenda:create', async (_event, payload?: { vaultRoot?: string; p
 });
 
 ipcMain.handle('vault:activate', async (_event, vaultRoot?: string) => {
-  void vaultRoot;
-  desktopWebOptions.activeVaultRoot = getDesktopVaultRoot();
-  return { ok: true, vaultRoot: getDesktopVaultRoot() };
+  const nextVaultRoot = String(vaultRoot ?? '').trim() || getActiveDesktopVaultRoot();
+  desktopWebOptions.activeVaultRoot = nextVaultRoot;
+  await normalizeDesktopSessionFile(getDesktopSessionPath(), nextVaultRoot);
+  return { ok: true, vaultRoot: nextVaultRoot };
 });
 
 ipcMain.on('desktop:ready', (event) => {
@@ -278,7 +301,8 @@ ipcMain.on('desktop:ready', (event) => {
 async function startDesktop(): Promise<void> {
   const sessionPath = getDesktopSessionPath();
   await session.defaultSession.clearCache();
-  await normalizeDesktopSessionFile(sessionPath);
+  const persistedVaultRoot = await readDesktopSessionVaultRoot(sessionPath);
+  desktopWebOptions.activeVaultRoot = await normalizeDesktopSessionFile(sessionPath, persistedVaultRoot ?? desktopWebOptions.activeVaultRoot ?? getDesktopVaultRoot());
   desktopWebOptions.desktopSessionPath = sessionPath;
   const started = await startWebServer(0, desktopWebOptions);
   webServer = started.server;

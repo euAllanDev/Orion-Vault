@@ -15,11 +15,13 @@ A interface deve expor os comandos existentes do sistema em uma página operacio
 9. A interface desktop deve expor um botão para listar os comandos disponíveis, agrupados por intenção.
 10. A ponte de IA via CLI deve reutilizar os mesmos comandos do hub para ler contexto, planejar e propor ações sobre notas.
 11. A ponte de IA via CLI deve usar o mesmo vocabulário em slash commands, como `/context`, `/search`, `/plan`, `/preview` e `/apply`.
-12. O onboarding da IA deve apresentar esses slash commands como caminho guiado para começar rápido.
-13. O onboarding da IA no desktop deve manter o fluxo de comandos dentro do painel da própria IA, sem exigir modais aninhados.
-14. A interface não deve liberar criação de nota, criação de pasta ou escrita de conteúdo enquanto o vault ativo ainda não estiver pronto para uso.
-15. Após criar uma pasta vazia ou uma nota, a árvore do workspace deve refletir o novo item imediatamente no mesmo vault ativo.
-16. Os diálogos internos de criação, renomeação e movimento devem manter apenas um conjunto de callbacks ativo por vez.
+12. A seleção de pasta no workspace deve ser desfeita ao clicar fora da árvore de pastas e notas, sem depender de controle manual dedicado.
+13. O onboarding da IA deve apresentar esses slash commands como caminho guiado para começar rápido.
+14. O onboarding da IA no desktop deve manter o fluxo de comandos dentro do painel da própria IA, sem exigir modais aninhados.
+15. A interface não deve liberar criação de nota, criação de pasta ou escrita de conteúdo enquanto o vault ativo ainda não estiver pronto para uso.
+16. Após criar uma pasta vazia ou uma nota, a árvore do workspace deve refletir o novo item imediatamente no mesmo vault ativo.
+17. Os diálogos internos de criação, renomeação, movimento e seleção de links devem manter apenas um conjunto de callbacks ativo por vez.
+18. O menu de opções da nota deve oferecer uma ação explícita de `linkar`, substituindo a ação de relações nessa superfície.
 
 ## Pontos de atenção
 - O hub deve refletir os contratos já existentes, não inventar novos comportamentos.
@@ -31,6 +33,7 @@ A interface deve expor os comandos existentes do sistema em uma página operacio
 - Um vault ainda em bootstrap não conta como vault pronto para comandos de escrita, mesmo que a tela do workspace já esteja montada.
 - Um refresh da árvore após criação precisa cobrir pastas vazias e notas novas sem depender de navegação adicional.
 - Diálogos internos não podem acumular listeners antigos e disparar ações duplicadas ou cruzadas.
+- O seletor de links deve listar notas do vault ativo e permitir filtro local antes de inserir um wiki link.
 
 ## Cenários
 
@@ -94,3 +97,9 @@ Given um diálogo interno de criação ou renomeação foi aberto anteriormente
 When um novo diálogo substitui a sessão anterior
 Then apenas a sessão atual pode confirmar a ação
 And handlers antigos não podem disparar criações extras ou de outro tipo
+
+### Cenário 8: link manual via seletor
+Given uma nota aberta no editor
+When o usuário aciona `linkar` no menu de opções
+Then a interface mostra uma lista filtrável de notas do vault ativo
+And ao escolher uma nota o sistema insere um wiki link no markdown da nota atual

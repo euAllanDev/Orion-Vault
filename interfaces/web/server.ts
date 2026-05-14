@@ -144,7 +144,6 @@ async function writeDesktopSessionData(sessionPath: string | undefined, data: De
 }
 
 async function resolveActiveVaultRoot(options: WebServerOptions): Promise<string> {
-  if (isDesktopShellRequest(options)) return getDesktopDefaultVaultRoot();
   if (options.activeVaultRoot) return options.activeVaultRoot;
   return config.vaultRoot;
 }
@@ -154,7 +153,6 @@ function pickVaultRoot(candidate: string | undefined, fallback: string): string 
 }
 
 function resolveRequestVaultRoot(options: WebServerOptions, candidate: string | undefined, fallback: string): string {
-  if (isDesktopShellRequest(options)) return getDesktopDefaultVaultRoot();
   return pickVaultRoot(candidate, fallback);
 }
 
@@ -448,6 +446,7 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
     const vaultRoot = resolveRequestVaultRoot(options, requestedVaultRoot, await resolveActiveVaultRoot(options));
     const sessionData = await readDesktopSessionData(options.desktopSessionPath, vaultRoot);
     await appendDesktopDebugLog(options, 'api.setup', { action, requestedVaultRoot, resolvedVaultRoot: vaultRoot });
+    options.activeVaultRoot = vaultRoot;
 
     if (action === 'create') {
       await ensureVaultRoot(vaultRoot);

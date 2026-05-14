@@ -32,6 +32,7 @@ const state = {
 let desktopBootstrapPromise = null;
 let desktopBootstrapComplete = false;
 let inputDialogSession = null;
+let linkPickerSelection = { start: 0, end: 0, text: '' };
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -57,6 +58,17 @@ async function loadDesktopBootstrap() {
   }
 
   throw lastError ?? new Error('Falha ao carregar bootstrap');
+}
+
+async function getDesktopBootstrapVaultRoot() {
+  if (!isDesktopShell) return '';
+
+  try {
+    const bootstrap = await api('/api/bootstrap');
+    return String(bootstrap.vaultRoot ?? '').trim();
+  } catch {
+    return '';
+  }
 }
 
 async function syncDesktopActiveVaultRoot(vaultRoot) {
@@ -201,6 +213,10 @@ const els = {
   templatesDialog: document.getElementById('templatesDialog'),
   templatesDialogClose: document.getElementById('templatesDialogClose'),
   templatesDialogList: document.getElementById('templatesDialogList'),
+  linkPickerDialog: document.getElementById('linkPickerDialog'),
+  linkPickerDialogClose: document.getElementById('linkPickerDialogClose'),
+  linkPickerDialogQuery: document.getElementById('linkPickerDialogQuery'),
+  linkPickerDialogList: document.getElementById('linkPickerDialogList'),
   templateSelectionLabel: document.getElementById('templateSelectionLabel'),
   templateSelectionClear: document.getElementById('templateSelectionClear'),
   templateSelectionBody: document.getElementById('templateSelectionBody'),
@@ -322,6 +338,21 @@ const searchState = {
   phrase: '',
   tags: ''
 };
+
+window.addEventListener('error', (event) => {
+  sendDebugState('window.error', {
+    message: String(event.message ?? ''),
+    filename: String(event.filename ?? ''),
+    lineno: Number(event.lineno ?? 0),
+    colno: Number(event.colno ?? 0)
+  });
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  sendDebugState('window.unhandledrejection', {
+    message: event.reason instanceof Error ? event.reason.message : String(event.reason ?? '')
+  });
+});
 
 async function api(url, options = {}) {
   const response = await fetch(url, {
@@ -445,6 +476,24 @@ function collectVaultPaths(entry, paths = new Set()) {
   return paths;
 }
 
+function collectLinkCandidates(entry, items = []) {
+  if (!entry) return items;
+
+  if (entry.kind === 'file' && String(entry.name ?? '').toLowerCase().endsWith('.md')) {
+    items.push({
+      path: normalizeRelativePath(entry.relativePath),
+      label: String(entry.title ?? fileLabel(entry.relativePath))
+    });
+    return items;
+  }
+
+  for (const child of entry.children ?? []) {
+    collectLinkCandidates(child, items);
+  }
+
+  return items;
+}
+
 function splitRelativeLeaf(relativePath) {
   const normalized = normalizeRelativePath(relativePath).replace(/\/+$/g, '');
   const parts = normalized.split('/').filter(Boolean);
@@ -498,9 +547,77 @@ function makeUniqueVaultPathForTarget(targetPath) {
   return candidate;
 }
 
+function closeLinkPickerDialog() {
+  if (els.linkPickerDialog?.open) {
+    els.linkPickerDialog.close();
+  }
+}
+
+function renderLinkPickerDialog() {
+  if (!els.linkPickerDialogList) return;
+
+  const query = String(els.linkPickerDialogQuery?.value ?? '').trim().toLowerCase();
+  const candidates = collectLinkCandidates(state.tree)
+    .filter((item) => item.path && item.path !== state.selectedFile)
+    .filter((item) => {
+      if (!query) return true;
+      return `${item.label} ${item.path}`.toLowerCase().includes(query);
+    })
+    .sort((left, right) => `${left.label} ${left.path}`.localeCompare(`${right.label} ${right.path}`, 'pt-BR'));
+
+  els.linkPickerDialogList.innerHTML = candidates.length === 0
+    ? '<div class="empty-inline">Nenhuma nota encontrada.</div>'
+    : candidates.map((item) => `
+      <button class="template-item" type="button" data-path="${escapeHtml(item.path)}" data-label="${escapeHtml(item.label)}">
+        <strong>${escapeHtml(item.label)}</strong>
+        <small>${escapeHtml(item.path)}</small>
+      </button>
+    `).join('');
+}
+
+async function insertLinkToCurrentNote(targetPath, targetLabel) {
+  if (!state.selectedFile) {
+    showError('Abra uma nota antes de linkar outra.');
+    return;
+  }
+
+  const selectedText = String(linkPickerSelection.text ?? '').trim();
+  const label = selectedText || String(targetLabel ?? '').trim() || fileLabel(targetPath);
+  const linkText = `[[${targetPath}|${label}]]`;
+  const start = Number.isFinite(linkPickerSelection.start) ? linkPickerSelection.start : els.noteEditor.selectionStart;
+  const end = Number.isFinite(linkPickerSelection.end) ? linkPickerSelection.end : els.noteEditor.selectionEnd;
+
+  els.noteEditor.setRangeText(linkText, start, end, 'end');
+  await saveNote();
+  els.noteEditor.focus();
+}
+
+async function openLinkPickerDialog() {
+  if (!getConfiguredVaultRoot()) {
+    await ensureActiveVaultReady('linkar notas');
+  }
+
+  if (!state.tree) {
+    await refreshWorkspace(state.selectedFile || '', false);
+  }
+
+  linkPickerSelection = {
+    start: els.noteEditor.selectionStart ?? 0,
+    end: els.noteEditor.selectionEnd ?? 0,
+    text: String(els.noteEditor.value ?? '').slice(els.noteEditor.selectionStart ?? 0, els.noteEditor.selectionEnd ?? 0)
+  };
+
+  if (els.linkPickerDialogQuery) {
+    els.linkPickerDialogQuery.value = '';
+  }
+
+  renderLinkPickerDialog();
+  els.linkPickerDialog.showModal();
+  els.linkPickerDialogQuery?.focus();
+}
+
 function containerForSelection() {
   if (state.selectedFolder) return state.selectedFolder;
-  if (state.selectedFile) return pathDirectory(state.selectedFile);
   return '';
 }
 
@@ -897,10 +1014,12 @@ function setDesktopReady(isReady) {
 
 async function refreshAfterVaultChange(payload) {
   const nextPath = String(payload?.path ?? '');
+  const bootstrapVaultRoot = isDesktopShell ? await getDesktopBootstrapVaultRoot() : '';
+  const nextVaultRoot = String(payload?.vaultRoot ?? bootstrapVaultRoot ?? getConfiguredVaultRoot()).trim();
   const isAgendaNote = nextPath.startsWith('Agenda/') || payload?.kind === 'agenda';
 
   if (isAgendaNote) {
-    await loadAgenda();
+    await loadAgenda(nextVaultRoot);
   }
 
   await refreshWorkspace(state.selectedFile || '', Boolean(state.selectedFile));
@@ -1270,16 +1389,18 @@ async function checkAgendaReminders(items = state.agendaItems) {
   }
 }
 
-async function loadAgenda() {
-  const vaultRoot = getConfiguredVaultRoot();
-  if (!vaultRoot) {
+async function loadAgenda(vaultRoot = '') {
+  const fallbackVaultRoot = isDesktopShell ? await getDesktopBootstrapVaultRoot() : getConfiguredVaultRoot();
+  const resolvedVaultRoot = String(vaultRoot ?? '').trim();
+  const vaultRootValue = resolvedVaultRoot || fallbackVaultRoot || getConfiguredVaultRoot();
+  if (!vaultRootValue) {
     state.agendaItems = [];
     renderAgendaList();
     renderOverviewDashboard();
     return;
   }
 
-  const data = await api(`/api/agenda?vaultRoot=${encodeURIComponent(vaultRoot)}`);
+  const data = await api(`/api/agenda?vaultRoot=${encodeURIComponent(vaultRootValue)}`);
   state.agendaItems = data.items ?? [];
   renderAgendaList();
   renderOverviewDashboard();
@@ -1356,25 +1477,24 @@ function toggleRelationsDetailsMenu() {
 }
 
 async function createAgendaNote() {
-  const vaultRoot = getConfiguredVaultRoot();
-  if (!vaultRoot) {
-    showError('Abra um vault antes de criar notas com prazo.');
-    return;
-  }
-
-  const title = els.agendaTitleInput.value.trim();
+  const title = els.agendaTitleInput.value.trim() || 'Nova nota';
   const dueValue = els.agendaDueInput.value.trim();
   const status = els.agendaStatusInput.value === 'done' ? 'done' : 'pending';
   const body = els.agendaBodyInput.value.trim();
 
-  if (!title || !dueValue) {
-    showError('Informe título e prazo para criar a nota da agenda.');
+  if (!dueValue) {
+    showError('Informe o prazo para criar a nota da agenda.');
     return;
   }
+
+  const vaultRoot = (await getDesktopBootstrapVaultRoot()) || await ensureActiveVaultReady('criar notas com prazo');
+  await syncDesktopActiveVaultRoot(vaultRoot);
 
   setAgendaStatus('Salvando nota com data...');
   const filePath = makeUniqueVaultPathForTarget(buildAgendaFilePath(title, dueValue));
   const content = buildAgendaMarkdown({ vaultRoot, title, dueValue, status, body });
+
+  sendDebugState('createAgenda.before', { vaultRoot, path: filePath });
 
   state.agendaReminderKeys = new Set([...state.agendaReminderKeys].filter((key) => !key.startsWith(`${filePath}|`)));
   persistAgendaReminderKeys();
@@ -1389,6 +1509,8 @@ async function createAgendaNote() {
     });
   }
 
+  sendDebugState('createAgenda.after', { vaultRoot, path: filePath });
+
   recordActivity('agenda', `Criada ${fileLabel(filePath)}`, filePath);
 
   els.agendaTitleInput.value = '';
@@ -1398,7 +1520,7 @@ async function createAgendaNote() {
 
   setView('agenda');
   try {
-    await loadAgenda();
+    await refreshAfterVaultChange({ path: filePath, kind: 'agenda' });
     setAgendaStatus(`Salvo em ${filePath}`);
   } catch (error) {
     showError(error instanceof Error ? error.message : 'Falha ao atualizar agenda');
@@ -1406,8 +1528,10 @@ async function createAgendaNote() {
 }
 
 async function toggleAgendaItemStatus(pathValue, currentStatus) {
-  const vaultRoot = getConfiguredVaultRoot();
+  const vaultRoot = (await getDesktopBootstrapVaultRoot()) || getConfiguredVaultRoot();
   if (!vaultRoot) return;
+
+  await syncDesktopActiveVaultRoot(vaultRoot);
 
   const data = await api(`/api/file?vaultRoot=${encodeURIComponent(vaultRoot)}&path=${encodeURIComponent(pathValue)}`);
   const nextStatus = currentStatus === 'done' ? 'pending' : 'done';
@@ -1427,7 +1551,7 @@ async function toggleAgendaItemStatus(pathValue, currentStatus) {
     await loadNote(pathValue);
   }
   recordActivity('agenda', `${nextStatus === 'done' ? 'Concluída' : 'Reaberta'} ${fileLabel(pathValue)}`, pathValue);
-  await loadAgenda();
+  await loadAgenda(vaultRoot);
 }
 
 async function openAgendaItem(pathValue) {
@@ -2854,6 +2978,34 @@ function selectFolder(relativePath, source = 'folder') {
   }
 }
 
+function clearFolderSelection() {
+  if (!state.selectedFolder) return;
+  state.selectedFolder = '';
+  state.graphContext = { kind: 'folder', path: '' };
+  els.folderBreadcrumb.textContent = 'Nenhuma pasta selecionada';
+  document.querySelectorAll('.folder').forEach((node) => {
+    node.classList.remove('active-folder');
+  });
+
+  if (state.tree) {
+    renderTree(state.tree);
+  }
+
+  syncWorkspaceState();
+}
+
+function shouldClearFolderSelection(event) {
+  const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
+
+  return !path.some((node) => node instanceof HTMLElement && node.closest('.folder, .file-item'));
+}
+
+function handleFolderSelectionBackgroundClick(event) {
+  if (state.view !== 'workspace') return;
+  if (!shouldClearFolderSelection(event)) return;
+  clearFolderSelection();
+}
+
 function showQuickMenu(button) {
   const rect = button.getBoundingClientRect();
   openMenu(els.quickMenu, rect.left, rect.bottom + 8);
@@ -2914,6 +3066,12 @@ function syncWorkspaceState() {
     els.sidebarNewNoteButton,
     els.newNoteButton,
     els.newFolderButton,
+    els.agendaCreateButton,
+    els.agendaResetButton,
+    els.agendaTitleInput,
+    els.agendaDueInput,
+    els.agendaStatusInput,
+    els.agendaBodyInput,
     els.saveButton,
     els.templatesButton,
     els.dailyNoteButton,
@@ -3021,12 +3179,6 @@ async function refreshWorkspace(preferredPath = state.selectedFile, autoOpenFirs
     preferredPath
   });
 
-  if (preferredPath) {
-    state.selectedFolder = pathDirectory(preferredPath) || state.selectedFolder;
-  } else if (!state.selectedFolder) {
-    state.selectedFolder = '';
-  }
-
   if (state.selectedFolder) {
     selectFolder(state.selectedFolder);
   } else {
@@ -3067,13 +3219,11 @@ async function loadNote(relativePath, options = {}) {
   const vaultRoot = getConfiguredVaultRoot();
   const data = await api(`/api/file?vaultRoot=${encodeURIComponent(vaultRoot)}&path=${encodeURIComponent(normalizedPath)}`);
   state.selectedFile = normalizeRelativePath(data.path);
-  state.selectedFolder = pathDirectory(state.selectedFile);
   els.noteTitle.textContent = fileLabel(state.selectedFile);
   els.breadcrumbs.textContent = prettyPath(state.selectedFile);
   els.editorMeta.textContent = `${pathDirectory(state.selectedFile).replace(/\//g, ' · ')} · markdown`;
   els.noteEditor.value = data.content;
   els.editorStatus.textContent = `Editando ${state.selectedFile}`;
-  selectFolder(state.selectedFolder, 'note');
 
   document.querySelectorAll('.file-item').forEach((node) => {
     node.classList.toggle('active', node.dataset.path === state.selectedFile);
@@ -3133,7 +3283,12 @@ async function startVault() {
   }
 
   if (isDesktopShell) {
-    await openDesktopDefaultVault(true);
+    const requestedVaultRoot = els.vaultPathInput.value.trim() || getConfiguredVaultRoot() || getDefaultVaultPath();
+    const result = await api('/api/setup', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'open', vaultRoot: requestedVaultRoot })
+    });
+    await openVaultFromBootstrap(String(result.vaultRoot ?? requestedVaultRoot), { autoOpenFirstNote: true });
     els.setupHint.textContent = `Vault padrão aberto em ${getConfiguredVaultRoot()}.`;
     return;
   }
@@ -3508,7 +3663,7 @@ els.noteOptionsMenu?.addEventListener('click', (event) => {
   if (action === 'save-template') void saveCurrentAsTemplate().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao salvar modelo'));
   if (action === 'rename-note') void renameNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao renomear'));
   if (action === 'move-note') void moveNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao mover'));
-  if (action === 'open-relations') void openRelationsView().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir relações'));
+  if (action === 'link-note') void openLinkPickerDialog().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir seletor de links'));
 });
 els.quickMenu.addEventListener('click', (event) => {
   event.stopPropagation();
@@ -3560,7 +3715,24 @@ els.searchResultsList.addEventListener('click', (event) => {
   const path = target.dataset.path;
   if (path) void openSearchResult(path);
 });
-els.summaryOverviewButton.addEventListener('click', () => setSummaryMode('overview'));
+els.linkPickerDialogClose.addEventListener('click', closeLinkPickerDialog);
+els.linkPickerDialog.addEventListener('cancel', (event) => {
+  event.preventDefault();
+  closeLinkPickerDialog();
+});
+els.linkPickerDialogQuery.addEventListener('input', () => renderLinkPickerDialog());
+els.linkPickerDialogList.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
+  if (!(target instanceof HTMLElement)) return;
+
+  const targetPath = target.dataset.path;
+  const targetLabel = target.dataset.label ?? '';
+  if (!targetPath) return;
+
+  closeLinkPickerDialog();
+  void insertLinkToCurrentNote(targetPath, targetLabel).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao linkar nota'));
+});
+els.summaryOverviewButton.addEventListener('click', () => setSummaryMode('overview')); 
 els.summaryGraphButton.addEventListener('click', () => setSummaryMode('graph'));
 els.graphSvg.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target.closest('[data-path]') : null;
@@ -3804,7 +3976,7 @@ els.templatesDialogList.addEventListener('click', (event) => {
   if (!(target instanceof HTMLElement)) return;
   applyTemplateSelection(Number(target.dataset.index ?? '0'));
 });
-els.templateSelectionClear.addEventListener('click', () => setSelectedTemplate(null));
+els.templateSelectionClear?.addEventListener('click', () => setSelectedTemplate(null));
 els.templatePickerClose.addEventListener('click', () => els.templatePickerDialog.close());
 els.templatePickerConfirm.addEventListener('click', () => { confirmTemplateSave().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao salvar modelo')); });
 els.templatePickerDialog.addEventListener('cancel', (event) => {
@@ -3824,14 +3996,21 @@ els.overviewOptionsButton.addEventListener('click', (event) => {
 els.agendaForm.addEventListener('submit', (event) => {
   event.preventDefault();
   event.stopPropagation();
+  sendDebugState('agenda.submit', {
+    title: String(els.agendaTitleInput.value ?? ''),
+    due: String(els.agendaDueInput.value ?? ''),
+    status: String(els.agendaStatusInput.value ?? '')
+  });
   void createAgendaNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota com data'));
 });
-document.addEventListener('click', (event) => {
-  const target = event.target instanceof HTMLElement ? event.target.closest('#agendaCreateButton') : null;
-  if (!(target instanceof HTMLElement)) return;
-
+els.agendaCreateButton.addEventListener('click', (event) => {
   event.preventDefault();
   event.stopPropagation();
+  sendDebugState('agenda.button.click', {
+    title: String(els.agendaTitleInput.value ?? ''),
+    due: String(els.agendaDueInput.value ?? ''),
+    status: String(els.agendaStatusInput.value ?? '')
+  });
   void createAgendaNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota com data'));
 });
 els.agendaResetButton.addEventListener('click', () => {
@@ -3896,6 +4075,12 @@ els.overviewRecentList?.addEventListener('click', (event) => {
 els.noteEditor.addEventListener('input', () => {
   els.editorStatus.textContent = 'Alterações não salvas.';
 });
+
+els.workspaceView.addEventListener('click', handleFolderSelectionBackgroundClick, true);
+els.workspaceView.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0) return;
+  handleFolderSelectionBackgroundClick(event);
+}, true);
 
 state.recentActivity = loadRecentActivity();
 els.agendaDueInput.value = formatAgendaInputValue(new Date(Date.now() + (60 * 60 * 1000)));
