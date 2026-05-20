@@ -75,6 +75,23 @@ export class NodeVaultWorkspace implements VaultWorkspacePort {
     await ensureParentFolder(path.dirname(resolvedDestination));
     await fs.rename(resolvedSource, resolvedDestination);
   }
+
+  async deletePath(vaultRoot: string, targetPath: string): Promise<void> {
+    ensureProvidedPath(targetPath, 'VAULT_TARGET_PATH_EMPTY', 'Target path cannot be empty');
+    const resolvedTarget = await resolveExistingWithinRoot(vaultRoot, targetPath);
+    const stat = await fs.stat(resolvedTarget);
+
+    if (stat.isDirectory()) {
+      await fs.rm(resolvedTarget, { recursive: true, force: false });
+      return;
+    }
+
+    if (!stat.isFile()) {
+      throw new ValidationError('Target is not a file or folder', 'VAULT_TARGET_INVALID');
+    }
+
+    await fs.unlink(resolvedTarget);
+  }
 }
 
 async function exists(filePath: string): Promise<boolean> {

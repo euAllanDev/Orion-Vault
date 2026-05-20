@@ -4,7 +4,7 @@ Status: draft
 Date: 2026-05-06
 
 ## Objetivo
-Introduzir um MVP de observação e planejamento para notas Markdown dentro de um vault local, usando IA como geradora de sugestões estruturadas e o sistema como camada confiável de leitura, validação e relatório.
+Introduzir um fluxo preview-first de observação e organização para notas Markdown dentro de um vault local, usando IA como geradora de sugestões estruturadas e o sistema como camada confiável de leitura, validação, relatório e execução controlada.
 
 ## Problema
 Hoje o vault pode crescer sem uma estrutura consistente de pastas, dificultando navegação, manutenção e descoberta de conteúdo. A organização manual é lenta, sujeita a erro e tende a gerar inconsistência ao longo do tempo.
@@ -17,7 +17,8 @@ O sistema irá:
 - enviar o contexto para a IA apenas como entrada
 - receber uma resposta estruturada com ações sugeridas e justificativa
 - validar cada resposta antes de transformá-la em plano
-- suportar `dry-run` como saída padrão de planejamento, sem alterar o filesystem
+- suportar `dry-run` como modo principal de planejamento, sem alterar o filesystem
+- permitir execução real apenas após validação das ações sugeridas
 - operar local-first, sem dependência obrigatória de serviços externos para validar o fluxo
 
 ## Impacto no sistema
@@ -35,7 +36,7 @@ Incluído:
 - comando `search`
 - comando `plan`
 - comando `diff`
-- comando `organize` em modo de planejamento/preview
+- comando `organize` em modo preview-first com suporte a execução validada
 - criação de pastas e arquivos Markdown
 - edição de conteúdo de notas Markdown
 - rename e move dentro do vault com segurança
@@ -56,4 +57,4 @@ Futuro:
 - `roots` semânticos para agrupar notas semelhantes e servir como contexto adicional à IA
 
 ## Resultado esperado
-Ao final da mudança, o sistema deve ser capaz de observar um vault, explicar sua estrutura para a IA, gerar um plano confiável e auditável, e simular o impacto sem alterar o diretório raiz configurado.
+Ao final da mudança, o sistema deve ser capaz de observar um vault, explicar sua estrutura para a IA, gerar um plano confiável e auditável, validar esse plano em preview e, quando solicitado fora de `dry-run`, executar apenas ações seguras dentro do diretório raiz configurado.

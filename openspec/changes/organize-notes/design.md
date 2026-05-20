@@ -1,10 +1,10 @@
 # Design
 
 ## Visão geral
-O MVP segue um fluxo em três etapas:
+O fluxo segue três etapas principais:
 1. coletar contexto do vault
 2. pedir à IA um plano de organização estruturado
-3. validar e apresentar o plano em modo preview/dry-run
+3. validar e apresentar o plano primeiro em modo preview/dry-run
 
 A IA atua como decisor. O sistema atua como observador, validador e relator confiável.
 
@@ -29,7 +29,7 @@ O sistema trabalha em dois estágios:
 - `observe`: ler vault, estruturar contexto e extrair sinais relevantes
 - `plan`: gerar e validar ações sugeridas
 
-No MVP, o estágio `plan` termina em relatório e `dry-run`; não há aplicação automática como comportamento principal.
+O comportamento principal continua sendo preview-first: `dry-run` termina em relatório sem mutação, enquanto a execução real só pode acontecer fora desse modo e após validação de segurança.
 
 ## Regras de segurança
 - a IA nunca acessa o filesystem diretamente
@@ -60,7 +60,7 @@ A regra de negócio não depende de um único critério. A sugestão de estrutur
 Se o destino já existir, a intenção correspondente deve ser marcada como conflito no relatório. O sistema não deve tentar mesclar, sobrescrever ou truncar conteúdo automaticamente.
 
 ## Idempotência
-Executar `organize` repetidamente sobre um vault já observado não deve produzir mudanças no filesystem. O plano pode variar apenas se o estado de entrada variar.
+Executar `organize --dry-run` repetidamente sobre um vault já observado não deve produzir mudanças no filesystem. Fora de `dry-run`, o plano e a execução devem evitar alterações desnecessárias quando o estado já estiver alinhado.
 
 ## Alternativas consideradas
 

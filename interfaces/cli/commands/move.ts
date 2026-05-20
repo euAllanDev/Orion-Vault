@@ -7,10 +7,10 @@ export interface MoveCommandOptions {
 }
 
 export async function executeMoveCommand(options: MoveCommandOptions): Promise<void> {
-  const { config, service } = createVaultWorkspaceService();
+  const { service, vaultRoot } = createVaultWorkspaceService(options.vaultRoot);
   const source = options.source ?? '';
   const destination = options.destination ?? '';
 
-  await service.movePath(config.vaultRoot, source, destination);
+  await service.movePath(vaultRoot, source, destination);
   console.log(`Moved: ${source} -> ${destination}`);
 }

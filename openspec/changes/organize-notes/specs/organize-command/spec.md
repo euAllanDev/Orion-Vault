@@ -1,7 +1,7 @@
 # Spec: organize command
 
 ## Regra de negócio
-O comando `organize` deve analisar notas Markdown dentro de um vault, gerar uma proposta de organização baseada em contexto semântico e retornar um plano de preview sem mutar o filesystem no MVP.
+O comando `organize` deve analisar notas Markdown dentro de um vault, gerar uma proposta de organização baseada em contexto semântico e priorizar um fluxo preview-first, com execução real permitida apenas após validação e fora do modo `dry-run`.
 
 ## Regras
 1. O comando só opera sobre arquivos Markdown localizados dentro do vault configurado.
@@ -14,6 +14,7 @@ O comando `organize` deve analisar notas Markdown dentro de um vault, gerar uma 
 8. O fluxo de desenvolvimento e validação deve continuar executável localmente.
 9. O comando deve priorizar observação, contexto e planejamento, não edição.
 10. Erros de configuração, leitura ou validação devem ser convertidos em mensagens controladas, sem stack trace bruto para o usuário.
+11. Fora do modo `dry-run`, o sistema pode executar apenas ações já validadas e bloqueadas por conflito, fronteira e regras de segurança.
 
 ## Cenários
 
@@ -26,9 +27,9 @@ And recebe uma lista estruturada de ações
 And valida cada ação
 And retorna um resumo do plano e dos possíveis impactos
 
-### Cenário 1b: preview sem mutação
+### Cenário 1b: preview sem mutação em dry-run
 Given um vault com múltiplos arquivos Markdown e contexto suficiente para agrupamento
-When o usuário executa `organize`
+When o usuário executa `organize --dry-run`
 Then o sistema não altera o filesystem
 And retorna um relatório de preview
 And mantém o vault inalterado
@@ -40,6 +41,14 @@ Then o sistema calcula o plano de organização
 And mostra as ações propostas
 And não move, cria, renomeia ou altera nenhum arquivo
 And retorna um relatório sem mutação
+
+### Cenário 2b: execução validada aplica ações permitidas
+Given um vault com notas elegíveis para reorganização
+When o usuário executa `organize` fora do modo `dry-run`
+Then o sistema calcula o plano de organização
+And valida cada ação contra fronteira, conflitos e regras de segurança
+And executa apenas as ações permitidas
+And retorna um resumo com ações executadas e ações bloqueadas
 
 ### Cenário 3: ação fora do vault é rejeitada
 Given uma resposta da IA contendo um destino fora da raiz do vault
@@ -85,12 +94,12 @@ And encerra com falha previsível
 - nenhuma ação executada sem validação
 - nenhuma operação fora do vault
 - `dry-run` não altera o estado local
+- execução fora de `dry-run` continua sujeita às mesmas validações de segurança
 - conflitos não causam sobrescrita
 - respostas inválidas da IA não avançam para execução
 - falhas operacionais viram mensagens controladas
 
 ## Pontos de atenção
-- O MVP descreve preview sem mutação, mas o fluxo precisa deixar explícito quando a execução real pode acontecer fora de `--dry-run`.
 - O relatório final ainda precisa cobrir conflitos, no-ops e bloqueios de forma auditável.
 - A saída da IA deve continuar compatível com o schema validado pela aplicação; qualquer novo tipo de ação exige atualização coordenada da spec e do validador.
 

@@ -1,7 +1,7 @@
-- [ ] Definir a representação vetorial local de cada nota
-- [ ] Construir índice incremental de relações e sinais de similaridade
-- [ ] Adicionar comando `related` para listar notas relacionadas com score e motivo
-- [ ] Renderizar links manuais como navegação clicável na interface
-- [ ] Expor sugestões de links automáticos com preview antes de editar o markdown
-- [ ] Adicionar graph global com notas, pastas e escala visual frio-quente
-- [ ] Validar performance, legibilidade visual e comportamento local-first
+- [x] Definir a representação vetorial local de cada nota
+- [ ] Construir índice incremental de relações e sinais de similaridade persistente
+- [x] Adicionar comando `related` para listar notas relacionadas com score e motivo
+- [x] Renderizar links manuais como navegação clicável na interface
+- [x] Expor sugestões de links automáticos com preview antes de editar o markdown
+- [x] Adicionar graph global com notas, pastas e leitura visual por contexto
+- [ ] Validar performance, legibilidade visual e comportamento local-first em vaults maiores

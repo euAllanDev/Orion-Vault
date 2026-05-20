@@ -15,7 +15,7 @@ O app desktop é um shell instalável em TypeScript com estética dark, tátil e
 - busca global local
 - graph view local
 - painel de comandos agrupados por intenção
-- launcher e onboarding da IA local
+- entrada fixa de `Modo dev` na sidebar e onboarding da IA local
 - cards de métricas, novidades e estado do vault
 
 Na experiência desktop, o workspace deve ser a primeira superfície visível quando o vault ativo já existir; `Home` fica como resumo/fallback e entrada de recuperação.
@@ -24,6 +24,9 @@ Na experiência desktop, o workspace deve ser a primeira superfície visível qu
 - superfícies e painéis principais usam o tom base `#131316`
 - a cor dos painéis deve permanecer consistente entre workspace, editor e telas auxiliares
 - contrastes e acentos continuam vindo da paleta existente, sem alterar a hierarquia visual
+- a sidebar principal pode recolher para um modo de ícones apenas, reduzindo ruído visual sem perder navegação
+- o editor central deve adotar leitura minimalista, com fundo contínuo e sem um cartão interno competindo com a área de escrita
+- a Home/Overview em desktop deve caber com densidade confortável dentro de uma janela 16:9 comum, evitando vazios laterais e inferiores exagerados
 
 ## Princípios do shell desktop
 - local-first por padrão
@@ -32,6 +35,7 @@ Na experiência desktop, o workspace deve ser a primeira superfície visível qu
 - hierarquia visual clara, profunda e focada em leitura
 - comandos, árvore, busca e grafo devem ser operáveis por mouse e teclado
 - a IA local deve permanecer opcional e acionável sem quebrar o fluxo principal
+- o acesso à IA no desktop deve nascer da própria shell, em um ponto fixo e previsível da sidebar
 
 ## Persistência
 - notas e pastas permanecem no filesystem do usuário

@@ -2,13 +2,23 @@
   "name": "marika-cli-notes",
   "private": true,
   "version": "0.1.0",
+  "description": "Workspace local-first para notas Markdown, vaults e IA assistiva.",
+  "author": "Allan Wake",
   "type": "module",
+  "main": "interfaces/desktop/bootstrap.cjs",
   "packageManager": "pnpm@9.12.0",
   "scripts": {
     "build": "tsup",
     "dev": "tsx interfaces/cli/main.ts",
     "dev:web": "tsx interfaces/web/server.ts",
     "dev:desktop": "electron interfaces/desktop/bootstrap.cjs",
+
+    "dist": "pnpm build && electron-builder",
+    "dist:win": "pnpm build && electron-builder --win",
+    "dist:win:portable": "pnpm build && electron-builder --win portable",
+    "dist:linux": "pnpm build && electron-builder --linux",
+    "dist:mac": "pnpm build && electron-builder --mac",
+
     "dev:inspect:testvault": "tsx interfaces/cli/main.ts inspect --vault C:\\teste-vault",
     "dev:validate:testvault": "tsx interfaces/cli/main.ts validate --vault C:\\teste-vault",
     "dev:scan:testvault": "tsx interfaces/cli/main.ts scan --vault C:\\teste-vault",
@@ -18,6 +28,7 @@
     "dev:plan:testvault": "tsx interfaces/cli/main.ts plan --vault C:\\teste-vault",
     "dev:diff:testvault": "tsx interfaces/cli/main.ts diff --vault C:\\teste-vault",
     "dev:sync": "tsx interfaces/cli/main.ts sync",
+
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -25,18 +36,87 @@
     "registry:sync": "tsx scripts/update-registry.ts"
   },
   "dependencies": {
+    "esbuild": "^0.24.2",
+    "tsx": "^4.21.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",
     "@types/node": "^22.10.1",
     "electron": "^33.4.11",
+    "electron-builder": "^24.13.3",
     "eslint": "^9.14.0",
     "prettier": "^3.3.3",
     "tsup": "^8.3.5",
-    "tsx": "^4.21.0",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.14.0",
     "vitest": "^2.1.5"
+  },
+  "build": {
+    "appId": "com.marika.desktop",
+    "productName": "Marika",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/esbuild/**",
+      "node_modules/@esbuild/**"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "domain/**",
+      "application/**",
+      "infra/**",
+      "interfaces/**",
+      "scripts/**",
+      "sounds/**",
+      "comandos.md",
+      "openspec/**",
+      "docs/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "build/icon.ico"
+      },
+      {
+        "from": "vault",
+        "to": "vault",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.productivity"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Marika"
+    }
   }
 }

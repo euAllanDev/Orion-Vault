@@ -6,9 +6,9 @@ export interface CreateFolderCommandOptions {
 }
 
 export async function executeCreateFolderCommand(options: CreateFolderCommandOptions): Promise<void> {
-  const { config, service } = createVaultWorkspaceService();
+  const { service, vaultRoot } = createVaultWorkspaceService(options.vaultRoot);
   const folderPath = options.path ?? '';
 
-  await service.createFolder(config.vaultRoot, folderPath);
+  await service.createFolder(vaultRoot, folderPath);
   console.log(`Folder created: ${folderPath}`);
 }

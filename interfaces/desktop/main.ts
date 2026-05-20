@@ -1,13 +1,16 @@
 import { app, BrowserWindow, Notification, ipcMain, session } from 'electron';
 import { spawn } from 'node:child_process';
+import { existsSync, watch, type FSWatcher } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadAppConfig } from '../../infra/config/app-config';
+import { NodeNoteReader } from '../../infra/filesystem/readers/node-note-reader';
 import { NodeVaultWorkspace } from '../../infra/filesystem/workspace/node-vault-workspace';
 import { startWebServer } from '../web/server';
 
 const desktopShell = {
+  appId: 'com.marika.desktop',
   appName: 'Marika',
   title: 'Marika Desktop',
   defaultWindow: {
@@ -21,9 +24,45 @@ const desktopShell = {
   internetRequired: false
 } as const;
 
-const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url));
+const startupLogPath = path.join(process.env.TEMP ?? process.cwd(), 'marika-desktop-startup.log');
+
+async function logStartup(message: string): Promise<void> {
+  try {
+    await fs.appendFile(startupLogPath, `${new Date().toISOString()} ${message}\n`, 'utf8');
+  } catch {
+    // Logging must never block startup.
+  }
+}
+
+const preloadPath = fileURLToPath(new URL('../../interfaces/desktop/preload.cjs', import.meta.url));
 const agendaReminderSoundPath = 'C:\\Users\\as409\\Marika\\sounds\\notificacao_lembrete_premium_leve (online-audio-converter.com).mp3';
+const desktopNotificationIconCandidates = [
+  path.join(process.resourcesPath, 'build', 'icon.ico'),
+  path.join(app.getAppPath(), 'build', 'icon.ico'),
+  path.join(app.getAppPath(), '..', '..', 'build', 'icon.ico')
+];
 const appConfig = loadAppConfig();
+const agendaFolderPath = 'Agenda';
+const agendaReminderPollMs = 60_000;
+const agendaReminderGraceMs = 5 * 60 * 1000;
+const agendaOpenSummaryThrottleMs = 2 * 60 * 1000;
+
+type AgendaReminderWindow = '1d' | '1h' | 'now';
+
+type AgendaReminderState = {
+  notifiedKeys: string[];
+};
+
+type AgendaReminderItem = {
+  path: string;
+  title: string;
+  due: string;
+  status: 'pending' | 'done' | 'overdue';
+};
+
+type AgendaReminderPollOptions = {
+  catchUp: boolean;
+};
 
 function getDesktopVaultRoot(): string {
   return appConfig.vaultRoot;
@@ -34,6 +73,7 @@ function getActiveDesktopVaultRoot(): string {
 }
 
 const desktopWorkspace = new NodeVaultWorkspace();
+const noteReader = new NodeNoteReader();
 const desktopWebOptions: { desktopSessionPath?: string; activeVaultRoot?: string } = {
   activeVaultRoot: getDesktopVaultRoot()
 };
@@ -42,14 +82,348 @@ let mainWindow: BrowserWindow | null = null;
 let webServer: Awaited<ReturnType<typeof startWebServer>>['server'] | null = null;
 let desktopUrl = 'http://127.0.0.1:4173';
 let desktopPort = 4173;
-const appRoot = path.resolve(process.cwd());
+const appRoot = app.getAppPath();
 let desktopWindowReady = false;
+let vaultWatcher: FSWatcher | null = null;
+let vaultWatcherRoot = '';
+let vaultChangeDebounce: NodeJS.Timeout | null = null;
+let agendaReminderTimer: NodeJS.Timeout | null = null;
+let agendaReminderInFlight = false;
+let agendaReminderKeys = new Set<string>();
+let lastAgendaOpenSummaryAt = 0;
+let isQuitting = false;
+let agendaOpenSummaryTimeout: NodeJS.Timeout | null = null;
 
 app.commandLine.appendSwitch('disable-http-cache');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
+process.on('uncaughtException', (error) => {
+  void logStartup(`uncaughtException ${(error instanceof Error ? error.stack || error.message : String(error))}`);
+});
+
+process.on('unhandledRejection', (reason) => {
+  void logStartup(`unhandledRejection ${reason instanceof Error ? reason.stack || reason.message : String(reason)}`);
+});
+
 function getDesktopSessionPath(): string {
   return path.join(app.getPath('userData'), 'desktop-session.json');
+}
+
+function getAgendaReminderStatePath(): string {
+  return path.join(app.getPath('userData'), 'agenda-reminders.json');
+}
+
+function normalizeApiPath(value: string): string {
+  return value.replace(/\\/g, '/').replace(/^\.\//, '').trim();
+}
+
+function parseFrontmatter(content: string): { fields: Record<string, string> } {
+  const lines = content.split(/\r?\n/);
+  if (lines[0] !== '---') {
+    return { fields: {} };
+  }
+
+  const fields: Record<string, string> = {};
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (line === '---') break;
+
+    const match = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+    if (!match) continue;
+
+    const key = String(match[1] ?? '').toLowerCase();
+    const value = String(match[2] ?? '').trim().replace(/^['"`]|['"`]$/g, '');
+    fields[key] = value;
+  }
+
+  return { fields };
+}
+
+function normalizeAgendaStatus(value: string): 'pending' | 'done' | 'overdue' {
+  const normalized = value.trim().toLowerCase();
+  if (['done', 'completed', 'complete', 'concluida', 'concluída', 'concluido', 'concluído'].includes(normalized)) {
+    return 'done';
+  }
+
+  if (normalized === 'overdue' || normalized === 'atrasado' || normalized === 'em atraso') {
+    return 'overdue';
+  }
+
+  return 'pending';
+}
+
+function agendaNotificationKey(item: AgendaReminderItem, windowKey: AgendaReminderWindow): string {
+  return `${item.path}|${windowKey}|${item.due}`;
+}
+
+function agendaReminderTargetTime(dueMs: number, windowKey: AgendaReminderWindow): number {
+  if (windowKey === '1d') return dueMs - (24 * 60 * 60 * 1000);
+  if (windowKey === '1h') return dueMs - (60 * 60 * 1000);
+  return dueMs;
+}
+
+function agendaReminderPayload(item: AgendaReminderItem, windowKey: AgendaReminderWindow): { title: string; body: string } {
+  const dueLabel = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.due));
+  if (windowKey === '1d') return { title: 'Lembrete em 1 dia', body: `${item.title} vence em ${dueLabel}` };
+  if (windowKey === '1h') return { title: 'Lembrete em 1 hora', body: `${item.title} vence em ${dueLabel}` };
+  return { title: 'Prazo agora', body: `${item.title} vence em ${dueLabel}` };
+}
+
+function isSameLocalDay(left: Date, right: Date): boolean {
+  return left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
+}
+
+function agendaOpenSummaryPayload(items: AgendaReminderItem[]): { title: string; body: string } | null {
+  const pendingItems = items.filter((item) => item.status !== 'done');
+  if (pendingItems.length === 0) return null;
+
+  const overdueItems = pendingItems.filter((item) => item.status === 'overdue');
+  if (overdueItems.length > 0) {
+    return {
+      title: 'Agenda com itens em atraso',
+      body: overdueItems.length === 1
+        ? 'Voce tem 1 nota em atraso para revisar.'
+        : `Voce tem ${overdueItems.length} notas em atraso para revisar.`
+    };
+  }
+
+  const now = new Date();
+  const todayItems = pendingItems.filter((item) => isSameLocalDay(new Date(item.due), now));
+  if (todayItems.length > 0) {
+    return {
+      title: 'Agenda de hoje',
+      body: todayItems.length === 1
+        ? 'Voce tem 1 nota importante para hoje.'
+        : `Voce tem ${todayItems.length} notas importantes para hoje.`
+    };
+  }
+
+  return {
+    title: 'Agenda ativa',
+    body: pendingItems.length === 1
+      ? 'Voce tem 1 nota pendente na agenda.'
+      : `Voce tem ${pendingItems.length} notas pendentes na agenda.`
+  };
+}
+
+function shouldDispatchAgendaReminder(nowMs: number, dueMs: number, windowKey: AgendaReminderWindow): boolean {
+  const targetMs = agendaReminderTargetTime(dueMs, windowKey);
+  return nowMs >= targetMs && nowMs < targetMs + agendaReminderGraceMs;
+}
+
+function pickCatchUpAgendaReminderWindow(nowMs: number, dueMs: number): AgendaReminderWindow | null {
+  if (nowMs >= dueMs) return 'now';
+  if (nowMs >= dueMs - (60 * 60 * 1000)) return '1h';
+  if (nowMs >= dueMs - (24 * 60 * 60 * 1000)) return '1d';
+  return null;
+}
+
+async function readAgendaReminderState(): Promise<void> {
+  try {
+    const raw = await fs.readFile(getAgendaReminderStatePath(), 'utf8');
+    const parsed = JSON.parse(raw) as AgendaReminderState;
+    agendaReminderKeys = new Set(Array.isArray(parsed.notifiedKeys) ? parsed.notifiedKeys.map((value) => String(value)) : []);
+  } catch {
+    agendaReminderKeys = new Set();
+  }
+}
+
+async function writeAgendaReminderState(): Promise<void> {
+  const reminderPath = getAgendaReminderStatePath();
+  await fs.mkdir(path.dirname(reminderPath), { recursive: true });
+  await fs.writeFile(reminderPath, JSON.stringify({ notifiedKeys: [...agendaReminderKeys] }, null, 2), 'utf8');
+}
+
+async function listAgendaReminderItems(vaultRoot: string): Promise<AgendaReminderItem[]> {
+  const normalizedVaultRoot = String(vaultRoot ?? '').trim();
+  if (!normalizedVaultRoot) return [];
+  if (!(await fileExists(normalizedVaultRoot))) return [];
+
+  const notes = await noteReader.listNotes(normalizedVaultRoot);
+  return notes
+    .filter((note) => normalizeApiPath(note.relativePath).startsWith(`${agendaFolderPath}/`))
+    .map((note) => {
+      const { fields } = parseFrontmatter(note.content);
+      const dueValue = String(fields.due ?? fields.date ?? '').trim();
+      if (!dueValue) return null;
+
+      const due = new Date(dueValue);
+      if (Number.isNaN(due.getTime())) return null;
+
+      const storedStatus = normalizeAgendaStatus(fields.status ?? 'pending');
+      const isOverdue = storedStatus !== 'done' && due.getTime() < Date.now();
+      return {
+        path: normalizeApiPath(note.relativePath),
+        title: note.title ?? path.basename(note.relativePath, path.extname(note.relativePath)),
+        due: due.toISOString(),
+        status: isOverdue ? 'overdue' : storedStatus
+      } satisfies AgendaReminderItem;
+    })
+    .filter((item): item is AgendaReminderItem => Boolean(item));
+}
+
+async function dispatchAgendaReminder(payload: { title: string; body: string }): Promise<void> {
+  const soundDataUrl = await getAgendaReminderSoundDataUrl();
+  if (soundDataUrl && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('agenda:notify-sound', { src: soundDataUrl });
+  }
+
+  void logStartup(`agendaNotification.dispatch supported=${Notification.isSupported()} title=${payload.title}`);
+
+  if (Notification.isSupported()) {
+    const notification = new Notification({
+      title: payload.title,
+      body: payload.body,
+      silent: true,
+      icon: getDesktopNotificationIconPath(),
+      timeoutType: 'default',
+      closeButtonText: 'Fechar'
+    });
+
+    notification.on('click', () => {
+      openAgendaFromNotification();
+    });
+
+    notification.show();
+  }
+}
+
+function getDesktopNotificationIconPath(): string | undefined {
+  for (const candidate of desktopNotificationIconCandidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  return undefined;
+}
+
+function openAgendaFromNotification(): void {
+  const showAgenda = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send('agenda:open-from-notification');
+  };
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (desktopWindowReady) {
+      showAgenda();
+      return;
+    }
+
+    mainWindow.webContents.once('did-finish-load', showAgenda);
+    mainWindow.show();
+    return;
+  }
+
+  void startDesktop().then(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (desktopWindowReady) {
+      showAgenda();
+      return;
+    }
+
+    mainWindow.webContents.once('did-finish-load', showAgenda);
+  }).catch((error) => {
+    void logStartup(`agendaNotification.openAgenda.error ${error instanceof Error ? error.stack || error.message : String(error)}`);
+  });
+}
+
+async function maybeNotifyAgendaOnWindowOpen(force = false): Promise<void> {
+  const nowMs = Date.now();
+  if (!force && nowMs - lastAgendaOpenSummaryAt < agendaOpenSummaryThrottleMs) return;
+
+  try {
+    const items = await listAgendaReminderItems(getActiveDesktopVaultRoot());
+    const payload = agendaOpenSummaryPayload(items);
+    void logStartup(`agendaOpenSummary.check force=${force} items=${items.length} supported=${Notification.isSupported()}`);
+    if (!payload) return;
+
+    lastAgendaOpenSummaryAt = nowMs;
+    await dispatchAgendaReminder(payload);
+  } catch (error) {
+    void logStartup(`agendaOpenSummary.error ${error instanceof Error ? error.stack || error.message : String(error)}`);
+  }
+}
+
+function scheduleAgendaOpenSummary(force = false, delayMs = 1200): void {
+  if (agendaOpenSummaryTimeout) {
+    clearTimeout(agendaOpenSummaryTimeout);
+    agendaOpenSummaryTimeout = null;
+  }
+
+  agendaOpenSummaryTimeout = setTimeout(() => {
+    agendaOpenSummaryTimeout = null;
+    void maybeNotifyAgendaOnWindowOpen(force);
+  }, delayMs);
+}
+
+async function pollAgendaReminders(options: AgendaReminderPollOptions = { catchUp: false }): Promise<void> {
+  if (agendaReminderInFlight) return;
+  agendaReminderInFlight = true;
+
+  try {
+    const vaultRoot = getActiveDesktopVaultRoot();
+    const items = await listAgendaReminderItems(vaultRoot);
+    const nowMs = Date.now();
+    let changed = false;
+
+    for (const item of items) {
+      if (item.status === 'done') continue;
+
+      const dueMs = new Date(item.due).getTime();
+      if (Number.isNaN(dueMs)) continue;
+
+      if (options.catchUp) {
+        const catchUpWindow = pickCatchUpAgendaReminderWindow(nowMs, dueMs);
+        if (catchUpWindow) {
+          const reminderKey = agendaNotificationKey(item, catchUpWindow);
+          if (!agendaReminderKeys.has(reminderKey)) {
+            agendaReminderKeys.add(reminderKey);
+            changed = true;
+            await dispatchAgendaReminder(agendaReminderPayload(item, catchUpWindow));
+            continue;
+          }
+        }
+      }
+
+      for (const windowKey of ['1d', '1h', 'now'] as AgendaReminderWindow[]) {
+        if (!shouldDispatchAgendaReminder(nowMs, dueMs, windowKey)) continue;
+
+        const reminderKey = agendaNotificationKey(item, windowKey);
+        if (agendaReminderKeys.has(reminderKey)) continue;
+
+        agendaReminderKeys.add(reminderKey);
+        changed = true;
+        await dispatchAgendaReminder(agendaReminderPayload(item, windowKey));
+      }
+    }
+
+    if (changed) {
+      await writeAgendaReminderState();
+    }
+  } catch (error) {
+    void logStartup(`agendaReminder.error ${error instanceof Error ? error.stack || error.message : String(error)}`);
+  } finally {
+    agendaReminderInFlight = false;
+  }
+}
+
+function ensureAgendaReminderScheduler(): void {
+  if (agendaReminderTimer) return;
+
+  agendaReminderTimer = setInterval(() => {
+    void pollAgendaReminders();
+  }, agendaReminderPollMs);
+
+  void pollAgendaReminders({ catchUp: true });
+}
+
+function stopAgendaReminderScheduler(): void {
+  if (!agendaReminderTimer) return;
+  clearInterval(agendaReminderTimer);
+  agendaReminderTimer = null;
 }
 
 async function normalizeDesktopSessionFile(sessionPath: string, vaultRoot = getDesktopVaultRoot()): Promise<string> {
@@ -124,7 +498,7 @@ function createWindow(): BrowserWindow {
     minHeight: desktopShell.defaultWindow.minHeight,
     backgroundColor: '#141518',
     title: desktopShell.title,
-    show: false,
+    show: true,
     titleBarStyle: 'default',
     webPreferences: {
       contextIsolation: true,
@@ -137,10 +511,31 @@ function createWindow(): BrowserWindow {
     console.error('Failed to load Marika desktop UI', error);
   });
 
+  window.once('ready-to-show', () => {
+    if (!window.isDestroyed()) {
+      window.show();
+      scheduleAgendaOpenSummary(true, 1600);
+    }
+  });
+
   window.on('closed', () => {
     if (mainWindow === window) {
       mainWindow = null;
     }
+  });
+
+  window.on('close', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    window.minimize();
+  });
+
+  window.on('show', () => {
+    scheduleAgendaOpenSummary(false, 800);
+  });
+
+  window.on('restore', () => {
+    scheduleAgendaOpenSummary(false, 800);
   });
 
   return window;
@@ -180,11 +575,113 @@ function revealDesktopWindow(): void {
   mainWindow.focus();
 }
 
+function stopVaultWatcher(): void {
+  if (vaultChangeDebounce) {
+    clearTimeout(vaultChangeDebounce);
+    vaultChangeDebounce = null;
+  }
+
+  if (!vaultWatcher) {
+    vaultWatcherRoot = '';
+    return;
+  }
+
+  try {
+    vaultWatcher.close();
+  } catch {
+    // Best effort cleanup only.
+  }
+
+  vaultWatcher = null;
+  vaultWatcherRoot = '';
+}
+
+function emitVaultChanged(vaultRoot: string, filePath?: string, kind = 'external'): void {
+  mainWindow?.webContents.send('vault:changed', { vaultRoot, path: filePath, kind });
+}
+
+async function startVaultWatcher(vaultRoot: string): Promise<void> {
+  const nextVaultRoot = String(vaultRoot ?? '').trim();
+  if (!nextVaultRoot) {
+    stopVaultWatcher();
+    return;
+  }
+
+  if (vaultWatcher && vaultWatcherRoot === nextVaultRoot) {
+    return;
+  }
+
+  stopVaultWatcher();
+
+  try {
+    await fs.mkdir(nextVaultRoot, { recursive: true });
+    vaultWatcher = watch(nextVaultRoot, { recursive: true }, (_eventType, filename) => {
+      const normalizedPath = typeof filename === 'string' ? filename.replace(/\\/g, '/') : '';
+      if (vaultChangeDebounce) {
+        clearTimeout(vaultChangeDebounce);
+      }
+
+      vaultChangeDebounce = setTimeout(() => {
+        emitVaultChanged(nextVaultRoot, normalizedPath, 'external');
+      }, 150);
+    });
+    vaultWatcherRoot = nextVaultRoot;
+  } catch (error) {
+    void logStartup(`vaultWatcher.error ${error instanceof Error ? error.message : String(error)}`);
+    stopVaultWatcher();
+  }
+}
+
+function escapePowerShellLiteral(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+function resolveAiTerminalStartupScript(): string | null {
+  const candidates = [
+    path.join(appRoot, 'scripts', 'start-ai-terminal.ps1'),
+    path.resolve(appRoot, '..', '..', 'scripts', 'start-ai-terminal.ps1'),
+    path.join(process.cwd(), 'scripts', 'start-ai-terminal.ps1')
+  ];
+
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+}
+
+function buildAiTerminalInlineCommand(vaultRoot: string): string {
+  const escapedAppRoot = escapePowerShellLiteral(appRoot);
+  const escapedVaultRoot = escapePowerShellLiteral(vaultRoot);
+
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    'try { chcp 65001 | Out-Null } catch {}',
+    'try { [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch {}',
+    `$AppRoot = '${escapedAppRoot}'`,
+    `$VaultRoot = '${escapedVaultRoot}'`,
+    "if ($VaultRoot) { New-Item -ItemType Directory -Force -Path $VaultRoot | Out-Null }",
+    "[Environment]::SetEnvironmentVariable('MARIKA_VAULT_ROOT', $VaultRoot, 'Process')",
+    "if ($VaultRoot) { Set-Location -LiteralPath $VaultRoot } else { Set-Location -LiteralPath $AppRoot }",
+    "function marika { param([Parameter(ValueFromRemainingArguments=`$true)][string[]]`$Arguments) & pnpm --dir `$AppRoot exec tsx (Join-Path `$AppRoot 'interfaces/cli/main.ts') @Arguments }",
+    "Write-Host ''",
+    "Write-Host 'Marika AI ready.'",
+    "if ($VaultRoot) { Write-Host \"Vault ativo: $VaultRoot\" }",
+    "Write-Host 'Helper: marika'",
+    "Write-Host ''",
+    "Write-Host 'Resumo rapido:'",
+    "Write-Host '- marika /start: abre a orientacao inicial da IA para este app'",
+    "Write-Host '- marika /guide: abre o guia completo do produto'",
+    "Write-Host '- marika /context: mostra o contexto do vault em JSON estruturado'",
+    "Write-Host '- marika /preview: gera o preview da organizacao em JSON estruturado'",
+    "Write-Host '- marika /apply --preview-id <id>: aplica somente um preview validado'"
+  ].join('; ');
+}
+
 function openPowerShellInDirectory(cwd: string, vaultRoot: string): void {
   const systemRoot = process.env.SystemRoot ?? 'C:\\Windows';
   const powerShellPath = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-  const startupScript = path.join(appRoot, 'scripts', 'start-ai-terminal.ps1');
-  const wtCommand = ['new-tab', '--title', 'Marika AI', '--startingDirectory', cwd, 'powershell.exe', '-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', startupScript, '-AppRoot', appRoot, '-VaultRoot', vaultRoot];
+  const startupScript = resolveAiTerminalStartupScript();
+  const shellArgs = startupScript
+    ? ['-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', startupScript, '-AppRoot', appRoot, '-VaultRoot', vaultRoot]
+    : ['-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', buildAiTerminalInlineCommand(vaultRoot)];
+  const wtCommand = ['new-tab', '--title', 'Marika AI', '--startingDirectory', cwd, 'powershell.exe', ...shellArgs];
   const env = { ...process.env, MARIKA_VAULT_ROOT: vaultRoot };
 
   const tryWindowsTerminal = (): boolean => {
@@ -211,7 +708,7 @@ function openPowerShellInDirectory(cwd: string, vaultRoot: string): void {
 
   const tryPowerShell = (): boolean => {
     try {
-      const child = spawn(powerShellPath, ['-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', startupScript, '-AppRoot', appRoot, '-VaultRoot', vaultRoot], {
+      const child = spawn(powerShellPath, shellArgs, {
         cwd,
         env,
         detached: true,
@@ -238,20 +735,15 @@ function openPowerShellInDirectory(cwd: string, vaultRoot: string): void {
 
 ipcMain.handle('ai-terminal:open', (_event, _requestedVaultRoot?: string) => {
   const vaultRoot = String(_requestedVaultRoot ?? '').trim() || getActiveDesktopVaultRoot();
-  openPowerShellInDirectory(vaultRoot, vaultRoot);
-  return { cwd: vaultRoot, vaultRoot };
+  const cwd = vaultRoot || appRoot;
+  openPowerShellInDirectory(cwd, vaultRoot);
+  return { cwd, vaultRoot };
 });
 
 ipcMain.handle('agenda:notify', async (_event, payload?: { title?: string; body?: string }) => {
   const title = String(payload?.title ?? 'Lembrete');
   const body = String(payload?.body ?? '');
-  const soundDataUrl = await getAgendaReminderSoundDataUrl();
-  if (soundDataUrl) {
-    mainWindow?.webContents.send('agenda:notify-sound', { src: soundDataUrl });
-  }
-  if (Notification.isSupported()) {
-    new Notification({ title, body, silent: true }).show();
-  }
+  await dispatchAgendaReminder({ title, body });
   return { ok: true };
 });
 
@@ -280,7 +772,8 @@ ipcMain.handle('agenda:create', async (_event, payload?: { vaultRoot?: string; p
   await normalizeDesktopSessionFile(getDesktopSessionPath(), vaultRoot);
   await desktopWorkspace.createMarkdownFile(vaultRoot, filePath, content);
   mainWindow?.webContents.send('agenda:saved', { vaultRoot, path: filePath });
-  mainWindow?.webContents.send('vault:changed', { vaultRoot, path: filePath, kind: 'agenda' });
+  emitVaultChanged(vaultRoot, filePath, 'agenda');
+  void pollAgendaReminders();
   return { ok: true, vaultRoot, path: filePath };
 });
 
@@ -288,6 +781,8 @@ ipcMain.handle('vault:activate', async (_event, vaultRoot?: string) => {
   const nextVaultRoot = String(vaultRoot ?? '').trim() || getActiveDesktopVaultRoot();
   desktopWebOptions.activeVaultRoot = nextVaultRoot;
   await normalizeDesktopSessionFile(getDesktopSessionPath(), nextVaultRoot);
+  await startVaultWatcher(nextVaultRoot);
+  void pollAgendaReminders({ catchUp: true });
   return { ok: true, vaultRoot: nextVaultRoot };
 });
 
@@ -295,16 +790,22 @@ ipcMain.on('desktop:ready', (event) => {
   if (mainWindow && event.sender.id === mainWindow.webContents.id) {
     desktopWindowReady = true;
     revealDesktopWindow();
+    scheduleAgendaOpenSummary(true, 1800);
   }
 });
 
 async function startDesktop(): Promise<void> {
+  await logStartup('startDesktop.begin');
   const sessionPath = getDesktopSessionPath();
   await session.defaultSession.clearCache();
+  await readAgendaReminderState();
   const persistedVaultRoot = await readDesktopSessionVaultRoot(sessionPath);
   desktopWebOptions.activeVaultRoot = await normalizeDesktopSessionFile(sessionPath, persistedVaultRoot ?? desktopWebOptions.activeVaultRoot ?? getDesktopVaultRoot());
   desktopWebOptions.desktopSessionPath = sessionPath;
+  await startVaultWatcher(desktopWebOptions.activeVaultRoot);
+  ensureAgendaReminderScheduler();
   const started = await startWebServer(0, desktopWebOptions);
+  await logStartup(`startDesktop.webServer port=${started.port}`);
   webServer = started.server;
   desktopUrl = `http://127.0.0.1:${started.port}`;
   desktopPort = started.port;
@@ -323,21 +824,42 @@ async function startDesktop(): Promise<void> {
 
 app.setName(desktopShell.appName);
 
+if (process.platform === 'win32') {
+  app.setAppUserModelId(desktopShell.appId);
+}
+
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 app.whenReady().then(() => {
-  void startDesktop();
+  void startDesktop().catch((error) => {
+    void logStartup(`startDesktop.error ${(error instanceof Error ? error.stack || error.message : String(error))}`);
+  });
 });
 
 app.on('activate', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+    void maybeNotifyAgendaOnWindowOpen(true);
+    return;
+  }
+
   if (BrowserWindow.getAllWindows().length === 0) {
     void startDesktop();
   }
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    void webServer?.close();
-    app.quit();
+  stopVaultWatcher();
+  if (process.platform === 'darwin') {
+    return;
   }
+
+  stopAgendaReminderScheduler();
+  void webServer?.close();
+  app.quit();
 });
 
 export type DesktopShellConfig = typeof desktopShell;

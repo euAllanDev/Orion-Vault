@@ -12,10 +12,11 @@ export interface RelatedCommandOptions {
 
 export async function executeRelatedCommand(options: RelatedCommandOptions): Promise<void> {
   const config = loadAppConfig();
+  const vaultRoot = options.vaultRoot?.trim() || config.vaultRoot;
   const service = new VaultVerificationService(new NodeVaultScanner());
   const noteReader = new NodeNoteReader();
   const relations = createSemanticNoteRelationsService();
-  const report = await service.verify(config.vaultRoot);
+  const report = await service.verify(vaultRoot);
   const notes = await noteReader.listNotes(report.vaultRoot);
   const pathValue = options.path?.trim();
   const limit = Number.isFinite(options.limit) ? options.limit : 12;

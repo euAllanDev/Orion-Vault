@@ -3,6 +3,8 @@
 - [x] Criar notas com frontmatter de prazo e status
 - [x] Listar itens com filtros de estado e ações rápidas
 - [x] Emitir notificações nativas para 1 dia, 1 hora e horário do prazo
+- [x] Emitir resumo nativo da agenda ao abrir ou restaurar o desktop quando houver itens pendentes relevantes
+- [x] Abrir a área de agenda ao clicar na notificação nativa do desktop
 - [x] Validar a integração sem quebrar o workspace atual
 - [x] Fixar `Agenda/` como pasta estrutural do vault
 - [x] Garantir criação e listagem da agenda a partir de `Agenda/`

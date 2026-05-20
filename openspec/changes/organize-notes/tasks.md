@@ -28,7 +28,7 @@
 - [x] Suportar flag `--dry-run`
 - [x] Exibir resumo do plano gerado
 - [x] Exibir ações sugeridas ou bloqueadas
-- [ ] Exibir relatório final com erros, conflitos e no-ops
+- [ ] Exibir relatório final com erros, conflitos e no-ops de forma mais auditável
 
 ## Specs e validação
 - [x] Definir cenários Given/When/Then do comando `organize`
@@ -42,9 +42,10 @@
 - [x] Garantir que os artefatos não misturem implementação com comportamento
 - [x] Verificar que todos os erros relevantes básicos estão cobertos por cenário
 
-## MVP de observação e planejamento
+## Fluxo preview-first
 - [x] Definir o fluxo `observe -> plan -> preview`
-- [x] Tornar explícito que o MVP não muta o filesystem
+- [x] Tornar explícito que `dry-run` não muta o filesystem
+- [x] Permitir execução real apenas fora de `dry-run` e após validação
 - [ ] Cobrir relatório de conflitos e no-ops com exemplos mais detalhados
 
 ## MVP real do vault

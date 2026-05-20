@@ -1,8 +1,10 @@
+import os from 'node:os';
+import path from 'node:path';
 import fs from 'node:fs';
 import { z } from 'zod';
 
 export function getDefaultVaultRoot(): string {
-  return 'C:\\MarikaVault';
+  return path.join(os.homedir() || os.tmpdir(), 'MarikaVault');
 }
 
 export const AppConfigSchema = z.object({
@@ -27,6 +29,10 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
         : undefined
   });
 
-  fs.mkdirSync(config.vaultRoot, { recursive: true });
+  try {
+    fs.mkdirSync(config.vaultRoot, { recursive: true });
+  } catch {
+    // Keep startup alive even if the default vault path cannot be created.
+  }
   return config;
 }

@@ -14,14 +14,16 @@ A interface deve expor os comandos existentes do sistema em uma página operacio
 8. O menu de contexto em pastas deve expor as mesmas ações principais do hub, de forma consistente.
 9. A interface desktop deve expor um botão para listar os comandos disponíveis, agrupados por intenção.
 10. A ponte de IA via CLI deve reutilizar os mesmos comandos do hub para ler contexto, planejar e propor ações sobre notas.
-11. A ponte de IA via CLI deve usar o mesmo vocabulário em slash commands, como `/context`, `/search`, `/plan`, `/preview` e `/apply`.
+11. A ponte de IA via CLI deve usar o mesmo vocabulário em slash commands, como `/start`, `/guide`, `/context`, `/search`, `/plan`, `/preview` e `/apply`.
 12. A seleção de pasta no workspace deve ser desfeita ao clicar fora da árvore de pastas e notas, sem depender de controle manual dedicado.
-13. O onboarding da IA deve apresentar esses slash commands como caminho guiado para começar rápido.
+13. O onboarding da IA deve apresentar `/start` como leitura inicial e os demais slash commands como caminho guiado para começar rápido.
 14. O onboarding da IA no desktop deve manter o fluxo de comandos dentro do painel da própria IA, sem exigir modais aninhados.
 15. A interface não deve liberar criação de nota, criação de pasta ou escrita de conteúdo enquanto o vault ativo ainda não estiver pronto para uso.
 16. Após criar uma pasta vazia ou uma nota, a árvore do workspace deve refletir o novo item imediatamente no mesmo vault ativo.
 17. Os diálogos internos de criação, renomeação, movimento e seleção de links devem manter apenas um conjunto de callbacks ativo por vez.
 18. O menu de opções da nota deve oferecer uma ação explícita de `linkar`, substituindo a ação de relações nessa superfície.
+19. No desktop, o acesso à IA deve aparecer como ação fixa `Modo dev` na sidebar, sem depender de launcher flutuante sobre o workspace.
+20. Mudanças feitas no vault por terminal, automação local ou outros fluxos externos devem aparecer no workspace sem exigir reinício manual do app.
 
 ## Pontos de atenção
 - O hub deve refletir os contratos já existentes, não inventar novos comportamentos.
@@ -82,7 +84,7 @@ And o usuário não fica sem feedback
 
 ### Cenário 5: IA via CLI conversa com as notas
 Given uma IA local usando a CLI do projeto
-When ela chama slash commands como `/context`, `/search` ou `/plan` para uma nota
+When ela chama `/start` e depois slash commands como `/context`, `/search` ou `/plan` para uma nota
 Then a interface fornece os mesmos comandos do hub
 And qualquer mutação sugerida precisa passar por validação de segurança
 
@@ -103,3 +105,15 @@ Given uma nota aberta no editor
 When o usuário aciona `linkar` no menu de opções
 Then a interface mostra uma lista filtrável de notas do vault ativo
 And ao escolher uma nota o sistema insere um wiki link no markdown da nota atual
+
+### Cenário 9: acesso da IA fica fixo na lateral
+Given a interface desktop está aberta
+When o usuário procura o acesso da IA local
+Then a sidebar exibe a ação `Modo dev` como ponto de entrada estável
+And o fluxo de onboarding e comandos continua abrindo no painel da própria IA
+
+### Cenário 10: mudanças externas atualizam o workspace
+Given o workspace desktop está aberto em um vault ativo
+When uma pasta ou nota é criada por terminal local ou outro fluxo externo dentro do mesmo vault
+Then a árvore do workspace reflete a mudança sem reinício manual do app
+And o usuário continua vendo a raiz ativa correta

@@ -70,7 +70,7 @@ Comando responsável por acionar a feature de organização automática de notas
 pnpm dev organize --vault <path>
 ```
 
-No MVP de observação e planejamento, esse comando deve priorizar preview e relatório, sem mutação do filesystem.
+Esse comando deve priorizar preview e relatório. Em `--dry-run`, não há mutação do filesystem; fora dele, a execução continua dependente das validações de segurança do vault.
 
 ### Execução do comando `validate`
 Comando responsável por verificar a integridade estrutural do vault local.
@@ -86,7 +86,7 @@ Comando responsável por simular a organização sem alterar arquivos.
 pnpm dev organize --vault <path> --dry-run
 ```
 
-Este é o modo principal esperado para validação do plano no MVP.
+Este é o modo principal esperado para validar o plano antes de qualquer execução real.
 
 ### Validação / testes
 Comando responsável por verificar a integridade da aplicação antes de publicar ou aplicar mudanças.

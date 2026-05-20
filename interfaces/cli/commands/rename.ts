@@ -7,10 +7,10 @@ export interface RenameCommandOptions {
 }
 
 export async function executeRenameCommand(options: RenameCommandOptions): Promise<void> {
-  const { config, service } = createVaultWorkspaceService();
+  const { service, vaultRoot } = createVaultWorkspaceService(options.vaultRoot);
   const source = options.source ?? '';
   const destination = options.destination ?? '';
 
-  await service.renamePath(config.vaultRoot, source, destination);
+  await service.renamePath(vaultRoot, source, destination);
   console.log(`Renamed: ${source} -> ${destination}`);
 }

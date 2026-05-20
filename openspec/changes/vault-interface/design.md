@@ -13,7 +13,7 @@ O app continua dividido em duas superfícies principais:
 - top bar com contexto do vault e ações rápidas
 - área central mutável para setup, workspace, editor, graph ou busca
 - painel auxiliar para backlinks, fixados, metadados e contexto
-- launcher flutuante para IA local
+- atalho fixo de IA local no rodapé da sidebar
 - cards, modais e menus com profundidade e separação clara
 
 ## Página 1: Vault Setup
@@ -43,8 +43,9 @@ Objetivo: concentrar leitura, edição e organização.
 
 Layout esperado:
 - sidebar com seções do produto
+- sidebar com modo recolhido para ícones apenas no desktop
 - árvore de pastas e notas separadas por tipo
-- editor central com conteúdo Markdown
+- editor central com conteúdo Markdown em leitura minimalista e fundo unificado
 - painel auxiliar com sumário, backlinks, fixados e grafo
 - botões rápidos para criar, salvar, renomear, mover e fixar
 
@@ -62,6 +63,7 @@ Regras de comportamento:
 - o grafo e a busca precisam ser acessíveis sem sair do workspace
 - a árvore deve refletir pastas vazias recém-criadas assim que o refresh local terminar
 - diálogos internos de criação, renomeação e movimento devem invalidar sessões anteriores para evitar callbacks acumulados
+- o título da nota aberta pode funcionar como ponto de rename inline, desde que a validação e a fronteira do vault permaneçam no backend
 
 ## Estados
 - vazio: nenhum vault selecionado

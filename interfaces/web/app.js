@@ -26,13 +26,71 @@ const state = {
   agendaReminderTimer: null,
   agendaReminderKeys: new Set(),
   recentActivity: [],
-  overviewSummary: null
+  overviewSummary: null,
+  desktopNotificationTimer: null
 };
 
 let desktopBootstrapPromise = null;
 let desktopBootstrapComplete = false;
 let inputDialogSession = null;
 let linkPickerSelection = { start: 0, end: 0, text: '' };
+let noteTitleRenamePromise = null;
+const editorAssistState = {
+  kind: '',
+  query: '',
+  tokenStart: 0,
+  tokenEnd: 0,
+  activeIndex: 0,
+  items: []
+};
+
+const editorSlashCommands = [
+  { id: 'h1', label: 'Heading 1', description: 'Insere titulo principal', insertText: '# ' },
+  { id: 'h2', label: 'Heading 2', description: 'Insere subtitulo', insertText: '## ' },
+  { id: 'h3', label: 'Heading 3', description: 'Insere secao menor', insertText: '### ' },
+  { id: 'todo', label: 'Checklist', description: 'Insere item de checklist', insertText: '- [ ] ' },
+  { id: 'list', label: 'Lista', description: 'Insere item de lista', insertText: '- ' },
+  { id: 'quote', label: 'Citacao', description: 'Insere bloco de citacao', insertText: '> ' },
+  { id: 'code', label: 'Codigo', description: 'Insere bloco de codigo', insertText: '```\n\n```', cursorOffset: 4 },
+  { id: 'divider', label: 'Divisor', description: 'Insere separador visual', insertText: '---' },
+  { id: 'date', label: 'Data', description: 'Insere a data local de hoje', insertText: () => new Intl.DateTimeFormat('sv-SE').format(new Date()) }
+];
+
+const editorSurfaceState = {
+  currentLineIndex: 0
+};
+
+const editorPendingSelection = {
+  start: null,
+  end: null
+};
+
+const editorPreviewState = {
+  expanded: false
+};
+
+const editorLinkState = {
+  activeIndex: -1
+};
+
+const linkedNoteState = {
+  highlightedPath: '',
+  clearTimer: null
+};
+
+const editorHistoryState = {
+  undoStack: [],
+  redoStack: [],
+  applying: false,
+  limit: 120
+};
+
+const editorSaveState = {
+  autoSaveTimer: null,
+  dirty: false,
+  saving: false,
+  lastSavedValue: ''
+};
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -83,6 +141,11 @@ const setupHints = {
   invalid: 'O caminho informado não é seguro ou está fora da fronteira do vault.'
 };
 
+const uiStorageKeys = {
+  railCollapsed: 'marika-rail-collapsed',
+  editorDraftPrefix: 'marika-editor-draft:'
+};
+
 const els = {
   viewButtons: [...document.querySelectorAll('.rail-btn')],
   setupView: document.getElementById('setupView'),
@@ -118,6 +181,8 @@ const els = {
   agendaStatusMessage: document.getElementById('agendaStatusMessage'),
   startVaultButton: document.getElementById('startVaultButton'),
   sidebarNewNoteButton: document.getElementById('sidebarNewNoteButton'),
+  railCollapseButton: document.getElementById('railCollapseButton'),
+  aiModeButton: document.getElementById('aiModeButton'),
   newNoteButton: document.getElementById('newNoteButton'),
   newFolderButton: document.getElementById('newFolderButton'),
   saveButton: document.getElementById('saveButton'),
@@ -151,7 +216,16 @@ const els = {
   breadcrumbs: document.getElementById('breadcrumbs'),
   noteTitle: document.getElementById('noteTitle'),
   editorMeta: document.querySelector('.editor-meta'),
+  editorPreview: document.getElementById('editorPreview'),
+  editorPreviewToggle: document.getElementById('editorPreviewToggle'),
+  noteEditorSurface: document.getElementById('noteEditorSurface'),
+  editorLinkTooltip: document.getElementById('editorLinkTooltip'),
   noteEditor: document.getElementById('noteEditor'),
+  editorDraftIndicator: document.getElementById('editorDraftIndicator'),
+  editorAssistMenu: document.getElementById('editorAssistMenu'),
+  editorAssistLabel: document.getElementById('editorAssistLabel'),
+  editorAssistMeta: document.getElementById('editorAssistMeta'),
+  editorAssistList: document.getElementById('editorAssistList'),
   editorStatus: document.getElementById('editorStatus'),
   workspaceEmpty: document.getElementById('workspaceEmpty'),
   emptyStartVaultButton: document.getElementById('emptyStartVaultButton'),
@@ -161,6 +235,7 @@ const els = {
   inputDialogEyebrow: document.getElementById('inputDialogEyebrow'),
   inputDialogTitle: document.getElementById('inputDialogTitle'),
   inputDialogMessage: document.getElementById('inputDialogMessage'),
+  inputDialogFieldWrap: document.getElementById('inputDialogFieldWrap'),
   inputDialogFieldLabel: document.getElementById('inputDialogFieldLabel'),
   inputDialogInput: document.getElementById('inputDialogInput'),
   inputDialogTextarea: document.getElementById('inputDialogTextarea'),
@@ -242,16 +317,33 @@ const els = {
   aiDialogCommandsClose: document.getElementById('aiDialogCommandsClose'),
   aiDialogCommand: document.getElementById('aiDialogCommand'),
   aiDialogStatus: document.getElementById('aiDialogStatus'),
-  aiLauncher: document.getElementById('aiLauncher'),
   pinnedList: document.getElementById('pinnedList'),
   backlinksList: document.getElementById('backlinksList'),
   projectSlideTag: document.getElementById('projectSlideTag'),
   projectSlideTitle: document.getElementById('projectSlideTitle'),
   projectSlideBody: document.getElementById('projectSlideBody'),
-  projectSlideDots: document.getElementById('projectSlideDots')
+  projectSlideDots: document.getElementById('projectSlideDots'),
+  desktopNotification: document.getElementById('desktopNotification'),
+  desktopNotificationClose: document.getElementById('desktopNotificationClose'),
+  desktopNotificationTitle: document.getElementById('desktopNotificationTitle'),
+  desktopNotificationText: document.getElementById('desktopNotificationText'),
+  desktopNotificationTime: document.getElementById('desktopNotificationTime'),
+  desktopNotificationAction: document.getElementById('desktopNotificationAction')
 };
 
 const desktopCommands = [
+  {
+    group: 'Bridge IA',
+    items: [
+      ['/start', 'Abre a orientacao inicial da IA para este app', '/start'],
+      ['/guide', 'Abre o guia completo de comandos do app', '/guide'],
+      ['/context', 'Lê o contexto estruturado do vault ativo', '/context --vault <path> [--path <note>]'],
+      ['/search', 'Amplia o contexto com busca local estruturada', '/search --vault <path> --query <text>'],
+      ['/plan', 'Gera plano estruturado sem escrever', '/plan --vault <path>'],
+      ['/preview', 'Gera preview determinístico antes da escrita', '/preview --vault <path>'],
+      ['/apply', 'Aplica somente um preview confirmado', '/apply --vault <path> --preview-id <id>']
+    ]
+  },
   {
     group: 'Observação',
     items: [
@@ -432,6 +524,217 @@ function fileLabel(relativePath) {
   return normalized.split('/').filter(Boolean).at(-1)?.replace(/\.md$/i, '') ?? normalized;
 }
 
+function setEditorTitleValue(value, { enabled = true } = {}) {
+  els.noteTitle.value = String(value ?? '');
+  els.noteTitle.dataset.originalValue = els.noteTitle.value;
+  els.noteTitle.disabled = !enabled;
+}
+
+function currentEditorTitleValue() {
+  return String(els.noteTitle.value ?? '').trim();
+}
+
+function renderInlineMarkdownPreview(text) {
+  return escapeHtml(String(text ?? ''))
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '<span class="editor-preview-link" data-path="$1">@$2</span>')
+    .replace(/\[\[([^\]]+)\]\]/g, '<span class="editor-preview-link" data-path="$1">@$1</span>');
+}
+
+function renderEditorSurface() {
+  if (!els.noteEditorSurface) return;
+
+  const html = buildEditorPresentationMarkup();
+  els.noteEditorSurface.innerHTML = html || '<div class="editor-surface-line is-empty" data-line-index="0"><br></div>';
+  syncEditorLinkFocus();
+  updateEditorCurrentLine();
+}
+
+function buildEditorPresentationMarkup() {
+  const rawContent = String(els.noteEditor.value ?? '');
+  const lines = rawContent.split(/\r?\n/);
+  return lines.map((line, index) => renderEditorSurfaceLine(line, index)).join('');
+}
+
+function renderEditorSurfaceLine(line, index) {
+  const source = String(line ?? '');
+  if (!source) {
+    return `<div class="editor-surface-line is-empty" data-line-index="${index}"><br></div>`;
+  }
+
+  if (/^```/.test(source.trim())) {
+    const fenceLabel = source.trim().slice(3).trim() || 'codigo';
+    return `<div class="editor-surface-line code-fence" data-line-index="${index}"><span class="editor-surface-token hidden-token">\`\`\`</span><span class="editor-surface-badge code">{ }</span><span class="editor-surface-content code">Bloco de ${renderInlineMarkdownPreview(fenceLabel)}</span></div>`;
+  }
+
+  if (/^---+$/.test(source.trim())) {
+    return `<div class="editor-surface-line divider" data-line-index="${index}"><span class="editor-surface-token hidden-token">---</span><span class="editor-surface-divider"></span></div>`;
+  }
+
+  const headingMatch = source.match(/^(#{1,6})\s+(.+)$/);
+  if (headingMatch) {
+    const level = headingMatch[1].length;
+    return `<div class="editor-surface-line heading level-${level}" data-line-index="${index}"><span class="editor-surface-token hidden-token" aria-hidden="true">${escapeHtml(headingMatch[1])}</span><span class="editor-surface-token hidden-space" aria-hidden="true"> </span><span class="editor-surface-content heading-content">${renderInlineMarkdownPreview(headingMatch[2])}</span></div>`;
+  }
+
+  const checklistMatch = source.match(/^(\s*)([-*+])\s+\[( |x|X)\]\s*(.*)$/);
+  if (checklistMatch) {
+    const checked = String(checklistMatch[3] ?? ' ').toLowerCase() === 'x';
+    return `<div class="editor-surface-line checklist" data-line-index="${index}"><span class="editor-surface-indent">${escapeHtml(checklistMatch[1] ?? '')}</span><span class="editor-surface-token hidden-token" aria-hidden="true">${escapeHtml(checklistMatch[2] ?? '-')} [${escapeHtml(checklistMatch[3] ?? ' ')}]</span><span class="editor-surface-badge">${checked ? '☑' : '☐'}</span><span class="editor-surface-content">${renderInlineMarkdownPreview(checklistMatch[4] ?? '') || '&nbsp;'}</span></div>`;
+  }
+
+  const unorderedMatch = source.match(/^(\s*)([-*+])\s+(.*)$/);
+  if (unorderedMatch) {
+    return `<div class="editor-surface-line list" data-line-index="${index}"><span class="editor-surface-indent">${escapeHtml(unorderedMatch[1] ?? '')}</span><span class="editor-surface-token hidden-token" aria-hidden="true">${escapeHtml(unorderedMatch[2] ?? '-')}</span><span class="editor-surface-badge">•</span><span class="editor-surface-content">${renderInlineMarkdownPreview(unorderedMatch[3] ?? '') || '&nbsp;'}</span></div>`;
+  }
+
+  const orderedMatch = source.match(/^(\s*)(\d+)\.\s+(.*)$/);
+  if (orderedMatch) {
+    return `<div class="editor-surface-line list ordered" data-line-index="${index}"><span class="editor-surface-indent">${escapeHtml(orderedMatch[1] ?? '')}</span><span class="editor-surface-token hidden-token" aria-hidden="true">${escapeHtml(orderedMatch[2] ?? '1')}.</span><span class="editor-surface-badge ordered">${escapeHtml(orderedMatch[2] ?? '1')}.</span><span class="editor-surface-content">${renderInlineMarkdownPreview(orderedMatch[3] ?? '') || '&nbsp;'}</span></div>`;
+  }
+
+  const quoteMatch = source.match(/^(\s*)>\s+(.*)$/);
+  if (quoteMatch) {
+    return `<div class="editor-surface-line quote" data-line-index="${index}"><span class="editor-surface-indent">${escapeHtml(quoteMatch[1] ?? '')}</span><span class="editor-surface-token hidden-token" aria-hidden="true">&gt;</span><span class="editor-surface-badge quote">|</span><span class="editor-surface-content">${renderInlineMarkdownPreview(quoteMatch[2] ?? '') || '&nbsp;'}</span></div>`;
+  }
+
+  return `<div class="editor-surface-line paragraph" data-line-index="${index}"><span class="editor-surface-content">${renderInlineMarkdownPreview(source) || '&nbsp;'}</span></div>`;
+}
+
+function renderEditorPresentation() {
+  renderEditorPreview();
+  renderEditorSurface();
+}
+
+function renderEditorPreview() {
+  if (!els.editorPreview) return;
+
+  const rawContent = String(els.noteEditor.value ?? '').trimEnd();
+  if (!rawContent.trim()) {
+    els.editorPreview.innerHTML = '<p class="editor-preview-empty">Comece a escrever para ver titulos, negrito, listas e links com mais contraste.</p>';
+    return;
+  }
+
+  els.editorPreview.innerHTML = `<div class="editor-preview-surface" aria-hidden="true">${buildEditorPresentationMarkup()}</div>`;
+}
+
+function setEditorPreviewExpanded(expanded) {
+  editorPreviewState.expanded = expanded;
+  if (!els.editorPreview || !els.editorPreviewToggle) return;
+  els.editorPreview.classList.toggle('hidden', !expanded);
+  els.editorPreviewToggle.textContent = expanded ? 'Ocultar' : 'Mostrar';
+  els.editorPreviewToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
+async function openLinkedNoteFromPath(pathValue) {
+  const normalizedPath = normalizeRelativePath(String(pathValue ?? ''));
+  if (!normalizedPath) return;
+  linkedNoteState.highlightedPath = normalizedPath;
+  if (linkedNoteState.clearTimer) {
+    clearTimeout(linkedNoteState.clearTimer);
+    linkedNoteState.clearTimer = null;
+  }
+  await loadNote(normalizedPath, { recordActivity: true, kind: 'open', title: `Link ${fileLabel(normalizedPath)}` });
+  linkedNoteState.clearTimer = setTimeout(() => {
+    linkedNoteState.highlightedPath = '';
+    if (state.selectedFile) {
+      renderTree(state.tree);
+    }
+  }, 2200);
+}
+
+function getEditorLinkNodes() {
+  return [...(els.noteEditorSurface?.querySelectorAll('.editor-preview-link[data-path]') ?? [])];
+}
+
+function syncEditorLinkFocus() {
+  const nodes = getEditorLinkNodes();
+  nodes.forEach((node, index) => {
+    node.classList.toggle('is-active', index === editorLinkState.activeIndex);
+  });
+  updateEditorLinkTooltip();
+}
+
+function moveEditorLinkFocus(step) {
+  const nodes = getEditorLinkNodes();
+  if (nodes.length === 0) return false;
+  const size = nodes.length;
+  editorLinkState.activeIndex = editorLinkState.activeIndex < 0 ? 0 : (editorLinkState.activeIndex + step + size) % size;
+  syncEditorLinkFocus();
+  return true;
+}
+
+function openActiveEditorLink() {
+  const nodes = getEditorLinkNodes();
+  const node = nodes[editorLinkState.activeIndex] ?? null;
+  const pathValue = node?.getAttribute('data-path') ?? '';
+  if (!pathValue) return false;
+  void openLinkedNoteFromPath(pathValue).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir nota linkada'));
+  return true;
+}
+
+function updateEditorLinkTooltip() {
+  if (!els.editorLinkTooltip || !els.noteEditorSurface) return;
+  const nodes = getEditorLinkNodes();
+  const node = nodes[editorLinkState.activeIndex] ?? null;
+  if (!node) {
+    els.editorLinkTooltip.classList.add('hidden');
+    els.editorLinkTooltip.setAttribute('aria-hidden', 'true');
+    return;
+  }
+
+  const nodeRect = node.getBoundingClientRect();
+  const hostRect = els.noteEditorSurface.getBoundingClientRect();
+  const left = Math.max(8, Math.min(hostRect.width - 170, nodeRect.left - hostRect.left));
+  const top = Math.max(4, nodeRect.top - hostRect.top - 34);
+  els.editorLinkTooltip.style.left = `${left}px`;
+  els.editorLinkTooltip.style.top = `${top}px`;
+  els.editorLinkTooltip.classList.remove('hidden');
+  els.editorLinkTooltip.setAttribute('aria-hidden', 'false');
+}
+
+function clearEditorLinkFocus() {
+  editorLinkState.activeIndex = -1;
+  updateEditorLinkTooltip();
+}
+
+function syncHoveredEditorLink(target) {
+  const link = target instanceof HTMLElement ? target.closest('.editor-preview-link[data-path]') : null;
+  if (!(link instanceof HTMLElement)) {
+    clearEditorLinkFocus();
+    return;
+  }
+
+  const nodes = getEditorLinkNodes();
+  editorLinkState.activeIndex = nodes.indexOf(link);
+  syncEditorLinkFocus();
+}
+
+function applyRailCollapsed(collapsed, { persist = true } = {}) {
+  document.body.classList.toggle('rail-collapsed', collapsed);
+
+  if (els.railCollapseButton) {
+    const label = collapsed ? 'Expandir menu' : 'Recolher menu';
+    els.railCollapseButton.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+    els.railCollapseButton.setAttribute('aria-label', label);
+    els.railCollapseButton.title = label;
+  }
+
+  if (persist) {
+    localStorage.setItem(uiStorageKeys.railCollapsed, collapsed ? 'true' : 'false');
+  }
+}
+
+function restoreRailCollapsedPreference() {
+  try {
+    applyRailCollapsed(localStorage.getItem(uiStorageKeys.railCollapsed) === 'true', { persist: false });
+  } catch {
+    applyRailCollapsed(false, { persist: false });
+  }
+}
+
 function collectMarkdownPaths(entry, paths = new Set()) {
   if (!entry) return paths;
 
@@ -498,6 +801,776 @@ function collectLinkCandidates(entry, items = []) {
   }
 
   return items;
+}
+
+function closeEditorAssistMenu() {
+  editorAssistState.kind = '';
+  editorAssistState.query = '';
+  editorAssistState.tokenStart = 0;
+  editorAssistState.tokenEnd = 0;
+  editorAssistState.activeIndex = 0;
+  editorAssistState.items = [];
+  els.editorAssistMenu?.classList.add('hidden');
+  if (els.editorAssistList) {
+    els.editorAssistList.innerHTML = '';
+  }
+}
+
+function renderEditorAssistMenu() {
+  if (!els.editorAssistMenu || !els.editorAssistList || editorAssistState.items.length === 0) {
+    closeEditorAssistMenu();
+    return;
+  }
+
+  els.editorAssistLabel.textContent = editorAssistState.kind === 'mention' ? 'Mencoes' : 'Comandos';
+  els.editorAssistMeta.textContent = editorAssistState.kind === 'mention' ? 'Enter para mencionar' : 'Enter para aplicar';
+  els.editorAssistList.innerHTML = editorAssistState.items.map((item, index) => `
+    <button class="editor-assist-item ${index === editorAssistState.activeIndex ? 'active' : ''}" type="button" data-index="${index}">
+      <strong>${escapeHtml(item.label)}</strong>
+      <small>${escapeHtml(item.description)}</small>
+    </button>
+  `).join('');
+  els.editorAssistMenu.classList.remove('hidden');
+}
+
+function updateEditorAssistItems(kind, query, items, tokenStart, tokenEnd) {
+  if (items.length === 0) {
+    closeEditorAssistMenu();
+    return;
+  }
+
+  if (editorAssistState.kind !== kind || editorAssistState.query !== query) {
+    editorAssistState.activeIndex = 0;
+  }
+
+  editorAssistState.kind = kind;
+  editorAssistState.query = query;
+  editorAssistState.tokenStart = tokenStart;
+  editorAssistState.tokenEnd = tokenEnd;
+  editorAssistState.activeIndex = Math.min(editorAssistState.activeIndex, items.length - 1);
+  editorAssistState.items = items;
+  renderEditorAssistMenu();
+}
+
+function normalizeEditorText(value) {
+  return String(value ?? '').replace(/\r\n/g, '\n').replace(/\u00a0/g, '');
+}
+
+function editorDraftStorageKey(pathValue) {
+  const normalizedPath = normalizeRelativePath(String(pathValue ?? '')).replace(/\/+$/g, '');
+  return `${uiStorageKeys.editorDraftPrefix}${normalizedPath}`;
+}
+
+function readEditorDraft(pathValue) {
+  const normalizedPath = normalizeRelativePath(String(pathValue ?? '')).replace(/\/+$/g, '');
+  if (!normalizedPath) return '';
+  try {
+    return String(localStorage.getItem(editorDraftStorageKey(normalizedPath)) ?? '');
+  } catch {
+    return '';
+  }
+}
+
+function writeEditorDraft(pathValue, content) {
+  const normalizedPath = normalizeRelativePath(String(pathValue ?? '')).replace(/\/+$/g, '');
+  if (!normalizedPath) return;
+  try {
+    const value = normalizeEditorText(content);
+    if (!value.trim()) {
+      localStorage.removeItem(editorDraftStorageKey(normalizedPath));
+      return;
+    }
+    localStorage.setItem(editorDraftStorageKey(normalizedPath), value);
+  } catch {
+    // Draft persistence is best-effort only.
+  }
+}
+
+function clearEditorDraft(pathValue) {
+  const normalizedPath = normalizeRelativePath(String(pathValue ?? '')).replace(/\/+$/g, '');
+  if (!normalizedPath) return;
+  try {
+    localStorage.removeItem(editorDraftStorageKey(normalizedPath));
+  } catch {
+    // Draft cleanup is best-effort only.
+  }
+}
+
+function updateEditorDraftIndicator(label = '', mode = '') {
+  if (!els.editorDraftIndicator) return;
+  const text = label || 'Sincronizado';
+  els.editorDraftIndicator.textContent = text;
+  els.editorDraftIndicator.classList.remove('is-dirty', 'is-saving', 'is-saved');
+  if (mode) {
+    els.editorDraftIndicator.classList.add(`is-${mode}`);
+  }
+}
+
+function clearEditorAutoSaveTimer() {
+  if (!editorSaveState.autoSaveTimer) return;
+  clearTimeout(editorSaveState.autoSaveTimer);
+  editorSaveState.autoSaveTimer = null;
+}
+
+function markEditorDirty() {
+  editorSaveState.dirty = true;
+  updateEditorDraftIndicator('Rascunho local', 'dirty');
+}
+
+function resetEditorSaveState(value = '') {
+  clearEditorAutoSaveTimer();
+  editorSaveState.dirty = false;
+  editorSaveState.saving = false;
+  editorSaveState.lastSavedValue = normalizeEditorText(value);
+  updateEditorDraftIndicator('Sincronizado', 'saved');
+}
+
+function getEditorSurfaceSelectionOffsets() {
+  const selection = window.getSelection();
+  const root = els.noteEditorSurface;
+  if (!selection || selection.rangeCount === 0 || !root) {
+    return { start: 0, end: 0 };
+  }
+
+  const range = selection.getRangeAt(0);
+  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) {
+    return { start: 0, end: 0 };
+  }
+
+  const computeOffset = (container, offset) => {
+    const lineNode = container instanceof Element
+      ? container.closest('.editor-surface-line')
+      : container.parentElement?.closest('.editor-surface-line');
+    const lineIndex = Number(lineNode?.dataset.lineIndex ?? '0');
+    const lines = String(els.noteEditor.value ?? '').split('\n');
+    const baseOffset = lines.slice(0, lineIndex).reduce((total, line) => total + line.length + 1, 0);
+    if (!lineNode) return baseOffset;
+    const localRange = document.createRange();
+    localRange.selectNodeContents(lineNode);
+    localRange.setEnd(container, offset);
+    return baseOffset + normalizeEditorText(localRange.toString()).length;
+  };
+
+  return {
+    start: computeOffset(range.startContainer, range.startOffset),
+    end: computeOffset(range.endContainer, range.endOffset)
+  };
+}
+
+function setEditorSurfaceSelection(start, end = start) {
+  const root = els.noteEditorSurface;
+  if (!root) return;
+
+  const selection = window.getSelection();
+  if (!selection) return;
+
+  const clamp = (value) => Math.max(0, Math.min(String(els.noteEditor.value ?? '').length, value));
+  const lines = String(els.noteEditor.value ?? '').split('\n');
+  const resolvePoint = (globalOffset) => {
+    let remaining = clamp(globalOffset);
+    let lineIndex = 0;
+    while (lineIndex < lines.length - 1 && remaining > lines[lineIndex].length) {
+      remaining -= lines[lineIndex].length + 1;
+      lineIndex += 1;
+    }
+
+    const lineNode = root.querySelector(`.editor-surface-line[data-line-index="${lineIndex}"]`) ?? root.lastChild ?? root;
+    const walker = document.createTreeWalker(lineNode, NodeFilter.SHOW_TEXT);
+    let current = walker.nextNode();
+    let localRemaining = remaining;
+    while (current) {
+      const textLength = normalizeEditorText(current.nodeValue ?? '').length;
+      if (localRemaining <= textLength) {
+        return { node: current, offset: Math.min((current.nodeValue ?? '').length, localRemaining) };
+      }
+      localRemaining -= textLength;
+      current = walker.nextNode();
+    }
+
+    const fallbackTextNode = lineNode.lastChild instanceof Text ? lineNode.lastChild : null;
+    return { node: fallbackTextNode ?? lineNode, offset: fallbackTextNode ? (fallbackTextNode.nodeValue ?? '').length : lineNode.childNodes.length };
+  };
+
+  const startPoint = resolvePoint(start);
+  const endPoint = resolvePoint(end);
+  const range = document.createRange();
+  range.setStart(startPoint.node, startPoint.offset);
+  range.setEnd(endPoint.node, endPoint.offset);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  updateEditorCurrentLine();
+}
+
+function updateEditorCurrentLine() {
+  const root = els.noteEditorSurface;
+  if (!root) return;
+  const { start } = getEditorSelection();
+  const before = String(els.noteEditor.value ?? '').slice(0, start);
+  editorSurfaceState.currentLineIndex = before ? before.split('\n').length - 1 : 0;
+}
+
+function getEditorSelection() {
+  return {
+    value: String(els.noteEditor.value ?? ''),
+    ...getEditorSurfaceSelectionOffsets()
+  };
+}
+
+function snapshotEditorState() {
+  const selection = getEditorSelection();
+  return {
+    value: String(els.noteEditor.value ?? ''),
+    selectionStart: selection.start,
+    selectionEnd: selection.end
+  };
+}
+
+function pushEditorUndoState(snapshot) {
+  const previous = editorHistoryState.undoStack.at(-1);
+  if (previous && previous.value === snapshot.value && previous.selectionStart === snapshot.selectionStart && previous.selectionEnd === snapshot.selectionEnd) {
+    return;
+  }
+  editorHistoryState.undoStack.push(snapshot);
+  if (editorHistoryState.undoStack.length > editorHistoryState.limit) {
+    editorHistoryState.undoStack.shift();
+  }
+}
+
+function resetEditorHistory(initialSnapshot = null) {
+  editorHistoryState.undoStack = initialSnapshot ? [initialSnapshot] : [];
+  editorHistoryState.redoStack = [];
+}
+
+function applyEditorSnapshot(snapshot) {
+  if (!snapshot) return;
+  editorHistoryState.applying = true;
+  try {
+    els.noteEditor.value = String(snapshot.value ?? '');
+    renderEditorPresentation();
+    editorPendingSelection.start = Number(snapshot.selectionStart ?? 0);
+    editorPendingSelection.end = Number(snapshot.selectionEnd ?? editorPendingSelection.start);
+    setEditorSurfaceSelection(editorPendingSelection.start, editorPendingSelection.end);
+    els.noteEditorSurface?.focus();
+    editorPendingSelection.start = null;
+    editorPendingSelection.end = null;
+  } finally {
+    editorHistoryState.applying = false;
+  }
+}
+
+function undoEditorChange() {
+  if (editorHistoryState.undoStack.length <= 1) return false;
+  const currentSnapshot = snapshotEditorState();
+  editorHistoryState.redoStack.push(currentSnapshot);
+  editorHistoryState.undoStack.pop();
+  applyEditorSnapshot(editorHistoryState.undoStack.at(-1));
+  els.editorStatus.textContent = 'Desfeito.';
+  return true;
+}
+
+function redoEditorChange() {
+  const nextSnapshot = editorHistoryState.redoStack.pop();
+  if (!nextSnapshot) return false;
+  pushEditorUndoState(snapshotEditorState());
+  applyEditorSnapshot(nextSnapshot);
+  els.editorStatus.textContent = 'Refeito.';
+  return true;
+}
+
+function replaceEditorRange(start, end, text, { selectionStart = null, selectionEnd = null } = {}) {
+  const value = String(els.noteEditor.value ?? '');
+  if (!editorHistoryState.applying) {
+    pushEditorUndoState(snapshotEditorState());
+    editorHistoryState.redoStack = [];
+  }
+  els.noteEditor.value = `${value.slice(0, start)}${text}${value.slice(end)}`;
+  const nextSelectionStart = selectionStart === null ? start + text.length : selectionStart;
+  const nextSelectionEnd = selectionEnd === null ? nextSelectionStart : selectionEnd;
+  editorPendingSelection.start = nextSelectionStart;
+  editorPendingSelection.end = nextSelectionEnd;
+  els.noteEditor.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function getCurrentEditorLine() {
+  const { value, start, end } = getEditorSelection();
+  const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+  const nextBreak = value.indexOf('\n', end);
+  const lineEnd = nextBreak === -1 ? value.length : nextBreak;
+  const lineText = value.slice(lineStart, lineEnd);
+  const beforeCursor = value.slice(lineStart, start);
+  return { value, start, end, lineStart, lineEnd, lineText, beforeCursor };
+}
+
+function getEditorSelectedLineRange() {
+  const { value, start, end } = getEditorSelection();
+  const normalizedEnd = end > start && value[end - 1] === '\n' ? end - 1 : end;
+  const rangeStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+  const nextBreak = value.indexOf('\n', normalizedEnd);
+  const rangeEnd = nextBreak === -1 ? value.length : nextBreak;
+  return {
+    value,
+    start,
+    end,
+    rangeStart,
+    rangeEnd,
+    block: value.slice(rangeStart, rangeEnd)
+  };
+}
+
+function transformSelectedLines(transformLine) {
+  const selection = getEditorSelectedLineRange();
+  const lines = selection.block.split('\n');
+  const nextLines = lines.map((line, index) => transformLine(line, index, lines));
+  const nextBlock = nextLines.join('\n');
+  replaceEditorRange(selection.rangeStart, selection.rangeEnd, nextBlock, {
+    selectionStart: selection.rangeStart,
+    selectionEnd: selection.rangeStart + nextBlock.length
+  });
+}
+
+function splitLineIndent(line) {
+  const match = String(line ?? '').match(/^(\s*)(.*)$/);
+  return {
+    indent: match?.[1] ?? '',
+    content: match?.[2] ?? ''
+  };
+}
+
+function toggleHeadingOnSelectedLines(prefix) {
+  transformSelectedLines((line) => {
+    if (!line.trim()) return line;
+    const { indent, content } = splitLineIndent(line);
+    const withoutHeading = content.replace(/^#{1,6}\s+/, '');
+    if (content.startsWith(prefix)) {
+      return `${indent}${withoutHeading}`;
+    }
+    return `${indent}${prefix}${withoutHeading}`;
+  });
+}
+
+function togglePrefixOnSelectedLines(prefix) {
+  const selection = getEditorSelectedLineRange();
+  const lines = selection.block.split('\n').filter((line) => line.trim());
+  const allHavePrefix = lines.length > 0 && lines.every((line) => splitLineIndent(line).content.startsWith(prefix));
+  transformSelectedLines((line) => {
+    if (!line.trim()) return line;
+    const { indent, content } = splitLineIndent(line);
+    return allHavePrefix && content.startsWith(prefix) ? `${indent}${content.slice(prefix.length)}` : `${indent}${prefix}${content}`;
+  });
+}
+
+function toggleChecklistOnSelectedLines() {
+  const selection = getEditorSelectedLineRange();
+  const lines = selection.block.split('\n').filter((line) => line.trim());
+  const allChecklist = lines.length > 0 && lines.every((line) => /^[-*+]\s+\[( |x|X)\]\s+/.test(line));
+  transformSelectedLines((line) => {
+    if (!line.trim()) return line;
+    if (allChecklist && /^[-*+]\s+\[( |x|X)\]\s+/.test(line)) {
+      return line.replace(/^([-*+])\s+\[( |x|X)\]\s+/, '');
+    }
+    if (/^[-*+]\s+/.test(line)) {
+      return line.replace(/^([-*+])\s+/, '- [ ] ');
+    }
+    return `- [ ] ${line}`;
+  });
+}
+
+function toggleListOnSelectedLines() {
+  const selection = getEditorSelectedLineRange();
+  const lines = selection.block.split('\n').filter((line) => line.trim());
+  const allListed = lines.length > 0 && lines.every((line) => /^[-*+]\s+/.test(line) && !/^[-*+]\s+\[( |x|X)\]\s+/.test(line));
+  transformSelectedLines((line) => {
+    if (!line.trim()) return line;
+    if (allListed && /^[-*+]\s+/.test(line)) {
+      return line.replace(/^[-*+]\s+/, '');
+    }
+    if (/^[-*+]\s+\[( |x|X)\]\s+/.test(line)) {
+      return line.replace(/^[-*+]\s+\[( |x|X)\]\s+/, '- ');
+    }
+    return /^[-*+]\s+/.test(line) ? line : `- ${line}`;
+  });
+}
+
+function toggleCodeFenceOnSelection() {
+  const { value, start, end } = getEditorSelection();
+  const selectedText = value.slice(start, end);
+  const lineSelection = getEditorSelectedLineRange();
+  const selectedBlock = lineSelection.block;
+  if (selectedBlock.startsWith('```\n') && selectedBlock.endsWith('\n```')) {
+    replaceEditorRange(lineSelection.rangeStart, lineSelection.rangeEnd, selectedBlock.slice(4, -4), {
+      selectionStart: lineSelection.rangeStart,
+      selectionEnd: lineSelection.rangeStart + selectedBlock.length - 8
+    });
+    return;
+  }
+
+  if (selectedText.includes('\n') || selectedText.length === 0) {
+    const content = selectedBlock || selectedText || '';
+    replaceEditorRange(lineSelection.rangeStart, lineSelection.rangeEnd, `\`\`\`\n${content}\n\`\`\``, {
+      selectionStart: lineSelection.rangeStart + 4,
+      selectionEnd: lineSelection.rangeStart + 4 + content.length
+    });
+    return;
+  }
+
+  replaceEditorRange(start, end, `\`\`${selectedText}\`\``, {
+    selectionStart: start + 2,
+    selectionEnd: start + 2 + selectedText.length
+  });
+}
+
+function getMentionCandidates(query) {
+  return collectLinkCandidates(state.tree)
+    .filter((item) => item.path && item.path !== state.selectedFile)
+    .filter((item) => {
+      if (!query) return true;
+      return `${item.label} ${item.path}`.toLowerCase().includes(query.toLowerCase());
+    })
+    .sort((left, right) => `${left.label} ${left.path}`.localeCompare(`${right.label} ${right.path}`, 'pt-BR'))
+    .slice(0, 7)
+    .map((item) => ({
+      type: 'mention',
+      label: item.label,
+      description: item.path,
+      path: item.path
+    }));
+}
+
+function getSlashCommandCandidates(query) {
+  return editorSlashCommands
+    .filter((item) => {
+      if (!query) return true;
+      return `${item.id} ${item.label} ${item.description}`.toLowerCase().includes(query.toLowerCase());
+    })
+    .slice(0, 7)
+    .map((item) => ({
+      type: 'command',
+      label: `/${item.id}`,
+      description: item.description,
+      command: item
+    }));
+}
+
+function updateEditorAssistMenu() {
+  if (!state.selectedFile || document.activeElement !== els.noteEditorSurface) {
+    closeEditorAssistMenu();
+    return;
+  }
+
+  const { start, end, lineStart, beforeCursor, value } = getCurrentEditorLine();
+  if (start !== end) {
+    closeEditorAssistMenu();
+    return;
+  }
+
+  const slashMatch = beforeCursor.match(/^(\s*)\/([a-z0-9-]*)$/i);
+  if (slashMatch) {
+    const indent = slashMatch[1] ?? '';
+    const query = slashMatch[2] ?? '';
+    const tokenStart = lineStart + indent.length;
+    updateEditorAssistItems('command', query, getSlashCommandCandidates(query), tokenStart, start);
+    return;
+  }
+
+  const mentionMatch = value.slice(0, start).match(/(^|[\s([{])@([^\s@]*)$/i);
+  if (mentionMatch) {
+    const query = mentionMatch[2] ?? '';
+    const tokenStart = start - query.length - 1;
+    updateEditorAssistItems('mention', query, getMentionCandidates(query), tokenStart, start);
+    return;
+  }
+
+  closeEditorAssistMenu();
+}
+
+function applyMarkdownWrap(prefix, suffix = prefix) {
+  const { value, start, end } = getEditorSelection();
+  const selectedText = value.slice(start, end);
+  const content = selectedText || '';
+  const nextText = `${prefix}${content}${suffix}`;
+  const nextSelectionStart = start + prefix.length;
+  const nextSelectionEnd = selectedText ? end + prefix.length : start + prefix.length;
+  replaceEditorRange(start, end, nextText, { selectionStart: nextSelectionStart, selectionEnd: nextSelectionEnd });
+}
+
+function applyEditorMention(item) {
+  const mentionText = `[[${item.path}|${item.label}]]\n`;
+  const insertionStart = editorAssistState.tokenStart;
+  replaceEditorRange(insertionStart, editorAssistState.tokenEnd, mentionText, {
+    selectionStart: insertionStart + mentionText.length,
+    selectionEnd: insertionStart + mentionText.length
+  });
+  closeEditorAssistMenu();
+}
+
+function applySlashCommand(item) {
+  const command = item.command;
+  const output = typeof command.insertText === 'function' ? command.insertText() : command.insertText;
+  const insertionStart = editorAssistState.tokenStart;
+  const cursorOffset = Number.isFinite(command.cursorOffset) ? command.cursorOffset : output.length;
+  replaceEditorRange(insertionStart, editorAssistState.tokenEnd, output, {
+    selectionStart: insertionStart + cursorOffset,
+    selectionEnd: insertionStart + cursorOffset
+  });
+  closeEditorAssistMenu();
+}
+
+function applyActiveEditorAssistItem() {
+  const item = editorAssistState.items[editorAssistState.activeIndex];
+  if (!item) return false;
+  if (item.type === 'mention') {
+    applyEditorMention(item);
+    return true;
+  }
+  if (item.type === 'command') {
+    applySlashCommand(item);
+    return true;
+  }
+  return false;
+}
+
+function moveEditorAssistSelection(step) {
+  if (editorAssistState.items.length === 0) return;
+  const size = editorAssistState.items.length;
+  editorAssistState.activeIndex = (editorAssistState.activeIndex + step + size) % size;
+  renderEditorAssistMenu();
+}
+
+function continueMarkdownList(event) {
+  const line = getCurrentEditorLine();
+  if (line.start !== line.end || line.start !== line.lineEnd) return false;
+
+  const checklistMatch = line.lineText.match(/^(\s*)([-*+])\s+\[(?: |x|X)\]\s*(.*)$/);
+  if (checklistMatch) {
+    event.preventDefault();
+    const indent = checklistMatch[1] ?? '';
+    const marker = checklistMatch[2] ?? '-';
+    const content = String(checklistMatch[3] ?? '').trim();
+    if (!content) {
+      replaceEditorRange(line.lineStart, line.lineEnd, '', { selectionStart: line.lineStart, selectionEnd: line.lineStart });
+      return true;
+    }
+    const nextPrefix = `\n${indent}${marker} [ ] `;
+    replaceEditorRange(line.start, line.end, nextPrefix);
+    return true;
+  }
+
+  const unorderedMatch = line.lineText.match(/^(\s*)([-*+])\s+(.*)$/);
+  if (unorderedMatch) {
+    event.preventDefault();
+    const indent = unorderedMatch[1] ?? '';
+    const marker = unorderedMatch[2] ?? '-';
+    const content = String(unorderedMatch[3] ?? '').trim();
+    if (!content) {
+      replaceEditorRange(line.lineStart, line.lineEnd, '', { selectionStart: line.lineStart, selectionEnd: line.lineStart });
+      return true;
+    }
+    replaceEditorRange(line.start, line.end, `\n${indent}${marker} `);
+    return true;
+  }
+
+  const orderedMatch = line.lineText.match(/^(\s*)(\d+)\.\s+(.*)$/);
+  if (orderedMatch) {
+    event.preventDefault();
+    const indent = orderedMatch[1] ?? '';
+    const order = Number(orderedMatch[2] ?? '1');
+    const content = String(orderedMatch[3] ?? '').trim();
+    if (!content) {
+      replaceEditorRange(line.lineStart, line.lineEnd, '', { selectionStart: line.lineStart, selectionEnd: line.lineStart });
+      return true;
+    }
+    replaceEditorRange(line.start, line.end, `\n${indent}${order + 1}. `);
+    return true;
+  }
+
+  return false;
+}
+
+function indentSelectedListLines(direction) {
+  const selection = getEditorSelectedLineRange();
+  const lines = selection.block.split('\n');
+  const singleLine = !selection.block.includes('\n');
+  const hasNonListLine = lines.some((line) => line.trim() && !/^(\s*)([-*+]\s+(?:\[(?: |x|X)\]\s+)?|\d+\.\s+|>\s+)/.test(line));
+
+  if (singleLine && hasNonListLine && selection.start === selection.end) {
+    if (direction > 0) {
+      replaceEditorRange(selection.start, selection.end, '  ', {
+        selectionStart: selection.start + 2,
+        selectionEnd: selection.start + 2
+      });
+      return;
+    }
+
+    const removalStart = Math.max(selection.start - 2, selection.rangeStart);
+    const removable = selection.value.slice(removalStart, selection.start);
+    if (removable === '  ') {
+      replaceEditorRange(removalStart, selection.start, '', {
+        selectionStart: removalStart,
+        selectionEnd: removalStart
+      });
+    }
+    return;
+  }
+
+  const nextLines = lines.map((line) => {
+    if (!line.trim()) return line;
+    if (direction > 0) return `  ${line}`;
+    return line.startsWith('  ') ? line.slice(2) : line.replace(/^\s{1,2}/, '');
+  });
+  const nextBlock = nextLines.join('\n');
+  replaceEditorRange(selection.rangeStart, selection.rangeEnd, nextBlock, {
+    selectionStart: selection.rangeStart,
+    selectionEnd: selection.rangeStart + nextBlock.length
+  });
+}
+
+function handleEditorKeydown(event) {
+  const shortcutKey = event.ctrlKey || event.metaKey;
+
+  if (shortcutKey && !event.altKey && event.key.toLowerCase() === 'z') {
+    event.preventDefault();
+    if (event.shiftKey) {
+      redoEditorChange();
+      return;
+    }
+    undoEditorChange();
+    return;
+  }
+
+  if (shortcutKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'y') {
+    event.preventDefault();
+    redoEditorChange();
+    return;
+  }
+
+  if (editorAssistState.items.length > 0) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      moveEditorAssistSelection(1);
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      moveEditorAssistSelection(-1);
+      return;
+    }
+
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault();
+      applyActiveEditorAssistItem();
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeEditorAssistMenu();
+      return;
+    }
+  }
+
+  if (shortcutKey && !event.shiftKey && event.key.toLowerCase() === 'b') {
+    event.preventDefault();
+    applyMarkdownWrap('**');
+    return;
+  }
+
+  if (shortcutKey && !event.shiftKey && event.key.toLowerCase() === 'i') {
+    event.preventDefault();
+    applyMarkdownWrap('*');
+    return;
+  }
+
+  if (event.altKey && !event.ctrlKey && !event.metaKey && event.key === 'ArrowRight') {
+    event.preventDefault();
+    moveEditorLinkFocus(1);
+    return;
+  }
+
+  if (event.altKey && !event.ctrlKey && !event.metaKey && event.key === 'ArrowLeft') {
+    event.preventDefault();
+    moveEditorLinkFocus(-1);
+    return;
+  }
+
+  if (event.altKey && !event.ctrlKey && !event.metaKey && event.key === 'Enter') {
+    if (openActiveEditorLink()) {
+      event.preventDefault();
+      return;
+    }
+  }
+
+  if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    indentSelectedListLines(event.shiftKey ? -1 : 1);
+    return;
+  }
+
+  if (shortcutKey && event.altKey && !event.shiftKey && event.key === '1') {
+    event.preventDefault();
+    toggleHeadingOnSelectedLines('# ');
+    return;
+  }
+
+  if (shortcutKey && event.altKey && !event.shiftKey && event.key === '2') {
+    event.preventDefault();
+    toggleHeadingOnSelectedLines('## ');
+    return;
+  }
+
+  if (shortcutKey && event.altKey && !event.shiftKey && event.key === '3') {
+    event.preventDefault();
+    toggleHeadingOnSelectedLines('### ');
+    return;
+  }
+
+  if (event.key === 'Enter' && continueMarkdownList(event)) {
+    return;
+  }
+}
+
+function handleEditorBeforeInput(event) {
+  if (!state.selectedFile) return;
+
+  const selection = getEditorSelection();
+  if (event.inputType === 'insertText') {
+    event.preventDefault();
+    replaceEditorRange(selection.start, selection.end, event.data ?? '');
+    return;
+  }
+
+  if (event.inputType === 'deleteContentBackward') {
+    event.preventDefault();
+    if (selection.start !== selection.end) {
+      replaceEditorRange(selection.start, selection.end, '');
+      return;
+    }
+    if (selection.start === 0) return;
+    replaceEditorRange(selection.start - 1, selection.end, '');
+    return;
+  }
+
+  if (event.inputType === 'deleteContentForward') {
+    event.preventDefault();
+    if (selection.start !== selection.end) {
+      replaceEditorRange(selection.start, selection.end, '');
+      return;
+    }
+    replaceEditorRange(selection.start, Math.min(selection.end + 1, selection.value.length), '');
+    return;
+  }
+
+  if (event.inputType === 'insertParagraph') {
+    event.preventDefault();
+    replaceEditorRange(selection.start, selection.end, '\n');
+    return;
+  }
+
+  if (event.inputType === 'insertFromPaste') {
+    event.preventDefault();
+    const pasted = event.dataTransfer?.getData('text/plain') ?? event.data ?? '';
+    replaceEditorRange(selection.start, selection.end, normalizeEditorText(pasted));
+  }
 }
 
 function splitRelativeLeaf(relativePath) {
@@ -590,12 +1663,13 @@ async function insertLinkToCurrentNote(targetPath, targetLabel) {
   const selectedText = String(linkPickerSelection.text ?? '').trim();
   const label = selectedText || String(targetLabel ?? '').trim() || fileLabel(targetPath);
   const linkText = `[[${targetPath}|${label}]]`;
-  const start = Number.isFinite(linkPickerSelection.start) ? linkPickerSelection.start : els.noteEditor.selectionStart;
-  const end = Number.isFinite(linkPickerSelection.end) ? linkPickerSelection.end : els.noteEditor.selectionEnd;
+  const selection = getEditorSelection();
+  const start = Number.isFinite(linkPickerSelection.start) ? linkPickerSelection.start : selection.start;
+  const end = Number.isFinite(linkPickerSelection.end) ? linkPickerSelection.end : selection.end;
 
-  els.noteEditor.setRangeText(linkText, start, end, 'end');
+  replaceEditorRange(start, end, linkText);
   await saveNote();
-  els.noteEditor.focus();
+  els.noteEditorSurface?.focus();
 }
 
 async function openLinkPickerDialog() {
@@ -608,9 +1682,9 @@ async function openLinkPickerDialog() {
   }
 
   linkPickerSelection = {
-    start: els.noteEditor.selectionStart ?? 0,
-    end: els.noteEditor.selectionEnd ?? 0,
-    text: String(els.noteEditor.value ?? '').slice(els.noteEditor.selectionStart ?? 0, els.noteEditor.selectionEnd ?? 0)
+    start: getEditorSelection().start,
+    end: getEditorSelection().end,
+    text: String(els.noteEditor.value ?? '').slice(getEditorSelection().start, getEditorSelection().end)
   };
 
   if (els.linkPickerDialogQuery) {
@@ -629,6 +1703,17 @@ function containerForSelection() {
 
 function prettyPath(relativePath) {
   return normalizeRelativePath(relativePath).replace(/\//g, ' / ');
+}
+
+function isWithinRelativePath(parentPath, candidatePath) {
+  const parent = normalizeRelativePath(parentPath).replace(/\/+$/g, '');
+  const candidate = normalizeRelativePath(candidatePath).replace(/\/+$/g, '');
+  if (!parent || !candidate) return false;
+  return candidate === parent || candidate.startsWith(`${parent}/`);
+}
+
+function isProtectedAgendaFolderPath(relativePath) {
+  return normalizeRelativePath(relativePath).replace(/\/+$/g, '') === 'Agenda';
 }
 
 function formatAgendaInputValue(date = new Date()) {
@@ -1070,10 +2155,41 @@ function setAgendaStatus(message) {
   }
 }
 
+function hideDesktopNotification() {
+  if (state.desktopNotificationTimer) {
+    clearTimeout(state.desktopNotificationTimer);
+    state.desktopNotificationTimer = null;
+  }
+
+  if (!els.desktopNotification) return;
+  els.desktopNotification.classList.remove('visible');
+  els.desktopNotification.setAttribute('aria-hidden', 'true');
+}
+
+function showDesktopNotification({ title, body, timeLabel = 'agora', actionLabel = 'Abrir agenda' }) {
+  if (!isDesktopShell || !els.desktopNotification) return;
+
+  els.desktopNotificationTitle.textContent = String(title ?? 'Marika');
+  els.desktopNotificationText.textContent = String(body ?? '');
+  els.desktopNotificationTime.textContent = String(timeLabel ?? 'agora');
+  els.desktopNotificationAction.textContent = String(actionLabel ?? 'Ver agenda');
+  els.desktopNotification.classList.add('visible');
+  els.desktopNotification.setAttribute('aria-hidden', 'false');
+
+  if (state.desktopNotificationTimer) {
+    clearTimeout(state.desktopNotificationTimer);
+  }
+
+  state.desktopNotificationTimer = setTimeout(() => {
+    hideDesktopNotification();
+  }, 6500);
+}
+
 function closeAiDialog() {
   els.aiDialog.classList.add('hidden');
   els.aiDialog.setAttribute('aria-hidden', 'true');
   els.aiDialogCommandsPanel.classList.add('hidden');
+  document.body.classList.remove('ai-dialog-open');
 }
 
 function closeGuideDialog() {
@@ -1101,22 +2217,25 @@ function openAiDialog() {
     els.aiDialogStatus.textContent = 'Abra ou crie um vault antes de usar a IA.';
     els.aiDialog.classList.remove('hidden');
     els.aiDialog.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('ai-dialog-open');
     return;
   }
 
   localStorage.setItem('marika-ai-popup-seen', 'true');
   closeAiDialog();
   els.aiDialogCommand.textContent = [
-    '/guide',
-    `/context ${vault}`,
-    `/search "arquitetura local"`,
-    '/plan',
-    '/preview',
-    '/apply'
+    'marika /start',
+    'marika /guide',
+    'marika /context',
+    'marika /search --query "arquitetura local"',
+    'marika /plan',
+    'marika /preview',
+    'marika /apply --preview-id <id>'
   ].join('\n');
-  els.aiDialogStatus.textContent = 'Comece por /guide para ver os comandos e /context para ler o vault ativo.';
+  els.aiDialogStatus.textContent = 'Comece por marika /start, depois marika /guide, e confirme o previewId antes de usar marika /apply.';
   els.aiDialog.classList.remove('hidden');
   els.aiDialog.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('ai-dialog-open');
 }
 
 function getActiveVaultPath() {
@@ -1138,13 +2257,14 @@ async function openAiTerminal() {
     throw new Error('Bridge do desktop indisponível');
   }
 
-  els.aiDialogStatus.textContent = `Abrindo terminal do app com vault ${vaultRoot}...`;
+  els.aiDialogStatus.textContent = `Abrindo terminal da IA no vault ${vaultRoot}...`;
   await bridge.openAiTerminal(vaultRoot);
-  els.aiDialogStatus.textContent = `Terminal aberto na raiz do app com vault ${vaultRoot}.`;
-  els.setupHint.textContent = `Terminal da IA aberto na raiz do app com vault ${vaultRoot}. Use /guide, /context, /search, /plan, /preview e /apply.`;
+  els.aiDialogStatus.textContent = `Terminal aberto no vault ativo ${vaultRoot}.`;
+  els.setupHint.textContent = `Terminal da IA aberto no vault ativo ${vaultRoot}. Comece por marika /start, depois marika /guide, marika /context, marika /search, marika /plan, marika /preview e marika /apply --preview-id <id>.`;
 }
 
 function applyAiLauncherPosition(left, top) {
+  if (!els.aiLauncher) return;
   const clampedLeft = Math.max(12, Math.min(window.innerWidth - 72, left));
   const clampedTop = Math.max(72, Math.min(window.innerHeight - 72, top));
   aiLauncherState.offsetX = clampedLeft;
@@ -1156,6 +2276,7 @@ function applyAiLauncherPosition(left, top) {
 }
 
 function restoreAiLauncherPosition() {
+  if (!els.aiLauncher) return;
   const saved = localStorage.getItem('marika-ai-launcher-position');
   if (saved) {
     try {
@@ -1410,11 +2531,13 @@ async function loadAgenda(vaultRoot = '') {
   state.agendaItems = data.items ?? [];
   renderAgendaList();
   renderOverviewDashboard();
-  await checkAgendaReminders(state.agendaItems);
+  if (!isDesktopShell) {
+    await checkAgendaReminders(state.agendaItems);
+  }
 }
 
 function ensureAgendaReminderPolling() {
-  if (state.agendaReminderTimer) return;
+  if (isDesktopShell || state.agendaReminderTimer) return;
 
   state.agendaReminderTimer = setInterval(() => {
     if (!getConfiguredVaultRoot()) return;
@@ -2849,11 +3972,14 @@ function openInputDialog({ eyebrow, title, message, label, value = '', multiline
     els.inputDialogEyebrow.textContent = eyebrow;
     els.inputDialogTitle.textContent = title;
     els.inputDialogMessage.textContent = message;
+    els.inputDialogFieldWrap.hidden = false;
     els.inputDialogFieldLabel.textContent = label;
     els.inputDialogInput.value = value;
     els.inputDialogTextarea.value = value;
     els.inputDialogInput.hidden = multiline;
     els.inputDialogTextarea.hidden = !multiline;
+    els.inputDialogCancel.textContent = 'Cancelar';
+    els.inputDialogConfirm.textContent = 'Confirmar';
 
     const cleanup = () => {
       if (inputDialogSession?.cleanup === cleanup) {
@@ -2894,6 +4020,55 @@ function openInputDialog({ eyebrow, title, message, label, value = '', multiline
     } else {
       els.inputDialogInput.focus();
     }
+  });
+}
+
+function openConfirmDialog({ eyebrow, title, message, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar' }) {
+  return new Promise((resolve) => {
+    if (inputDialogSession) {
+      inputDialogSession.finish(false);
+    }
+
+    els.inputDialogEyebrow.textContent = eyebrow;
+    els.inputDialogTitle.textContent = title;
+    els.inputDialogMessage.textContent = message;
+    els.inputDialogFieldWrap.hidden = true;
+    els.inputDialogInput.hidden = true;
+    els.inputDialogTextarea.hidden = true;
+    els.inputDialogCancel.textContent = cancelLabel;
+    els.inputDialogConfirm.textContent = confirmLabel;
+
+    const cleanup = () => {
+      if (inputDialogSession?.cleanup === cleanup) {
+        inputDialogSession = null;
+      }
+
+      els.inputDialog.oncancel = null;
+      els.inputDialogConfirm.onclick = null;
+      els.inputDialogCancel.onclick = null;
+      els.inputDialogFieldWrap.hidden = false;
+      els.inputDialogCancel.textContent = 'Cancelar';
+      els.inputDialogConfirm.textContent = 'Confirmar';
+    };
+
+    const finish = (result) => {
+      cleanup();
+      closeInputDialog();
+      resolve(result);
+    };
+
+    const onCancel = (event) => {
+      event.preventDefault();
+      finish(false);
+    };
+
+    inputDialogSession = { cleanup, finish };
+
+    els.inputDialog.oncancel = onCancel;
+    els.inputDialogConfirm.onclick = () => finish(true);
+    els.inputDialogCancel.onclick = () => finish(false);
+    els.inputDialog.showModal();
+    els.inputDialogConfirm.focus();
   });
 }
 
@@ -3021,9 +4196,14 @@ function clearFolderSelection() {
 }
 
 function shouldClearFolderSelection(event) {
-  const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  if (!target) return false;
 
-  return !path.some((node) => node instanceof HTMLElement && node.closest('.folder, .file-item'));
+  if (target.closest('button, input, textarea, select, label, a, summary, dialog, menu, .folder, .file-item, .note-options, .quick-menu')) {
+    return false;
+  }
+
+  return target.matches('#workspaceView, .workspace-layout, .tree-pane, .tree, .editor-pane, .editor-body, .summary-pane, .summary-overview, #graphPanel');
 }
 
 function handleFolderSelectionBackgroundClick(event) {
@@ -3166,6 +4346,7 @@ function renderTree(tree) {
     file.style.setProperty('--tree-level', String(level));
     file.querySelector('.file-name').textContent = entry.name;
     file.classList.toggle('active', filePath === state.selectedFile);
+    file.classList.toggle('linked-open', filePath === linkedNoteState.highlightedPath);
     file.title = filePath;
     file.addEventListener('click', () => loadNote(filePath, { recordActivity: true, kind: 'open' }));
     container.appendChild(file);
@@ -3182,10 +4363,14 @@ async function refreshWorkspace(preferredPath = state.selectedFile, autoOpenFirs
     els.tree.innerHTML = '';
     state.selectedFile = '';
     state.selectedFolder = '';
-    els.noteTitle.textContent = 'Nenhuma nota';
+    closeEditorAssistMenu();
+    setEditorTitleValue('Nenhuma nota', { enabled: false });
     els.breadcrumbs.textContent = 'Vault / vazio';
     els.editorMeta.textContent = 'Vault · vazio · markdown';
     els.noteEditor.value = '';
+    resetEditorHistory({ value: '', selectionStart: 0, selectionEnd: 0 });
+    resetEditorSaveState('');
+    renderEditorPresentation();
     els.editorStatus.textContent = 'Selecione ou crie um vault primeiro.';
     els.folderBreadcrumb.textContent = 'Nenhuma pasta selecionada';
     return;
@@ -3219,18 +4404,24 @@ async function refreshWorkspace(preferredPath = state.selectedFile, autoOpenFirs
       await loadNote(first);
     } else {
       state.selectedFile = '';
-      els.noteTitle.textContent = 'Nenhuma nota';
+      setEditorTitleValue('Nenhuma nota', { enabled: false });
       els.breadcrumbs.textContent = 'Vault / vazio';
       els.editorMeta.textContent = 'Vault · vazio · markdown';
       els.noteEditor.value = '';
+      resetEditorHistory({ value: '', selectionStart: 0, selectionEnd: 0 });
+      resetEditorSaveState('');
+      renderEditorPresentation();
       els.editorStatus.textContent = 'Nenhuma nota Markdown encontrada.';
     }
   } else {
     state.selectedFile = '';
-    els.noteTitle.textContent = 'Nenhuma nota';
+    setEditorTitleValue('Nenhuma nota', { enabled: false });
     els.breadcrumbs.textContent = 'Vault / vazio';
     els.editorMeta.textContent = 'Vault · vazio · markdown';
     els.noteEditor.value = '';
+    resetEditorHistory({ value: '', selectionStart: 0, selectionEnd: 0 });
+    resetEditorSaveState('');
+    renderEditorPresentation();
     els.editorStatus.textContent = 'Nenhuma nota Markdown encontrada.';
   }
 
@@ -3245,11 +4436,21 @@ async function loadNote(relativePath, options = {}) {
   const vaultRoot = getConfiguredVaultRoot();
   const data = await api(`/api/file?vaultRoot=${encodeURIComponent(vaultRoot)}&path=${encodeURIComponent(normalizedPath)}`);
   state.selectedFile = normalizeRelativePath(data.path);
-  els.noteTitle.textContent = fileLabel(state.selectedFile);
+  closeEditorAssistMenu();
+  setEditorTitleValue(fileLabel(state.selectedFile), { enabled: true });
   els.breadcrumbs.textContent = prettyPath(state.selectedFile);
   els.editorMeta.textContent = `${pathDirectory(state.selectedFile).replace(/\//g, ' · ')} · markdown`;
-  els.noteEditor.value = data.content;
-  els.editorStatus.textContent = `Editando ${state.selectedFile}`;
+  const persistedContent = String(data.content ?? '');
+  const draftContent = readEditorDraft(state.selectedFile);
+  const nextContent = draftContent || persistedContent;
+  els.noteEditor.value = nextContent;
+  resetEditorHistory({ value: nextContent, selectionStart: 0, selectionEnd: 0 });
+  resetEditorSaveState(persistedContent);
+  renderEditorPresentation();
+  els.editorStatus.textContent = draftContent ? `Editando ${state.selectedFile} com rascunho local.` : `Editando ${state.selectedFile}`;
+  if (draftContent) {
+    markEditorDirty();
+  }
 
   document.querySelectorAll('.file-item').forEach((node) => {
     node.classList.toggle('active', node.dataset.path === state.selectedFile);
@@ -3465,8 +4666,13 @@ async function openDailyNote() {
   await refreshWorkspace(data.path);
 }
 
-async function saveNote() {
+async function saveNote({ source = 'manual' } = {}) {
   if (!state.selectedFile) return;
+
+  const shouldRefreshEditorAssist = document.activeElement === els.noteEditorSurface;
+  const editorScrollHost = els.noteEditorSurface?.closest('.editor-pane');
+  const savedScrollTop = editorScrollHost instanceof HTMLElement ? editorScrollHost.scrollTop : 0;
+  const savedPath = state.selectedFile;
 
   const vaultRoot = getConfiguredVaultRoot();
   if (!vaultRoot) {
@@ -3474,34 +4680,132 @@ async function saveNote() {
     return;
   }
 
-  await api('/api/file', {
+  if (editorSaveState.saving) return;
+
+  const submittedContent = normalizeEditorText(els.noteEditor.value);
+  els.noteEditor.value = submittedContent;
+  editorSaveState.saving = true;
+  updateEditorDraftIndicator(source === 'auto' ? 'Autosave...' : 'Salvando...', 'saving');
+
+  try {
+    await api('/api/file', {
+      method: 'POST',
+      body: JSON.stringify({ vaultRoot, path: savedPath, content: submittedContent, operation: 'edit' })
+    });
+
+    const editorUnchanged = state.selectedFile === savedPath && normalizeEditorText(els.noteEditor.value) === submittedContent;
+
+    if (editorUnchanged) {
+      clearEditorDraft(savedPath);
+      resetEditorHistory({ value: submittedContent, selectionStart: getEditorSelection().start, selectionEnd: getEditorSelection().end });
+      resetEditorSaveState(submittedContent);
+    } else if (state.selectedFile === savedPath) {
+      writeEditorDraft(savedPath, els.noteEditor.value);
+      markEditorDirty();
+      scheduleEditorAutoSave();
+    }
+
+    if (source !== 'auto') {
+      els.editorStatus.textContent = editorUnchanged ? `Salvo em ${savedPath}` : `Salvo em ${savedPath}. Novas alteracoes continuam no rascunho.`;
+    }
+    recordActivity('save', `Salva ${fileLabel(savedPath)}`, savedPath);
+
+    if (source !== 'auto') {
+      if (savedPath.startsWith('Agenda/')) {
+        await loadAgenda();
+      } else {
+        renderOverviewDashboard();
+      }
+    }
+
+    if (shouldRefreshEditorAssist && state.selectedFile === savedPath) {
+      if (editorScrollHost instanceof HTMLElement) {
+        editorScrollHost.scrollTop = savedScrollTop;
+      }
+      updateEditorAssistMenu();
+      updateEditorToolbarPosition();
+    }
+  } finally {
+    editorSaveState.saving = false;
+  }
+}
+
+function scheduleEditorAutoSave() {
+  if (!state.selectedFile) return;
+  clearEditorAutoSaveTimer();
+  const currentValue = normalizeEditorText(els.noteEditor.value);
+  if (!currentValue.trim() || currentValue === editorSaveState.lastSavedValue) {
+    editorSaveState.dirty = false;
+    updateEditorDraftIndicator('Sincronizado', 'saved');
+    return;
+  }
+
+  editorSaveState.autoSaveTimer = setTimeout(() => {
+    if (editorAssistState.items.length > 0) {
+      scheduleEditorAutoSave();
+      return;
+    }
+    void saveNote({ source: 'auto' }).catch((error) => showError(error instanceof Error ? error.message : 'Falha no autosave'));
+  }, 2200);
+}
+
+async function renameCurrentNoteToPath(nextPath) {
+  if (!state.selectedFile) return;
+
+  const vaultRoot = getConfiguredVaultRoot();
+  const destination = normalizeRelativePath(nextPath);
+
+  await api('/api/rename', {
     method: 'POST',
-    body: JSON.stringify({ vaultRoot, path: state.selectedFile, content: els.noteEditor.value, operation: 'edit' })
+    body: JSON.stringify({ vaultRoot, source: state.selectedFile, destination })
   });
 
-  els.editorStatus.textContent = `Salvo em ${state.selectedFile}`;
-  recordActivity('save', `Salva ${fileLabel(state.selectedFile)}`, state.selectedFile);
+  recordActivity('rename', `Renomeada ${fileLabel(destination)}`, destination);
+  await refreshWorkspace(destination);
+}
 
-  if (state.selectedFile.startsWith('Agenda/')) {
-    await loadAgenda();
-  } else {
-    renderOverviewDashboard();
+async function renameCurrentNoteFromEditor() {
+  if (!state.selectedFile) return;
+
+  const titleValue = currentEditorTitleValue().replace(/[\\/]+/g, ' ').trim();
+  const fallbackTitle = fileLabel(state.selectedFile);
+
+  if (!titleValue) {
+    setEditorTitleValue(fallbackTitle, { enabled: true });
+    return;
   }
+
+  const fileName = titleValue.toLowerCase().endsWith('.md') ? titleValue : `${titleValue}.md`;
+  const nextPath = joinRelativePath(pathDirectory(state.selectedFile), fileName);
+
+  if (normalizeRelativePath(nextPath) === normalizeRelativePath(state.selectedFile)) {
+    setEditorTitleValue(fileLabel(state.selectedFile), { enabled: true });
+    return;
+  }
+
+  try {
+    await renameCurrentNoteToPath(nextPath);
+  } catch (error) {
+    setEditorTitleValue(fallbackTitle, { enabled: true });
+    throw error;
+  }
+}
+
+async function commitEditorTitleRename() {
+  if (noteTitleRenamePromise) return noteTitleRenamePromise;
+
+  noteTitleRenamePromise = renameCurrentNoteFromEditor().finally(() => {
+    noteTitleRenamePromise = null;
+  });
+
+  return noteTitleRenamePromise;
 }
 
 async function renameNote() {
   if (!state.selectedFile) return;
   const nextPath = await askRelativePath('Renomear', state.selectedFile);
   if (!nextPath) return;
-  const vaultRoot = getConfiguredVaultRoot();
-
-  await api('/api/rename', {
-    method: 'POST',
-    body: JSON.stringify({ vaultRoot, source: state.selectedFile, destination: normalizeRelativePath(nextPath) })
-  });
-
-  recordActivity('rename', `Renomeada ${fileLabel(nextPath)}`, nextPath);
-  await refreshWorkspace(normalizeRelativePath(nextPath));
+  await renameCurrentNoteToPath(nextPath);
 }
 
 async function moveNote() {
@@ -3517,6 +4821,81 @@ async function moveNote() {
 
   recordActivity('move', `Movida ${fileLabel(nextPath)}`, nextPath);
   await refreshWorkspace(normalizeRelativePath(nextPath));
+}
+
+function getWorkspaceDeleteTarget() {
+  if (state.selectedFolder) {
+    return {
+      kind: 'folder',
+      path: normalizeRelativePath(state.selectedFolder).replace(/\/+$/g, '')
+    };
+  }
+
+  if (state.selectedFile) {
+    return {
+      kind: 'note',
+      path: normalizeRelativePath(state.selectedFile)
+    };
+  }
+
+  return null;
+}
+
+async function deleteSelectedWorkspaceEntry() {
+  const target = getWorkspaceDeleteTarget();
+  if (!target) return;
+
+  if (target.kind === 'folder' && isProtectedAgendaFolderPath(target.path)) {
+    showError('A pasta Agenda e fixa e nao pode ser apagada.');
+    return;
+  }
+
+  const confirmed = await openConfirmDialog({
+    eyebrow: 'Excluir',
+    title: target.kind === 'folder' ? 'Apagar pasta' : 'Apagar nota',
+    message: target.kind === 'folder'
+      ? `Tem certeza que quer apagar ${prettyPath(target.path)}? Todo o conteudo dentro dessa pasta tambem sera apagado.`
+      : `Tem certeza que quer apagar ${prettyPath(target.path)}?`,
+    confirmLabel: 'Apagar'
+  });
+  if (!confirmed) return;
+
+  const vaultRoot = await ensureActiveVaultReady('apagar um item');
+  sendDebugState('delete.before', { vaultRoot, targetKind: target.kind, targetPath: target.path });
+
+  await api('/api/delete', {
+    method: 'POST',
+    body: JSON.stringify({ vaultRoot, path: target.path })
+  });
+  sendDebugState('delete.after', { vaultRoot, targetKind: target.kind, targetPath: target.path });
+
+  const deletedAgendaContent = target.path === 'Agenda' || target.path.startsWith('Agenda/');
+
+  if (state.selectedFile && isWithinRelativePath(target.path, state.selectedFile)) {
+    state.selectedFile = '';
+  }
+
+  if (state.selectedFolder && isWithinRelativePath(target.path, state.selectedFolder)) {
+    state.selectedFolder = '';
+  }
+
+  closeMenus();
+  await refreshWorkspace('', false);
+  if (deletedAgendaContent) {
+    await loadAgenda();
+  }
+}
+
+function canHandleWorkspaceDeleteShortcut(event) {
+  if (event.key !== 'Delete') return false;
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return false;
+  if (state.view !== 'workspace') return false;
+  if (document.querySelector('dialog[open]')) return false;
+
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  if (!target) return true;
+
+  return !target.closest('input, textarea, select, [contenteditable="true"]');
 }
 
 els.viewButtons.forEach((button) => {
@@ -3562,15 +4941,18 @@ els.vaultPathInput.addEventListener('input', (event) => updateVault(event.target
 document.getElementById('sidebarNewNoteButton')?.addEventListener('click', () => {
   void createNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota'));
 });
-els.aiLauncher.addEventListener('click', onAiLauncherActivate);
-els.aiLauncher.addEventListener('pointerdown', (event) => {
+els.aiModeButton?.addEventListener('click', () => {
+  openAiDialog();
+});
+els.aiLauncher?.addEventListener('click', onAiLauncherActivate);
+els.aiLauncher?.addEventListener('pointerdown', (event) => {
   aiLauncherState.dragging = true;
   aiLauncherState.moved = false;
   aiLauncherState.startX = event.clientX;
   aiLauncherState.startY = event.clientY;
   els.aiLauncher.setPointerCapture(event.pointerId);
 });
-els.aiLauncher.addEventListener('pointermove', (event) => {
+els.aiLauncher?.addEventListener('pointermove', (event) => {
   if (!aiLauncherState.dragging) return;
   const dx = event.clientX - aiLauncherState.startX;
   const dy = event.clientY - aiLauncherState.startY;
@@ -3579,14 +4961,14 @@ els.aiLauncher.addEventListener('pointermove', (event) => {
     applyAiLauncherPosition(aiLauncherState.offsetX + dx, aiLauncherState.offsetY + dy);
   }
 });
-els.aiLauncher.addEventListener('pointerup', () => {
+els.aiLauncher?.addEventListener('pointerup', () => {
   if (aiLauncherState.dragging && aiLauncherState.moved) {
     persistAiLauncherPosition();
     aiLauncherState.suppressClick = true;
   }
   aiLauncherState.dragging = false;
 });
-els.aiLauncher.addEventListener('pointercancel', () => {
+els.aiLauncher?.addEventListener('pointercancel', () => {
   aiLauncherState.dragging = false;
   aiLauncherState.moved = false;
   aiLauncherState.suppressClick = false;
@@ -3691,6 +5073,101 @@ els.noteOptionsMenu?.addEventListener('click', (event) => {
   if (action === 'move-note') void moveNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao mover'));
   if (action === 'link-note') void openLinkPickerDialog().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir seletor de links'));
 });
+els.noteTitle.addEventListener('focus', () => {
+  if (!state.selectedFile || els.noteTitle.disabled) return;
+  els.noteTitle.select();
+});
+els.noteTitle.addEventListener('keydown', (event) => {
+  if (!state.selectedFile || els.noteTitle.disabled) return;
+
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    els.noteTitle.blur();
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    setEditorTitleValue(fileLabel(state.selectedFile), { enabled: true });
+    els.noteTitle.blur();
+  }
+});
+els.noteTitle.addEventListener('blur', () => {
+  if (!state.selectedFile || els.noteTitle.disabled) return;
+  void commitEditorTitleRename().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao renomear nota'));
+});
+els.noteEditorSurface?.addEventListener('keydown', handleEditorKeydown);
+els.noteEditorSurface?.addEventListener('beforeinput', handleEditorBeforeInput);
+els.noteEditorSurface?.addEventListener('paste', (event) => {
+  event.preventDefault();
+  const selection = getEditorSelection();
+  const pasted = event.clipboardData?.getData('text/plain') ?? '';
+  replaceEditorRange(selection.start, selection.end, normalizeEditorText(pasted));
+});
+els.noteEditorSurface?.addEventListener('keyup', (event) => {
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'Escape'].includes(event.key)) {
+    updateEditorCurrentLine();
+    updateEditorAssistMenu();
+  }
+});
+els.noteEditorSurface?.addEventListener('click', () => {
+  updateEditorCurrentLine();
+  updateEditorAssistMenu();
+  updateEditorLinkTooltip();
+});
+els.noteEditorSurface?.addEventListener('focus', () => {
+  updateEditorCurrentLine();
+  updateEditorAssistMenu();
+  updateEditorLinkTooltip();
+});
+els.noteEditorSurface?.addEventListener('blur', () => {
+  setTimeout(() => {
+    updateEditorLinkTooltip();
+  }, 0);
+});
+els.editorPreviewToggle?.addEventListener('click', () => {
+  setEditorPreviewExpanded(!editorPreviewState.expanded);
+});
+els.editorPreview?.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
+  if (!(target instanceof HTMLElement)) return;
+  const pathValue = target.dataset.path;
+  if (pathValue) void openLinkedNoteFromPath(pathValue).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir nota linkada'));
+});
+els.editorPreview?.addEventListener('pointerleave', clearEditorLinkFocus);
+els.noteEditorSurface?.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
+  if (!(target instanceof HTMLElement)) return;
+  const pathValue = target.dataset.path;
+  if (!pathValue) return;
+  event.preventDefault();
+  void openLinkedNoteFromPath(pathValue).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir nota linkada'));
+});
+els.noteEditorSurface?.addEventListener('pointerover', (event) => {
+  syncHoveredEditorLink(event.target);
+});
+els.noteEditorSurface?.addEventListener('pointermove', (event) => {
+  syncHoveredEditorLink(event.target);
+});
+els.noteEditorSurface?.addEventListener('pointerout', (event) => {
+  const currentTarget = event.target instanceof HTMLElement ? event.target.closest('.editor-preview-link[data-path]') : null;
+  if (!(currentTarget instanceof HTMLElement)) return;
+  const nextTarget = event.relatedTarget instanceof HTMLElement ? event.relatedTarget.closest('.editor-preview-link[data-path]') : null;
+  if (nextTarget instanceof HTMLElement) return;
+  clearEditorLinkFocus();
+});
+els.noteEditorSurface?.addEventListener('pointerleave', clearEditorLinkFocus);
+els.editorAssistList?.addEventListener('mousedown', (event) => {
+  event.preventDefault();
+});
+els.editorAssistList?.addEventListener('click', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target.closest('[data-index]') : null;
+  if (!(target instanceof HTMLElement)) return;
+  const index = Number(target.dataset.index ?? '-1');
+  if (!Number.isInteger(index) || index < 0) return;
+  editorAssistState.activeIndex = index;
+  applyActiveEditorAssistItem();
+});
 els.quickMenu.addEventListener('click', (event) => {
   event.stopPropagation();
   const target = event.target;
@@ -3702,7 +5179,20 @@ els.quickMenu.addEventListener('click', (event) => {
   if (action === 'rename') void renameNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao renomear'));
   if (action === 'move') void moveNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao mover'));
 });
-document.addEventListener('click', () => closeMenus());
+document.addEventListener('click', (event) => {
+  closeMenus();
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  if (!target) {
+    closeEditorAssistMenu();
+    return;
+  }
+
+  if (target.closest('#noteEditorSurface') || target.closest('#editorAssistMenu')) {
+    return;
+  }
+
+  closeEditorAssistMenu();
+});
 document.addEventListener('contextmenu', (event) => {
   if (!els.folderContextMenu.classList.contains('open')) return;
   if (event.target instanceof Node && !els.folderContextMenu.contains(event.target)) {
@@ -3710,6 +5200,9 @@ document.addEventListener('contextmenu', (event) => {
   }
 });
 els.saveButton.addEventListener('click', () => { saveNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao salvar nota')); });
+els.railCollapseButton?.addEventListener('click', () => {
+  applyRailCollapsed(!document.body.classList.contains('rail-collapsed'));
+});
 els.commandsDialogClose.addEventListener('click', closeCommandsDialog);
 els.commandsDialog.addEventListener('cancel', (event) => {
   event.preventDefault();
@@ -4054,6 +5547,12 @@ els.agendaForm.addEventListener('submit', (event) => {
   });
   void createAgendaNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota com data'));
 });
+els.desktopNotificationClose?.addEventListener('click', hideDesktopNotification);
+els.desktopNotificationAction?.addEventListener('click', () => {
+  hideDesktopNotification();
+  setView('agenda');
+  void loadAgenda().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao carregar agenda'));
+});
 els.agendaCreateButton.addEventListener('click', (event) => {
   event.preventDefault();
   event.stopPropagation();
@@ -4063,6 +5562,12 @@ els.agendaCreateButton.addEventListener('click', (event) => {
     status: String(els.agendaStatusInput.value ?? '')
   });
   void createAgendaNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota com data'));
+});
+document.addEventListener('keydown', (event) => {
+  if (!canHandleWorkspaceDeleteShortcut(event)) return;
+  if (!getWorkspaceDeleteTarget()) return;
+  event.preventDefault();
+  void deleteSelectedWorkspaceEntry().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao apagar item'));
 });
 els.agendaResetButton.addEventListener('click', () => {
   els.agendaTitleInput.value = '';
@@ -4124,7 +5629,29 @@ els.overviewRecentList?.addEventListener('click', (event) => {
   if (pathValue) void loadNote(pathValue, { recordActivity: true, kind: 'open' }).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir atividade'));
 });
 els.noteEditor.addEventListener('input', () => {
+  renderEditorPresentation();
+  if (editorPendingSelection.start !== null) {
+    setEditorSurfaceSelection(editorPendingSelection.start, editorPendingSelection.end ?? editorPendingSelection.start);
+    els.noteEditorSurface?.focus();
+    editorPendingSelection.start = null;
+    editorPendingSelection.end = null;
+  }
+  if (state.selectedFile && !editorHistoryState.applying) {
+    writeEditorDraft(state.selectedFile, els.noteEditor.value);
+    markEditorDirty();
+    scheduleEditorAutoSave();
+  }
   els.editorStatus.textContent = 'Alterações não salvas.';
+  updateEditorAssistMenu();
+});
+document.addEventListener('selectionchange', () => {
+  if (document.activeElement === els.noteEditorSurface) {
+    updateEditorCurrentLine();
+    updateEditorLinkTooltip();
+  }
+});
+window.addEventListener('resize', () => {
+  updateEditorLinkTooltip();
 });
 
 els.workspaceView.addEventListener('click', handleFolderSelectionBackgroundClick, true);
@@ -4136,6 +5663,10 @@ els.workspaceView.addEventListener('pointerdown', (event) => {
 state.recentActivity = loadRecentActivity();
 els.agendaDueInput.value = formatAgendaInputValue(new Date(Date.now() + (60 * 60 * 1000)));
 state.agendaReminderKeys = loadAgendaReminderKeys();
+restoreRailCollapsedPreference();
+setEditorTitleValue('Nenhuma nota', { enabled: false });
+setEditorPreviewExpanded(false);
+renderEditorPresentation();
 
 updateVault(getConfiguredVaultRoot());
 setView(startupView);
@@ -4172,6 +5703,14 @@ if (window.marikaDesktop && typeof window.marikaDesktop.onVaultChanged === 'func
     void refreshAfterVaultChange(payload).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar vault'));
   });
 }
+
+if (window.marikaDesktop && typeof window.marikaDesktop.onOpenAgendaFromNotification === 'function') {
+  window.marikaDesktop.onOpenAgendaFromNotification(() => {
+    setView('agenda');
+    void loadAgenda().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao carregar agenda'));
+  });
+}
+
 
 if (!localStorage.getItem('marika-ai-popup-seen')) {
   setTimeout(() => {

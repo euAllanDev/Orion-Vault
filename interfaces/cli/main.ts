@@ -1,4 +1,5 @@
 import { executeContextCommand } from './commands/context';
+import { executeApplyCommand } from './commands/apply';
 import { executeDiffCommand } from './commands/diff';
 import { executeDoctorCommand } from './commands/doctor';
 import { executePlanCommand } from './commands/plan';
@@ -16,25 +17,48 @@ import { executeMoveCommand } from './commands/move';
 import { executeRelatedCommand } from './commands/related';
 import { ZodError } from 'zod';
 import fs from 'node:fs/promises';
-import path from 'node:path';
+import { stdin } from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 function parseArgs(argv: string[]) {
   const command = argv[0] ?? 'help';
+  const valueOptions = new Set(['--vault', '--query', '--phrase', '--path', '--source', '--destination', '--content', '--content-file', '--tag', '--limit', '--preview-id']);
   const readOption = (name: string): string | undefined => {
     const index = argv.findIndex((arg) => arg === name);
     return index >= 0 ? argv[index + 1] : undefined;
   };
+  const readContentOption = (): string | undefined => {
+    const index = argv.findIndex((arg) => arg === '--content');
+    if (index < 0 || index + 1 >= argv.length) {
+      return undefined;
+    }
+
+    const values: string[] = [];
+    for (let cursor = index + 1; cursor < argv.length; cursor += 1) {
+      const current = argv[cursor];
+      if (current.startsWith('--') && valueOptions.has(current)) {
+        break;
+      }
+      values.push(current);
+    }
+
+    return values.length > 0 ? values.join('\n') : '';
+  };
 
   const dryRun = argv.includes('--dry-run');
-  const vaultRoot = readOption('--vault');
+  const json = argv.includes('--json');
+  const vaultRoot = readOption('--vault') ?? process.env.MARIKA_VAULT_ROOT;
   const query = readOption('--query');
   const phrase = readOption('--phrase');
   const pathValue = readOption('--path');
   const source = readOption('--source');
   const destination = readOption('--destination');
-  const content = readOption('--content');
+  const content = readContentOption();
   const limit = readOption('--limit');
-  const valueOptions = new Set(['--vault', '--query', '--phrase', '--path', '--source', '--destination', '--content', '--tag', '--limit']);
+  const previewId = readOption('--preview-id');
+  const contentFile = readOption('--content-file');
+  const readStdin = argv.includes('--stdin');
+  const force = argv.includes('--force');
   const plainArgs: string[] = [];
 
   for (let index = 1; index < argv.length; index += 1) {
@@ -56,34 +80,74 @@ function parseArgs(argv: string[]) {
     }
   }
 
-  return { command, vaultRoot, dryRun, query, phrase, path: pathValue, source, destination, content, limit, tags: tagValues, plainArgs };
+  return { command, vaultRoot, dryRun, json, query, phrase, path: pathValue, source, destination, content, contentFile, readStdin, limit, previewId, force, tags: tagValues, plainArgs };
+}
+
+async function readStdinContent(): Promise<string> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+async function resolveCommandContent(args: ReturnType<typeof parseArgs>): Promise<string | undefined> {
+  const providers = [
+    args.content !== undefined ? 'content' : null,
+    args.contentFile ? 'content-file' : null,
+    args.readStdin ? 'stdin' : null
+  ].filter((value): value is string => Boolean(value));
+
+  if (providers.length > 1) {
+    throw new Error('Use only one content source: --content, --content-file, or --stdin.');
+  }
+
+  if (args.contentFile) {
+    return fs.readFile(args.contentFile, 'utf8');
+  }
+
+  if (args.readStdin) {
+    return readStdinContent();
+  }
+
+  return args.content;
 }
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const slashCommand = args.command.startsWith('/') ? args.command.slice(1) : args.command;
   const positionalInput = (args.plainArgs[0] ?? '').trim();
+  const format = args.json || args.command.startsWith('/') ? 'json' as const : 'text' as const;
 
   try {
     if (slashCommand === 'organize' || slashCommand === 'preview') {
-      await executeOrganizeCommand({ vaultRoot: args.vaultRoot, dryRun: true });
+      await executeOrganizeCommand({ vaultRoot: args.vaultRoot, dryRun: true, format });
       return;
     }
 
     if (slashCommand === 'guide') {
-      const guidePath = path.resolve('comandos.md');
+      const guidePath = fileURLToPath(new URL('../../comandos.md', import.meta.url));
       const content = await fs.readFile(guidePath, 'utf8');
       console.log(content);
       return;
     }
 
+    if (slashCommand === 'start') {
+      const startPath = fileURLToPath(new URL('../../ai-start-here.md', import.meta.url));
+      const content = await fs.readFile(startPath, 'utf8');
+      console.log(content);
+      return;
+    }
+
     if (slashCommand === 'apply') {
-      await executeOrganizeCommand({ vaultRoot: args.vaultRoot, dryRun: false });
+      await executeApplyCommand({ vaultRoot: args.vaultRoot, previewId: args.previewId, force: args.force, format });
       return;
     }
 
     if (args.command === 'organize') {
-      await executeOrganizeCommand({ vaultRoot: args.vaultRoot, dryRun: args.dryRun });
+      await executeOrganizeCommand({ vaultRoot: args.vaultRoot, dryRun: args.dryRun, format });
       return;
     }
 
@@ -93,12 +157,12 @@ async function main(): Promise<void> {
     }
 
     if (args.command === 'touch') {
-      await executeCreateFileCommand({ vaultRoot: args.vaultRoot, path: args.path, content: args.content });
+      await executeCreateFileCommand({ vaultRoot: args.vaultRoot, path: args.path, content: await resolveCommandContent(args) });
       return;
     }
 
     if (args.command === 'edit') {
-      await executeEditCommand({ vaultRoot: args.vaultRoot, path: args.path, content: args.content });
+      await executeEditCommand({ vaultRoot: args.vaultRoot, path: args.path, content: await resolveCommandContent(args) });
       return;
     }
 
@@ -133,12 +197,12 @@ async function main(): Promise<void> {
     }
 
     if (slashCommand === 'context') {
-      await executeContextCommand({ vaultRoot: args.vaultRoot, path: args.path ?? (positionalInput || undefined) });
+      await executeContextCommand({ vaultRoot: args.vaultRoot, path: args.path ?? (positionalInput || undefined), format });
       return;
     }
 
     if (args.command === 'context') {
-      await executeContextCommand({ vaultRoot: args.vaultRoot, path: args.path });
+      await executeContextCommand({ vaultRoot: args.vaultRoot, path: args.path, format });
       return;
     }
 
@@ -148,7 +212,7 @@ async function main(): Promise<void> {
     }
 
     if (slashCommand === 'search') {
-      await executeSearchCommand({ vaultRoot: args.vaultRoot, query: args.query ?? (positionalInput || undefined), phrase: args.phrase, tags: args.tags });
+      await executeSearchCommand({ vaultRoot: args.vaultRoot, query: args.query ?? (positionalInput || undefined), phrase: args.phrase, tags: args.tags, format });
       return;
     }
 
@@ -158,7 +222,7 @@ async function main(): Promise<void> {
     }
 
     if (args.command === 'search') {
-      await executeSearchCommand({ vaultRoot: args.vaultRoot, query: args.query, phrase: args.phrase, tags: args.tags });
+      await executeSearchCommand({ vaultRoot: args.vaultRoot, query: args.query, phrase: args.phrase, tags: args.tags, format });
       return;
     }
 
@@ -168,17 +232,12 @@ async function main(): Promise<void> {
     }
 
     if (slashCommand === 'plan') {
-      await executePlanCommand({ vaultRoot: args.vaultRoot });
-      return;
-    }
-
-    if (slashCommand === 'preview') {
-      await executePlanCommand({ vaultRoot: args.vaultRoot });
+      await executePlanCommand({ vaultRoot: args.vaultRoot, format });
       return;
     }
 
     if (args.command === 'plan') {
-      await executePlanCommand({ vaultRoot: args.vaultRoot });
+      await executePlanCommand({ vaultRoot: args.vaultRoot, format });
       return;
     }
 
@@ -193,16 +252,17 @@ async function main(): Promise<void> {
     }
 
     console.log('Usage: organize [--vault <path>] [--dry-run]');
+    console.log('       /start');
     console.log('       /guide');
     console.log('       /context [--vault <path>] [--path <note>]');
     console.log('       /search [--vault <path>] [--query <text>] [--phrase <text>] [--tag <tag>]');
     console.log('       /related [--vault <path>] [--path <note.md>] [--limit <n>]');
     console.log('       /plan [--vault <path>]');
     console.log('       /preview [--vault <path>]');
-    console.log('       /apply [--vault <path>]');
+    console.log('       /apply [--vault <path>] --preview-id <id> [--force]');
     console.log('       mkdir --vault <path> --path <folder>');
-    console.log('       touch --vault <path> --path <file.md> [--content <text>]');
-    console.log('       edit --vault <path> --path <file.md> --content <text>');
+    console.log('       touch --vault <path> --path <file.md> [--content <text> | --content-file <file> | --stdin]');
+    console.log('       edit --vault <path> --path <file.md> [--content <text> | --content-file <file> | --stdin]');
     console.log('       rename --vault <path> --source <path> --destination <path>');
     console.log('       move --vault <path> --source <path> --destination <path>');
     console.log('       inspect [--vault <path>]');

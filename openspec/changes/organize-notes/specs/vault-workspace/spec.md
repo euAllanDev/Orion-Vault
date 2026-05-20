@@ -1,7 +1,7 @@
 # Spec: vault workspace
 
 ## Regra de negócio
-O sistema deve permitir criar e editar a estrutura básica do vault local de forma segura, sem violar a fronteira do diretório raiz.
+O sistema deve permitir criar, editar e remover a estrutura básica do vault local de forma segura, sem violar a fronteira do diretório raiz.
 
 ## Regras
 1. O sistema deve permitir criar pastas dentro do vault.
@@ -9,18 +9,22 @@ O sistema deve permitir criar e editar a estrutura básica do vault local de for
 3. O sistema deve permitir editar o conteúdo de uma nota Markdown existente.
 4. O sistema deve permitir renomear arquivos e pastas dentro do vault.
 5. O sistema deve permitir mover notas entre pastas dentro do vault.
-6. Nenhuma operação pode sobrescrever conteúdo existente sem validação explícita.
-7. Nenhuma operação pode escapar da raiz do vault.
-8. A leitura e validação continuam como base de segurança para qualquer operação de escrita.
-9. A criação de pastas e notas deve partir da pasta atualmente selecionada ou da raiz do vault quando nenhuma pasta estiver ativa.
-10. A interface de workspace deve apresentar apenas o nome da nota na listagem, sem repetir o caminho completo na linha principal.
-11. Pastas e notas devem permanecer visualmente separadas e ordenadas de forma consistente, com pastas antes de notas e nomes em ordem alfabética.
-12. A seleção de pasta deve ser removida ao clicar fora da árvore de pastas e notas, sem exigir um botão dedicado para desmarcar.
+6. O sistema deve permitir apagar notas e pastas dentro do vault.
+7. Nenhuma operação pode sobrescrever conteúdo existente sem validação explícita.
+8. Nenhuma operação pode escapar da raiz do vault.
+9. A leitura e validação continuam como base de segurança para qualquer operação de escrita.
+10. A criação de pastas e notas deve partir da pasta atualmente selecionada ou da raiz do vault quando nenhuma pasta estiver ativa.
+11. A interface de workspace deve apresentar apenas o nome da nota na listagem, sem repetir o caminho completo na linha principal.
+12. Pastas e notas devem permanecer visualmente separadas e ordenadas de forma consistente, com pastas antes de notas e nomes em ordem alfabética.
+13. A seleção de pasta deve ser removida apenas ao clicar em uma área vazia do background do workspace, sem exigir um botão dedicado para desmarcar.
+14. O apagamento de notas e pastas deve exigir confirmação explícita antes da remoção efetiva.
+15. A pasta raiz `Agenda` deve permanecer fixa e não pode ser apagada, embora as notas dentro dela possam ser removidas.
 
 ## Pontos de atenção
 - Escritas devem continuar precedidas por resolução canônica de caminho e checagem de fronteira.
 - Renomear e mover precisam preservar o conteúdo original quando houver conflito de destino.
-- A spec não cobre delete; evitar introduzi-lo implicitamente nas rotinas de workspace.
+- O apagamento de pasta pode ser recursivo, mas não pode acontecer sem confirmação explícita na interface.
+- A proteção da pasta `Agenda` vale para a raiz lógica da pasta, não para as notas que ela contém.
 - A criação baseada em nome não deve gerar caminhos brutos ou concatenados de forma visível na linha principal da nota.
 
 ## Cenários
@@ -53,19 +57,31 @@ When o usuário renomeia ou move o item dentro do vault
 Then o item é atualizado no filesystem
 And o conteúdo original é preservado
 
-### Cenário 5: tentativa fora do vault é rejeitada
+### Cenário 5: apagar uma nota ou pasta com confirmação
+Given uma nota ou pasta existente dentro do vault
+When o usuário confirma o apagamento desse item
+Then o item é removido do filesystem local
+And a estrutura do vault é atualizada
+
+### Cenário 6: pasta Agenda é protegida
+Given a pasta raiz `Agenda` existe no vault
+When o usuário tenta apagá-la
+Then a operação é rejeitada
+And a pasta `Agenda` permanece disponível
+And notas dentro de `Agenda/` ainda podem ser apagadas individualmente
+
+### Cenário 7: tentativa fora do vault é rejeitada
 Given uma operação com caminho inválido
 When o sistema valida a operação
 Then a operação é rejeitada
 And nenhum arquivo é alterado
 
-### Cenário 6: clique fora da árvore limpa a pasta ativa
+### Cenário 8: clique em background vazio limpa a pasta ativa
 Given uma pasta está selecionada
-When o usuário clica fora da árvore de pastas e notas
+When o usuário clica em uma área vazia do background do workspace
 Then a seleção de pasta é limpa
 And a próxima criação volta a partir da raiz ou da nova seleção
 
 ## Refinamento futuro
-- adicionar delete com proteção contra perda acidental
 - suportar edição assistida por blocos ou frontmatter
 - suportar operações em lote com preview

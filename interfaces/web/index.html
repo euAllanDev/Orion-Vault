@@ -22,10 +22,13 @@
         <div class="brand-mark">
           <img class="brand-art" src="./assets/marika-art.png" alt="" aria-hidden="true" />
         </div>
-        <div>
+        <div class="brand-copy">
           <div class="brand-title">Marika</div>
           <div class="brand-subtitle">Local-first notes</div>
         </div>
+        <button id="railCollapseButton" class="rail-collapse-toggle" type="button" aria-label="Recolher menu" aria-pressed="false" title="Recolher menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5 15 12l-6 5.5"/></svg>
+        </button>
       </div>
       <button id="sidebarNewNoteButton" class="rail-primary-action" type="button">
         <span>＋</span>
@@ -87,9 +90,9 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5h9A1.5 1.5 0 0 1 19.5 7v10A1.5 1.5 0 0 1 18 18.5H9"/><path d="M4.5 7.5h6M4.5 12h6M4.5 16.5h6"/></svg>
           <span>Settings</span>
         </button>
-        <button class="rail-footer-btn" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12a6 6 0 0 1 9.9-4.5M18 12a6 6 0 0 1-9.9 4.5"/><path d="M7 6.5h3v3M17 17.5h-3v-3"/></svg>
-          <span>Sync Status</span>
+        <button id="aiModeButton" class="rail-footer-btn" type="button" aria-label="Modo dev">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 9-3.5 3 3.5 3"/><path d="m16 9 3.5 3-3.5 3"/><path d="m13.5 6-3 12"/></svg>
+          <span>Modo dev</span>
         </button>
       </div>
     </aside>
@@ -571,8 +574,21 @@
                 <p>Organize seu vault local</p>
               </div>
               <div class="pane-actions">
-                <button id="newNoteButton" title="Nova nota">＋</button>
-                <button id="newFolderButton" title="Nova pasta">⌄</button>
+                <button id="newNoteButton" title="Nova nota" aria-label="Nova nota">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8.75 4.75h5.1c.33 0 .65.13.88.37l2.15 2.15c.24.23.37.55.37.88v9.1c0 1.1-.9 2-2 2h-6.5c-1.1 0-2-.9-2-2v-10.5c0-1.1.9-2 2-2Z" />
+                    <path d="M13.75 4.9V7.8h2.9" />
+                    <path d="M12 10.4v5.2" />
+                    <path d="M9.4 13h5.2" />
+                  </svg>
+                </button>
+                <button id="newFolderButton" title="Nova pasta" aria-label="Nova pasta">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4.75 8.4c0-1.02.83-1.85 1.85-1.85h3.1c.42 0 .81.17 1.1.46l1.08 1.09c.29.29.68.45 1.09.45h4.43c1.02 0 1.85.83 1.85 1.85v6.85c0 1.1-.9 2-2 2H6.75c-1.1 0-2-.9-2-2Z" />
+                    <path d="M12.9 11.1v4.8" />
+                    <path d="M10.5 13.5h4.8" />
+                  </svg>
+                </button>
               </div>
             </div>
               <div class="tree-context">
@@ -633,9 +649,24 @@
             </div>
 
             <article class="editor-body">
-              <h2 id="noteTitle">O que é</h2>
+              <input id="noteTitle" class="editor-title-input" type="text" value="O que é" spellcheck="false" disabled />
               <p class="editor-meta">Estudos · Clean Architecture · markdown</p>
-              <textarea id="noteEditor" spellcheck="false"></textarea>
+              <div class="editor-save-row">
+                <span id="editorDraftIndicator" class="editor-draft-indicator" aria-live="polite">Sincronizado</span>
+              </div>
+              <p class="editor-writing-hint">Use <code>/</code> para comandos inline, <code>@</code> para mencionar notas, <code>Ctrl+B</code> para negrito e <code>Ctrl+I</code> para itálico.</p>
+              <div class="editor-compose">
+                <div id="noteEditorSurface" class="editor-surface" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true"></div>
+                <div id="editorLinkTooltip" class="editor-link-tooltip hidden" aria-hidden="true">Alt + Enter para abrir</div>
+                <textarea id="noteEditor" class="editor-source" spellcheck="false" aria-hidden="true" tabindex="-1"></textarea>
+              </div>
+              <section id="editorAssistMenu" class="editor-assist-menu hidden" aria-live="polite" aria-label="Assistente de escrita">
+                <div class="editor-assist-head">
+                  <span id="editorAssistLabel" class="eyebrow">Comandos</span>
+                  <small id="editorAssistMeta">Enter para inserir</small>
+                </div>
+                <div id="editorAssistList" class="editor-assist-list"></div>
+              </section>
               <p id="editorStatus" class="editor-status">Nenhuma nota carregada.</p>
             </article>
           </section>
@@ -922,11 +953,12 @@
         <section class="ai-dialog-card">
           <span class="eyebrow">Entrada rápida</span>
           <h4>Fluxo recomendado</h4>
-          <pre id="aiDialogCommand">/context
-/search "arquitetura local"
-/plan
-/preview
-/apply</pre>
+          <pre id="aiDialogCommand">/start
+/context --vault <path>
+/search --vault <path> --query "arquitetura local"
+/plan --vault <path>
+/preview --vault <path>
+/apply --vault <path> --preview-id <id></pre>
         </section>
 
         <section class="ai-dialog-card subtle">
@@ -935,7 +967,7 @@
             <li>A IA lê o contexto local.</li>
             <li>Ela busca notas relacionadas.</li>
             <li>Ela pede preview antes de escrever.</li>
-            <li>Ela só aplica depois da validação.</li>
+              <li>Ela só aplica um preview validado com previewId.</li>
           </ul>
         </section>
       </div>
@@ -959,10 +991,23 @@
     </div>
   </section>
 
-  <button id="aiLauncher" class="ai-launcher" type="button" aria-label="Abrir IA local">
-    <span class="ai-launcher-dot"></span>
-    <span>IA</span>
-  </button>
+  <aside id="desktopNotification" class="desktop-notification" aria-live="polite" aria-atomic="true" aria-hidden="true">
+    <div class="desktop-notification-top">
+      <div class="desktop-notification-app">
+        <span class="desktop-notification-icon" aria-hidden="true">M</span>
+        <div class="desktop-notification-meta">
+          <span>Marika</span>
+          <span id="desktopNotificationTime" class="desktop-notification-time">agora</span>
+        </div>
+      </div>
+      <button id="desktopNotificationClose" class="desktop-notification-close" type="button" aria-label="Fechar notificação">×</button>
+    </div>
+    <h2 id="desktopNotificationTitle" class="desktop-notification-title">Agenda ativa</h2>
+    <p id="desktopNotificationText" class="desktop-notification-text">Veja o que precisa da sua atenção.</p>
+    <div class="desktop-notification-footer">
+      <button id="desktopNotificationAction" class="desktop-notification-action" type="button">Abrir agenda</button>
+    </div>
+  </aside>
 
   <script type="module" src="./app.js"></script>
 </body>

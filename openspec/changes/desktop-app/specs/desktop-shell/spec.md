@@ -34,18 +34,30 @@ O shell desktop deve reaproveitar o core local existente e expor a mesma frontei
 26. A ponte de IA via CLI deve usar os mesmos contratos de comandos e respeitar a fronteira segura do vault antes de qualquer escrita.
 27. A tela inicial deve mostrar um popup amigável de onboarding da IA com atalho para abrir um terminal local visível no diretório certo.
 28. O popup de IA deve manter o fluxo de comandos e a lista de comandos dentro do próprio painel, sem depender de modais aninhados.
-29. O launcher de IA deve ficar como um botão flutuante arrastável, começando no canto inferior da tela.
+29. O acesso da IA no desktop deve ficar fixo na sidebar, como ação `Modo dev` no rodapé, sem depender de launcher flutuante.
 30. A experiência desktop deve reproduzir um som local de lembrete quando notificações de agenda forem disparadas, sem usar o som padrão do sistema operacional.
-31. O bootstrap do vault padrão no desktop deve usar o mesmo contrato de abertura usado depois pela interface, em vez de um caminho paralelo de inicialização.
-32. O vault padrão configurado pelo app deve ser a única raiz autoritativa usada pelo shell desktop durante bootstrap, leitura, criação e atualização da árvore.
-33. Enquanto o bootstrap do vault padrão não terminar, a interface desktop não deve permitir criar notas, criar pastas ou disparar outras ações de escrita no workspace.
-34. Quando o vault padrão estiver carregando, o workspace deve permanecer em estado de carregamento ou vazio controlado, sem parecer pronto de forma enganosa.
-35. Ao criar uma pasta vazia no vault ativo, a árvore do workspace deve refletir a nova pasta imediatamente após o refresh, sem exigir troca de tela.
-36. Os diálogos internos usados para criar, renomear, mover, informar conteúdo e selecionar links devem operar com apenas uma sessão ativa por vez, evitando reaproveitar callbacks antigos.
+31. Notificações nativas de agenda no desktop devem permitir trazer o app principal para frente e abrir a área de agenda quando o usuário clicar nelas.
+32. Ao abrir, mostrar ou restaurar a janela desktop, o shell pode emitir um resumo nativo da agenda quando houver itens pendentes, importantes para hoje ou em atraso, evitando repetição contínua em reaberturas muito próximas.
+33. O bootstrap do vault padrão no desktop deve usar o mesmo contrato de abertura usado depois pela interface, em vez de um caminho paralelo de inicialização.
+34. O vault padrão configurado pelo app deve ser a única raiz autoritativa usada pelo shell desktop durante bootstrap, leitura, criação e atualização da árvore.
+35. Enquanto o bootstrap do vault padrão não terminar, a interface desktop não deve permitir criar notas, criar pastas ou disparar outras ações de escrita no workspace.
+36. Quando o vault padrão estiver carregando, o workspace deve permanecer em estado de carregamento ou vazio controlado, sem parecer pronto de forma enganosa.
+37. Ao criar uma pasta vazia no vault ativo, a árvore do workspace deve refletir a nova pasta imediatamente após o refresh, sem exigir troca de tela.
+38. Os diálogos internos usados para criar, renomear, mover, informar conteúdo e selecionar links devem operar com apenas uma sessão ativa por vez, evitando reaproveitar callbacks antigos.
+39. A interface desktop deve permitir apagar a nota selecionada ou a pasta ativa por meio do teclado, exigindo confirmação explícita antes da remoção efetiva.
+40. Quando houver uma pasta ativa no workspace, a ação de apagar deve priorizar essa pasta acima de uma nota ainda aberta no editor.
+41. A pasta raiz `Agenda` deve permanecer fixa no desktop e não pode ser apagada, embora as notas dentro dela possam ser removidas normalmente.
+42. A interface desktop deve permitir renomear a nota aberta diretamente pelo título no editor, preservando a extensão Markdown e a validação de caminho do vault.
+43. O editor do workspace deve usar fundo unificado `#131316` em toda a área central de leitura e escrita, sem blocos internos mais claros nem traços residuais na superfície principal.
+44. A sidebar principal do desktop deve permitir modo recolhido com ícones apenas, preservando a navegação principal e o acesso ao botão de recolher.
+45. A Home/Overview desktop deve encaixar métricas, gráficos, atividade e agenda dentro da área útil da janela, evitando vazios laterais ou inferiores desproporcionais em proporções comuns de desktop.
+46. O terminal aberto por `Modo dev` deve iniciar na raiz do app e manter o vault ativo por variável de ambiente ou contrato equivalente.
+47. O onboarding da IA no desktop deve orientar o uso de `/start` antes de `/guide` e do restante do fluxo.
+48. Mudanças feitas no vault ativo por terminal local ou automação externa devem refletir no workspace sem exigir reinício manual do app.
 
 ## Pontos de atenção
 - Controles opcionais ausentes em uma superfície não devem abortar a inicialização do renderer nem impedir o registro dos handlers do desktop.
-- A seleção de pasta do workspace deve ser desfeita ao clicar fora da árvore de pastas e notas, sem depender de um botão dedicado.
+- A seleção de pasta do workspace deve ser desfeita apenas ao clicar em uma área vazia do background, sem depender de um botão dedicado.
 - O shell desktop deve reaproveitar a lógica atual em vez de reimplementar as regras de negócio.
 - A interface deve continuar simples e focada em leitura, organização e ação local.
 - A persistência do estado do app deve ser local e mínima.
@@ -60,6 +72,13 @@ O shell desktop deve reaproveitar o core local existente e expor a mesma frontei
 - Se uma escrita for tentada cedo demais, a interface deve esperar o vault ativo ou bloquear a ação com mensagem controlada; nunca deve cair silenciosamente em um estado parcial.
 - A atualização da árvore depois de criar uma pasta vazia precisa continuar cobrindo diretórios sem notas, não apenas arquivos Markdown.
 - Um controle opcional ausente não pode quebrar o bootstrap do renderer nem impedir os handlers da agenda.
+- O atalho de apagamento precisa mostrar confirmação antes de remover pastas recursivamente.
+- A limpeza da pasta ativa não pode acontecer ao clicar em botões, menus, editor ou outros controles interativos; apenas no background vazio do workspace.
+- O recolhimento da sidebar não pode esconder a navegação principal nem remover o acesso ao atalho fixo de `Modo dev`.
+- O rename inline no título da nota continua sujeito às mesmas regras de fronteira do vault; a UI não pode criar caminhos arbitrários fora da pasta da nota atual.
+- A superfície principal de escrita deve permanecer visualmente contínua, sem molduras internas competindo com o fundo base `#131316`.
+- O terminal da IA precisa expor o contexto do app sem esconder o vault ativo; abrir no vault diretamente dificulta a descoberta do guia e dos comandos do produto.
+- O refresh do workspace não pode depender apenas de ações internas da UI quando o vault estiver sendo alterado por terminal local.
 
 ## Cenários
 
@@ -117,6 +136,24 @@ Given a aplicação desktop está aberta
 When o usuário aciona o botão de comandos
 Then o sistema exibe uma lista agrupada dos comandos disponíveis
 And cada comando aparece com uso e intenção
+
+### Cenário 6b: onboarding orienta a entrada da IA
+Given a aplicação desktop está aberta e o usuário aciona `Modo dev`
+When o onboarding da IA é exibido
+Then o sistema orienta começar por `/start`
+And depois seguir para `/guide`, `/context`, `/search`, `/plan` ou `/preview`
+And `apply` aparece condicionado a um `previewId` validado
+
+### Cenário 6c: terminal da IA abre na raiz do app
+Given a aplicação desktop está aberta com um vault ativo
+When o usuário abre o terminal da IA por `Modo dev`
+Then o terminal inicia na raiz do app
+And o vault ativo permanece disponível para os comandos do produto
+
+### Cenário 6d: mudanças externas reaparecem no workspace
+Given a aplicação desktop está aberta em um vault ativo
+When uma nota ou pasta é alterada pelo terminal local da IA
+Then o workspace reflete essa mudança sem reiniciar a aplicação
 
 ### Cenário 7: busca global encontra notas
 Given um vault ativo com notas Markdown
@@ -203,11 +240,11 @@ When o usuário vê o popup de IA
 Then a interface explica o fluxo slash-command
 And o usuário consegue abrir um terminal local visível pronto para uso
 
-### Cenário 17: launcher flutuante
+### Cenário 17: atalho de IA fica fixo na sidebar
 Given a aplicação desktop está aberta
-When o usuário arrasta o launcher de IA
-Then o botão flutuante pode ser reposicionado livremente
-And o estado visual permanece simples e acessível
+When o usuário procura a entrada da IA
+Then a interface exibe a ação `Modo dev` no rodapé da sidebar
+And o acesso à IA não depende de launcher flutuante sobre o workspace
 
 ### Cenário 18: comandos embutidos no popup
 Given o popup de IA está aberto
@@ -221,6 +258,19 @@ When a notificação é exibida
 Then o sistema reproduz o som local de lembrete configurado
 And não depende do som padrão do sistema operacional
 
+### Cenário 19a: clique na notificação abre a agenda
+Given uma notificação nativa de agenda foi exibida no desktop
+When o usuário clica nessa notificação
+Then o app principal é trazido para frente
+And a área de agenda é aberta no renderer
+
+### Cenário 19b: resumo da agenda ao reabrir a janela
+Given a janela desktop é aberta, mostrada novamente ou restaurada
+And existem itens pendentes, importantes para hoje ou em atraso
+When o shell avalia o estado atual da agenda
+Then ele pode emitir uma notificação nativa resumida
+And evita repetir o mesmo resumo continuamente em reaberturas muito próximas
+
 ### Cenário 20: pasta vazia aparece imediatamente na árvore
 Given um vault ativo já carregado no workspace
 When o usuário cria uma nova pasta vazia por meio da interface interna
@@ -228,11 +278,56 @@ Then a pasta é criada dentro do vault padrão ativo
 And o refresh seguinte da árvore inclui essa pasta mesmo sem arquivos dentro dela
 And o usuário não precisa trocar de tela para enxergar o novo diretório
 
-### Cenário 21: clique fora da árvore limpa a seleção
+### Cenário 21: clique em background vazio limpa a seleção
 Given uma pasta está selecionada no workspace
-When o usuário clica em qualquer área fora da árvore de pastas e notas
+When o usuário clica em uma área vazia do background do workspace
 Then a seleção de pasta é limpa
 And o contexto da próxima criação volta para a raiz ou para outra seleção explícita
+
+### Cenário 21a: apagar item selecionado com confirmação
+Given o workspace possui uma nota selecionada ou uma pasta ativa
+When o usuário pressiona `Delete` e confirma a ação
+Then o item alvo é apagado do vault ativo
+And a árvore do workspace é atualizada sem exigir troca de tela
+
+### Cenário 21b: pasta ativa tem prioridade no delete
+Given uma pasta está ativa no workspace
+And uma nota ainda está aberta no editor
+When o usuário pressiona `Delete` e confirma a ação
+Then a interface usa a pasta ativa como alvo do apagamento
+And não apaga a nota aberta por engano
+
+### Cenário 21c: pasta Agenda é protegida
+Given a pasta raiz `Agenda` está visível no workspace
+When o usuário tenta apagá-la pela interface desktop
+Then a operação é bloqueada com feedback controlado
+And a pasta continua disponível
+And notas dentro de `Agenda/` ainda podem ser apagadas normalmente
+
+### Cenário 22: título da nota renomeia inline
+Given uma nota Markdown está aberta no editor do desktop
+When o usuário altera o título diretamente no cabeçalho do editor e confirma a ação
+Then o sistema renomeia o arquivo correspondente dentro da mesma pasta
+And preserva a extensão Markdown
+And atualiza a árvore e o contexto visual para o novo nome
+
+### Cenário 23: editor mantém fundo unificado
+Given uma nota está aberta no workspace desktop
+When o usuário lê ou escreve na área principal do editor
+Then toda a superfície central usa o tom base `#131316`
+And a área de escrita não exibe bloco interno mais claro nem traço residual separando o texto do fundo
+
+### Cenário 24: sidebar recolhida mantém só ícones
+Given a sidebar principal do desktop está expandida
+When o usuário aciona o controle de recolher
+Then a sidebar passa para um modo compacto com ícones apenas
+And mantém acessíveis a navegação principal e a ação `Modo dev`
+
+### Cenário 25: overview preenche a área útil
+Given a Home/Overview está visível em uma janela desktop comum
+When os cards principais são renderizados
+Then métricas, gráficos, agenda e atividade ocupam a área útil sem vazios desproporcionais
+And o menu de ações rápidas continua abrindo acima do conteúdo, sem cair atrás dos cards
 
 ### Cenário 3: notas são salvas no dispositivo
 Given um vault ativo

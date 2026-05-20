@@ -3,18 +3,21 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadAppConfig } from '../../infra/config/app-config';
+import { LocalOrganizationAiProvider } from '../../infra/ai/local-models/local-organization-ai.provider';
+import { NoopOrganizationAiProvider } from '../../infra/ai/local-models/noop-organization-ai.provider';
+import { NodeOrganizationActionExecutor } from '../../infra/filesystem/movers/node-organization-action-executor';
 import { NodeVaultWorkspace } from '../../infra/filesystem/workspace/node-vault-workspace';
 import { NodeVaultScanner } from '../../infra/filesystem/readers/node-vault-scanner';
 import { NodeNoteReader } from '../../infra/filesystem/readers/node-note-reader';
 import { VaultVerificationService } from '../../vault/services/vault-verification.service';
-import type { VaultEntryDto } from '../../vault/dto/vault-entry.dto';
+import type { AiBridgeActionDto } from '../../application/dto/ai-bridge.dto';
 import { resolveExistingWithinRoot } from '../../infra/filesystem/path-resolution/path-boundary';
-import { buildSearchMatches } from '../../interfaces/cli/commands/search';
+import { AiBridgeService } from '../../application/services/ai-bridge.service';
 import { createSemanticNoteRelationsService, parseLinks } from '../../application/services/semantic-note-relations.service';
 
 const config = loadAppConfig();
-const webRoot = path.resolve('interfaces/web');
-const commandsGuidePath = path.resolve('comandos.md');
+const webRoot = fileURLToPath(new URL('../../interfaces/web/', import.meta.url));
+const commandsGuidePath = fileURLToPath(new URL('../../comandos.md', import.meta.url));
 const desktopDebugLogPath = path.join(process.env.TEMP ?? process.cwd(), 'marika-desktop-vault-debug.log');
 const agendaFolderPath = 'Agenda';
 const workspace = new NodeVaultWorkspace();
@@ -22,6 +25,16 @@ const scanner = new NodeVaultScanner();
 const noteReader = new NodeNoteReader();
 const verifier = new VaultVerificationService(scanner);
 const semanticRelations = createSemanticNoteRelationsService();
+const aiProvider = config.aiProvider === 'local'
+  ? new LocalOrganizationAiProvider()
+  : new NoopOrganizationAiProvider();
+const aiBridge = new AiBridgeService({
+  noteSource: noteReader,
+  aiProvider,
+  actionExecutor: new NodeOrganizationActionExecutor(),
+  vaultVerifier: verifier,
+  relations: semanticRelations
+});
 
 type JsonValue = Record<string, unknown>;
 
@@ -382,49 +395,60 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
 
   if (req.method === 'GET' && url.pathname === '/api/search') {
     const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
-    const query = url.searchParams.get('query')?.trim() || undefined;
-    const phrase = url.searchParams.get('phrase')?.trim() || undefined;
-    const tags = (url.searchParams.get('tags') ?? '')
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
-
-    if (!query && !phrase && tags.length === 0) {
-      sendJson(res, 200, { vaultRoot, matches: [], issues: [] });
-      return;
-    }
-
-    const report = await verifier.verify(vaultRoot);
-    const notes = await noteReader.listNotes(vaultRoot);
-    const verifiedMarkdownPaths = new Set<string>();
-
-    const collectMarkdownPaths = (entry: VaultEntryDto): void => {
-      if (entry.kind === 'file') {
-        if (String(entry.extension ?? '').toLowerCase() === 'md') {
-          verifiedMarkdownPaths.add(entry.relativePath);
-        }
-        return;
-      }
-
-      for (const child of entry.children ?? []) {
-        collectMarkdownPaths(child);
-      }
-    };
-
-    collectMarkdownPaths(report.root);
-
-    const notesByPath = notes.filter((note) => verifiedMarkdownPaths.has(note.relativePath));
-    const matches = buildSearchMatches(notesByPath, { query, phrase, tags });
+    const response = await aiBridge.search({
+      vaultRoot,
+      query: url.searchParams.get('query')?.trim() || undefined,
+      phrase: url.searchParams.get('phrase')?.trim() || undefined,
+      tags: (url.searchParams.get('tags') ?? '')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+    });
 
     sendJson(res, 200, {
-      vaultRoot,
-      matches,
-      issues: report.issues,
-      counts: {
-        notes: notesByPath.length,
-        matches: matches.length
-      }
+      ...(response as unknown as JsonValue),
+      vaultRoot: response.data.vaultRoot,
+      matches: response.data.matches,
+      counts: response.data.counts,
+      issues: response.issues
     });
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/context') {
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
+    const response = await aiBridge.loadContext({
+      vaultRoot,
+      focusPath: url.searchParams.get('path')?.trim() || undefined
+    });
+    sendJson(res, 200, response as unknown as JsonValue);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/plan') {
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
+    const response = await aiBridge.plan({ vaultRoot });
+    sendJson(res, 200, response as unknown as JsonValue);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/preview') {
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
+    const response = await aiBridge.preview({ vaultRoot });
+    sendJson(res, 200, response as unknown as JsonValue);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/apply') {
+    const body = await readBody(req);
+    const vaultRoot = resolveRequestVaultRoot(options, String(body.vaultRoot ?? ''), await resolveActiveVaultRoot(options));
+    const response = await aiBridge.apply({
+      vaultRoot,
+      previewId: String(body.previewId ?? '').trim() || undefined,
+      actions: Array.isArray(body.actions) ? body.actions as unknown as readonly AiBridgeActionDto[] : undefined,
+      force: Boolean(body.force)
+    });
+    sendJson(res, 200, response as unknown as JsonValue);
     return;
   }
 
@@ -867,6 +891,25 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
       destination: String(body.destination ?? '')
     });
     await workspace.movePath(vaultRoot, String(body.source ?? ''), String(body.destination ?? ''));
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/delete') {
+    const body = await readBody(req);
+    const vaultRoot = resolveRequestVaultRoot(options, String(body.vaultRoot ?? ''), await resolveActiveVaultRoot(options));
+    const targetPath = normalizeApiPath(String(body.path ?? ''));
+    await appendDesktopDebugLog(options, 'api.delete', {
+      requestedVaultRoot: String(body.vaultRoot ?? ''),
+      resolvedVaultRoot: vaultRoot,
+      path: targetPath
+    });
+
+    if (targetPath === agendaFolderPath) {
+      throw new Error('A pasta Agenda e fixa e nao pode ser apagada.');
+    }
+
+    await workspace.deletePath(vaultRoot, targetPath);
     sendJson(res, 200, { ok: true });
     return;
   }

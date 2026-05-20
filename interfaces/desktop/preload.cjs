@@ -33,5 +33,10 @@ contextBridge.exposeInMainWorld('marikaDesktop', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('vault:changed', listener);
     return () => ipcRenderer.removeListener('vault:changed', listener);
+  },
+  onOpenAgendaFromNotification: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('agenda:open-from-notification', listener);
+    return () => ipcRenderer.removeListener('agenda:open-from-notification', listener);
   }
 });

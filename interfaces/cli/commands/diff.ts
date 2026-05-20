@@ -1,19 +1,18 @@
-import { createOrganizeUseCase } from '../runtime/organization-runner';
+import { createAiBridgeRunner } from '../runtime/ai-bridge-runner';
 
 export interface DiffCommandOptions {
   readonly vaultRoot?: string;
 }
 
 export async function executeDiffCommand(options: DiffCommandOptions): Promise<void> {
-  const { useCase, config } = createOrganizeUseCase();
-  const result = await useCase.execute({
-    vaultRoot: config.vaultRoot,
-    dryRun: true
+  const { service, vaultRoot } = createAiBridgeRunner(options.vaultRoot);
+  const response = await service.preview({
+    vaultRoot
   });
 
-  console.log(`Vault: ${config.vaultRoot}`);
-  console.log(`Planned actions: ${result.plannedActions.length}`);
-  for (const action of result.plannedActions) {
+  console.log(`Vault: ${vaultRoot}`);
+  console.log(`Planned actions: ${response.actions.length}`);
+  for (const action of response.actions) {
     if (action.kind === 'move-note') {
       console.log(`- move ${action.sourcePath} -> ${action.destinationPath}`);
       continue;

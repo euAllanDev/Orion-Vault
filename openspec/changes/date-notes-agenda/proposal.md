@@ -17,6 +17,8 @@ O sistema irá:
 - criar notas Markdown com metadados mínimos de prazo e status
 - mostrar itens pendentes, concluídos e em atraso em uma lista própria
 - emitir notificações nativas no desktop em 1 dia, 1 hora e no horário do prazo
+- emitir um resumo nativo da agenda ao abrir ou reexibir a janela desktop quando houver itens relevantes
+- permitir abrir a área de agenda ao clicar na notificação nativa
 - manter o browser fora do escopo inicial, com suporte futuro documentado no spec
 
 ## Impacto no sistema
@@ -33,6 +35,7 @@ Incluído:
 - menu de opções para atualizar, focar criação e filtrar a fila
 - status pendente, concluída e em atraso
 - notificações nativas apenas no desktop
+- clique da notificação nativa levando o usuário para a agenda
 
 Excluído:
 - notificações no browser nesta fase

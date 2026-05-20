@@ -9,7 +9,7 @@ A IA deve retornar uma resposta estruturada compatível com o contrato da aplica
 3. Cada ação deve declarar origem, destino e tipo de operação quando aplicável.
 4. A resposta deve ser tratada como sugestão, nunca como comando executável direto.
 5. A aplicação deve rejeitar ações ambíguas, incompletas ou incompatíveis com o schema.
-6. No MVP, a resposta alimenta o plano e o relatório, não uma mutação automática.
+6. A resposta deve alimentar primeiro o plano e o relatório; qualquer execução posterior continua dependente da validação da aplicação.
 
 ## Pontos de atenção
 - O contrato hoje depende de um conjunto pequeno de tipos de ação; qualquer expansão precisa ser versionada com cuidado.

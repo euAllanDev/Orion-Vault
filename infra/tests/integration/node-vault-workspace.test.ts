@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { NodeVaultWorkspace } from '../../filesystem/workspace/node-vault-workspace';
 
 describe('NodeVaultWorkspace', () => {
-  it('creates, edits, renames and moves vault files safely', async () => {
+  it('creates, edits, renames, moves and deletes vault entries safely', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'marika-workspace-'));
     const workspace = new NodeVaultWorkspace();
 
@@ -16,10 +16,15 @@ describe('NodeVaultWorkspace', () => {
       await workspace.renamePath(root, 'inbox/note.md', 'inbox/note-renamed.md');
       await workspace.createFolder(root, 'projects');
       await workspace.movePath(root, 'inbox/note-renamed.md', 'projects/note-renamed.md');
+      await workspace.createMarkdownFile(root, 'projects/delete-me.md', '# Delete');
+      await workspace.deletePath(root, 'projects/delete-me.md');
+      await workspace.deletePath(root, 'inbox');
 
       const content = await fs.readFile(path.join(root, 'projects', 'note-renamed.md'), 'utf8');
       expect(content).toContain('Updated');
       expect(await fs.stat(path.join(root, 'projects'))).toBeTruthy();
+      await expect(fs.access(path.join(root, 'projects', 'delete-me.md'))).rejects.toThrow();
+      await expect(fs.access(path.join(root, 'inbox'))).rejects.toThrow();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

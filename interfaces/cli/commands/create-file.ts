@@ -7,9 +7,9 @@ export interface CreateFileCommandOptions {
 }
 
 export async function executeCreateFileCommand(options: CreateFileCommandOptions): Promise<void> {
-  const { config, service } = createVaultWorkspaceService();
+  const { service, vaultRoot } = createVaultWorkspaceService(options.vaultRoot);
   const filePath = options.path ?? '';
 
-  await service.createMarkdownFile(config.vaultRoot, filePath, options.content ?? '');
+  await service.createMarkdownFile(vaultRoot, filePath, options.content ?? '');
   console.log(`File created: ${filePath}`);
 }
