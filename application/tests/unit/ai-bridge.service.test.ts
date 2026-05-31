@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LocalOrganizationAiProvider } from '../../../infra/ai/local-models/local-organization-ai.provider';
+import { TokenHashEmbeddingProvider } from '../../../infra/ai/local-models/token-hash-embedding.provider';
 import { NodeOrganizationActionExecutor } from '../../../infra/filesystem/movers/node-organization-action-executor';
 import { NodeNoteReader } from '../../../infra/filesystem/readers/node-note-reader';
 import { NodeVaultScanner } from '../../../infra/filesystem/readers/node-vault-scanner';
@@ -11,16 +12,18 @@ import { createSemanticNoteRelationsService } from '../../services/semantic-note
 import { VaultVerificationService } from '../../services/vault-verification.service';
 
 async function createVaultRoot(): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), 'marika-ai-bridge-'));
+  return fs.mkdtemp(path.join(os.tmpdir(), 'orion-ai-bridge-'));
 }
 
-function createService() {
+function createService(withEmbeddings = false, semanticExcludePaths: readonly string[] = []) {
   return new AiBridgeService({
     noteSource: new NodeNoteReader(),
     aiProvider: new LocalOrganizationAiProvider(),
     actionExecutor: new NodeOrganizationActionExecutor(),
     vaultVerifier: new VaultVerificationService(new NodeVaultScanner()),
-    relations: createSemanticNoteRelationsService()
+    relations: createSemanticNoteRelationsService(),
+    embeddingProvider: withEmbeddings ? new TokenHashEmbeddingProvider() : undefined,
+    semanticExcludePaths
   });
 }
 
@@ -40,10 +43,67 @@ describe('AiBridgeService', () => {
       expect(context.status).toBe('success');
       expect(context.data.focusNote?.path).toBe('alpha.md');
       expect(context.data.backlinks).toHaveLength(1);
+      expect(context.data.supportingChunks.length).toBeGreaterThan(0);
+      expect(context.data.retrievalMode).toBe('lexical-only');
       expect(context.data.relevantPaths).toContain('beta.md');
       expect(search.status).toBe('success');
       expect(search.data.matches[0]?.path).toBe('alpha.md');
+      expect(search.data.chunks.length).toBeGreaterThan(0);
+      expect(search.data.retrievalMode).toBe('lexical-only');
+      expect(search.data.counts.chunks).toBe(search.data.chunks.length);
       expect(alphaContent).toContain('Project Alpha');
+    } finally {
+      await fs.rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('supports scoped search so agents can stay inside one note or folder context', async () => {
+    const vaultRoot = await createVaultRoot();
+    const service = createService();
+
+    try {
+      await fs.mkdir(path.join(vaultRoot, 'Architecture'), { recursive: true });
+      await fs.mkdir(path.join(vaultRoot, 'Personal'), { recursive: true });
+      await fs.writeFile(path.join(vaultRoot, 'Architecture', 'clean.md'), '# Clean Architecture\n\nUse cases orchestrate domain rules.', 'utf8');
+      await fs.writeFile(path.join(vaultRoot, 'Personal', 'journal.md'), '# Journal\n\nArchitecture of my desk.', 'utf8');
+
+      const scoped = await service.search({
+        vaultRoot,
+        query: 'architecture',
+        scopePath: 'Architecture'
+      });
+
+      expect(scoped.status).toBe('success');
+      expect(scoped.data.scopePath).toBe('Architecture');
+      expect(scoped.data.matches).toHaveLength(1);
+      expect(scoped.data.matches[0]?.path).toBe('Architecture/clean.md');
+      expect(scoped.data.chunks.every((chunk) => chunk.path.startsWith('Architecture/'))).toBe(true);
+    } finally {
+      await fs.rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('builds an agent-context package with focus, chunks and related notes', async () => {
+    const vaultRoot = await createVaultRoot();
+    const service = createService();
+
+    try {
+      await fs.writeFile(path.join(vaultRoot, 'alpha.md'), '# Clean Architecture\n\nUse cases orchestrate domain rules.', 'utf8');
+      await fs.writeFile(path.join(vaultRoot, 'beta.md'), '# Use Cases\n\nClean Architecture keeps application orchestration explicit. [[Clean Architecture]]', 'utf8');
+
+      const context = await service.loadAgentContext({
+        vaultRoot,
+        focusPath: 'alpha.md',
+        scopePath: 'alpha.md'
+      });
+
+      expect(context.status).toBe('success');
+      expect(context.data.focusPath).toBe('alpha.md');
+      expect(context.data.focusNote?.path).toBe('alpha.md');
+      expect(context.data.summaryText).toContain('Clean Architecture');
+      expect(context.data.supportingChunks.length).toBeGreaterThan(0);
+      expect(context.data.retrievalMode).toBe('lexical-only');
+      expect(context.data.budget.deliveredChunks).toBe(context.data.supportingChunks.length);
     } finally {
       await fs.rm(vaultRoot, { recursive: true, force: true });
     }
@@ -105,6 +165,45 @@ describe('AiBridgeService', () => {
       expect(mismatch.issues[0]?.code).toBe('PREVIEW_ID_MISMATCH');
       expect(escaped.status).toBe('error');
       expect(escaped.issues[0]?.message).toContain('Path escapes vault boundary');
+    } finally {
+      await fs.rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('reports hybrid retrieval mode when embeddings are enabled', async () => {
+    const vaultRoot = await createVaultRoot();
+    const service = createService(true);
+
+    try {
+      await fs.writeFile(path.join(vaultRoot, 'alpha.md'), '# Clean Architecture\n\nUse cases orchestrate domain rules.', 'utf8');
+      await fs.writeFile(path.join(vaultRoot, 'beta.md'), '# Use Cases\n\nArchitecture boundaries keep adapters thin.', 'utf8');
+
+      const retrieve = await service.retrieve({ vaultRoot, query: 'clean architecture boundaries' });
+      const context = await service.loadAgentContext({ vaultRoot, query: 'clean architecture boundaries' });
+
+      expect(retrieve.data.retrievalMode).toBe('hybrid');
+      expect(context.data.retrievalMode).toBe('hybrid');
+      expect(retrieve.data.chunks.some((chunk) => chunk.rankingMode === 'hybrid')).toBe(true);
+    } finally {
+      await fs.rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps excluded paths out of search and retrieval packages', async () => {
+    const vaultRoot = await createVaultRoot();
+    const service = createService(false, ['drafts']);
+
+    try {
+      await fs.mkdir(path.join(vaultRoot, 'drafts'), { recursive: true });
+      await fs.writeFile(path.join(vaultRoot, 'alpha.md'), '# Clean Architecture\n\nUse cases orchestrate domain rules.', 'utf8');
+      await fs.writeFile(path.join(vaultRoot, 'drafts', 'scratch.md'), '# Scratch\n\nClean architecture domain rules repeated here.', 'utf8');
+
+      const retrieve = await service.retrieve({ vaultRoot, query: 'clean architecture domain rules' });
+      const search = await service.search({ vaultRoot, query: 'clean architecture' });
+
+      expect(retrieve.data.chunks.every((chunk) => !chunk.path.startsWith('drafts/'))).toBe(true);
+      expect(search.data.chunks.every((chunk) => !chunk.path.startsWith('drafts/'))).toBe(true);
+      expect(search.data.matches.some((match) => match.path.startsWith('drafts/'))).toBe(true);
     } finally {
       await fs.rm(vaultRoot, { recursive: true, force: true });
     }

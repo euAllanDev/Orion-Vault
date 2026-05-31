@@ -1,4 +1,5 @@
 import type { NoteLinkMatchDto, RelatedNoteDto } from './semantic-note-relations.dto';
+import type { RetrievalChunkDto } from './semantic-retrieval.dto';
 
 export type AiBridgeStatus = 'success' | 'conflict' | 'noop' | 'error';
 
@@ -66,6 +67,8 @@ export interface AiBridgeContextDataDto {
   readonly notes: readonly AiBridgeNoteSummaryDto[];
   readonly backlinks: readonly NoteLinkMatchDto[];
   readonly relatedNotes: readonly RelatedNoteDto[];
+  readonly supportingChunks: readonly RetrievalChunkDto[];
+  readonly retrievalMode: 'lexical-only' | 'hybrid';
   readonly relevantPaths: readonly string[];
   readonly summary: AiBridgeContextSummaryDto;
 }
@@ -75,6 +78,7 @@ export interface AiBridgeSearchRequestDto {
   readonly query?: string;
   readonly phrase?: string;
   readonly tags?: readonly string[];
+  readonly scopePath?: string;
 }
 
 export interface SearchMatchDto {
@@ -92,26 +96,84 @@ export interface AiBridgeSearchDataDto {
   readonly query?: string;
   readonly phrase?: string;
   readonly tags: readonly string[];
+  readonly scopePath?: string;
   readonly matches: readonly SearchMatchDto[];
+  readonly chunks: readonly RetrievalChunkDto[];
+  readonly retrievalMode: 'lexical-only' | 'hybrid';
   readonly counts: {
     readonly notes: number;
     readonly matches: number;
+    readonly chunks: number;
+  };
+}
+
+export interface AiBridgeRetrieveRequestDto {
+  readonly vaultRoot: string;
+  readonly query?: string;
+  readonly tags?: readonly string[];
+  readonly scopePath?: string;
+  readonly maxChunks?: number;
+  readonly maxCharacters?: number;
+}
+
+export interface AiBridgeRetrieveDataDto {
+  readonly vaultRoot: string;
+  readonly query?: string;
+  readonly tags: readonly string[];
+  readonly scopePath?: string;
+  readonly chunks: readonly RetrievalChunkDto[];
+  readonly retrievalMode: 'lexical-only' | 'hybrid';
+  readonly counts: {
+    readonly notes: number;
+    readonly chunks: number;
+  };
+}
+
+export interface AiBridgeAgentContextRequestDto {
+  readonly vaultRoot: string;
+  readonly query?: string;
+  readonly focusPath?: string;
+  readonly tags?: readonly string[];
+  readonly scopePath?: string;
+}
+
+export interface AiBridgeAgentContextDataDto {
+  readonly vaultRoot: string;
+  readonly query?: string;
+  readonly summaryText: string;
+  readonly scopePath?: string;
+  readonly focusPath?: string;
+  readonly focusNote?: AiBridgeFocusNoteDto;
+  readonly supportingChunks: readonly RetrievalChunkDto[];
+  readonly retrievalMode: 'lexical-only' | 'hybrid';
+  readonly relatedNotes: readonly RelatedNoteDto[];
+  readonly relevantPaths: readonly string[];
+  readonly budget: {
+    readonly maxChunks: number;
+    readonly maxCharacters: number;
+    readonly deliveredChunks: number;
   };
 }
 
 export interface AiBridgePlanRequestDto {
   readonly vaultRoot: string;
+  readonly scopePath?: string;
+  readonly query?: string;
 }
 
 export interface AiBridgePlanDataDto {
   readonly vaultRoot: string;
   readonly dryRun: boolean;
   readonly previewId: string;
+  readonly scopePath?: string;
+  readonly query?: string;
 }
 
 export interface AiBridgeApplyRequestDto {
   readonly vaultRoot: string;
   readonly previewId?: string;
+  readonly scopePath?: string;
+  readonly query?: string;
   readonly actions?: readonly AiBridgeActionDto[];
   readonly force?: boolean;
 }
@@ -120,6 +182,8 @@ export interface AiBridgeApplyDataDto {
   readonly vaultRoot: string;
   readonly previewId: string;
   readonly dryRun: false;
+  readonly scopePath?: string;
+  readonly query?: string;
   readonly executedActions: readonly AiBridgeActionDto[];
   readonly skippedActions: readonly AiBridgeActionDto[];
 }

@@ -1,5 +1,5 @@
 {
-  "name": "marika-cli-notes",
+  "name": "orion-vault",
   "private": true,
   "version": "0.1.0",
   "description": "Workspace local-first para notas Markdown, vaults e IA assistiva.",
@@ -33,7 +33,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "registry:sync": "tsx scripts/update-registry.ts"
+    "benchmark:embeddings": "tsx scripts/benchmark-embeddings.ts",
+    "embedder:local": "node scripts/local-embedder.js",
+    "embedder:ollama": "node scripts/ollama-embedder.js",
+    "registry:sync": "tsx scripts/update-registry.ts",
+    "docs:sync-ai": "tsx scripts/sync-ai-docs.ts"
   },
   "dependencies": {
     "esbuild": "^0.24.2",
@@ -53,8 +57,8 @@
     "vitest": "^2.1.5"
   },
   "build": {
-    "appId": "com.marika.desktop",
-    "productName": "Marika",
+    "appId": "com.orionvault.desktop",
+    "productName": "Orion Vault",
     "asar": true,
     "asarUnpack": [
       "node_modules/esbuild/**",
@@ -116,7 +120,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Marika"
+      "shortcutName": "Orion Vault"
     }
   }
 }

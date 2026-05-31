@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { loadAppConfig } from '../../infra/config/app-config';
 import { LocalOrganizationAiProvider } from '../../infra/ai/local-models/local-organization-ai.provider';
 import { NoopOrganizationAiProvider } from '../../infra/ai/local-models/noop-organization-ai.provider';
+import { createEmbeddingProvider } from '../../infra/ai/local-models/embedding-provider.factory';
 import { NodeOrganizationActionExecutor } from '../../infra/filesystem/movers/node-organization-action-executor';
 import { NodeVaultWorkspace } from '../../infra/filesystem/workspace/node-vault-workspace';
 import { NodeVaultScanner } from '../../infra/filesystem/readers/node-vault-scanner';
@@ -14,11 +15,13 @@ import type { AiBridgeActionDto } from '../../application/dto/ai-bridge.dto';
 import { resolveExistingWithinRoot } from '../../infra/filesystem/path-resolution/path-boundary';
 import { AiBridgeService } from '../../application/services/ai-bridge.service';
 import { createSemanticNoteRelationsService, parseLinks } from '../../application/services/semantic-note-relations.service';
+import { buildOrionAiOnboarding, buildOrionGuideMarkdown, buildOrionSkillCatalog } from '../../application/ai/skills/skill-catalog';
+import { listOrionSkillFlows } from '../../application/ai/skills/skill-registry';
 
 const config = loadAppConfig();
 const webRoot = fileURLToPath(new URL('../../interfaces/web/', import.meta.url));
-const commandsGuidePath = fileURLToPath(new URL('../../comandos.md', import.meta.url));
-const desktopDebugLogPath = path.join(process.env.TEMP ?? process.cwd(), 'marika-desktop-vault-debug.log');
+const logoWhitePath = fileURLToPath(new URL('../../application/img/LogoWhite.png', import.meta.url));
+const desktopDebugLogPath = path.join(process.env.TEMP ?? process.cwd(), 'orion-vault-desktop-debug.log');
 const agendaFolderPath = 'Agenda';
 const workspace = new NodeVaultWorkspace();
 const scanner = new NodeVaultScanner();
@@ -28,9 +31,12 @@ const semanticRelations = createSemanticNoteRelationsService();
 const aiProvider = config.aiProvider === 'local'
   ? new LocalOrganizationAiProvider()
   : new NoopOrganizationAiProvider();
+const embeddingProvider = createEmbeddingProvider(config);
 const aiBridge = new AiBridgeService({
   noteSource: noteReader,
   aiProvider,
+  embeddingProvider,
+  semanticExcludePaths: config.semanticExcludePaths,
   actionExecutor: new NodeOrganizationActionExecutor(),
   vaultVerifier: verifier,
   relations: semanticRelations
@@ -96,14 +102,6 @@ async function fileExists(filePath: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-async function readMarkdownGuide(): Promise<string | null> {
-  if (!(await fileExists(commandsGuidePath))) {
-    return null;
-  }
-
-  return fs.readFile(commandsGuidePath, 'utf8');
 }
 
 async function ensureVaultRoot(vaultRoot: string): Promise<void> {
@@ -299,6 +297,16 @@ function folderAncestors(value: string, stopAt = ''): string[] {
 }
 
 async function serveStatic(res: http.ServerResponse, requestPath: string): Promise<boolean> {
+  if (requestPath === '/brand/LogoWhite.png') {
+    if (!(await fileExists(logoWhitePath))) {
+      return false;
+    }
+
+    res.writeHead(200, { 'Content-Type': 'image/png' });
+    res.end(await fs.readFile(logoWhitePath));
+    return true;
+  }
+
   const normalizedPath = requestPath === '/' ? '/index.html' : requestPath;
   const absolutePath = path.resolve(webRoot, `.${normalizedPath}`);
   const relativePath = path.relative(webRoot, absolutePath);
@@ -399,6 +407,7 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
       vaultRoot,
       query: url.searchParams.get('query')?.trim() || undefined,
       phrase: url.searchParams.get('phrase')?.trim() || undefined,
+      scopePath: url.searchParams.get('path')?.trim() || undefined,
       tags: (url.searchParams.get('tags') ?? '')
         .split(',')
         .map((value) => value.trim())
@@ -412,6 +421,37 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
       counts: response.data.counts,
       issues: response.issues
     });
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/retrieve') {
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
+    const response = await aiBridge.retrieve({
+      vaultRoot,
+      query: url.searchParams.get('query')?.trim() || undefined,
+      scopePath: url.searchParams.get('path')?.trim() || undefined,
+      tags: (url.searchParams.get('tags') ?? '')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+    });
+    sendJson(res, 200, response as unknown as JsonValue);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/agent-context') {
+    const vaultRoot = resolveRequestVaultRoot(options, url.searchParams.get('vaultRoot') ?? undefined, await resolveActiveVaultRoot(options));
+    const response = await aiBridge.loadAgentContext({
+      vaultRoot,
+      query: url.searchParams.get('query')?.trim() || undefined,
+      focusPath: url.searchParams.get('path')?.trim() || undefined,
+      scopePath: url.searchParams.get('path')?.trim() || undefined,
+      tags: (url.searchParams.get('tags') ?? '')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+    });
+    sendJson(res, 200, response as unknown as JsonValue);
     return;
   }
 
@@ -453,13 +493,24 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
   }
 
   if (req.method === 'GET' && url.pathname === '/api/guide') {
-    const content = await readMarkdownGuide();
-    if (content === null) {
-      sendJson(res, 404, { error: 'commands guide not found' });
-      return;
-    }
+    sendJson(res, 200, { path: 'generated://skills-guide', content: buildOrionGuideMarkdown() });
+    return;
+  }
 
-    sendJson(res, 200, { path: 'comandos.md', content });
+  if (req.method === 'GET' && url.pathname === '/api/skills') {
+    const category = url.searchParams.get('category')?.trim() || undefined;
+    sendJson(res, 200, buildOrionSkillCatalog(category) as unknown as JsonValue);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/flows') {
+    const flows = listOrionSkillFlows();
+    sendJson(res, 200, { count: flows.length, flows });
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/ai-onboarding') {
+    sendJson(res, 200, buildOrionAiOnboarding() as unknown as JsonValue);
     return;
   }
 
@@ -957,7 +1008,7 @@ export async function startWebServer(port = 4173, options: WebServerOptions = {}
 
   const address = server.address();
   const boundPort = typeof address === 'object' && address ? address.port : port;
-  console.log(`Marika web running at http://localhost:${boundPort}`);
+  console.log(`Orion Vault web running at http://localhost:${boundPort}`);
   return { server, port: boundPort };
 }
 

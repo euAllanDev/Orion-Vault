@@ -5,11 +5,15 @@ import type { ActionExecutorPort } from '../ports/action-executor.port';
 import type { NoteSourcePort } from '../ports/note-source.port';
 import type {
   AiBridgeActionDto,
+  AiBridgeAgentContextDataDto,
+  AiBridgeAgentContextRequestDto,
   AiBridgeApplyDataDto,
   AiBridgeApplyRequestDto,
   AiBridgeContextDataDto,
   AiBridgeContextRequestDto,
   AiBridgeIssueDto,
+  AiBridgeRetrieveDataDto,
+  AiBridgeRetrieveRequestDto,
   AiBridgeNoteSummaryDto,
   AiBridgePlanDataDto,
   AiBridgePlanRequestDto,
@@ -27,6 +31,9 @@ import type { SemanticNoteRelationsService } from './semantic-note-relations.ser
 import type { VaultVerificationService } from './vault-verification.service';
 import { ValidationError } from '../../domain/shared/errors/validation-error';
 import type { OrganizationAction } from '../../domain/organization/entities/action';
+import { SemanticRetrievalService } from './semantic-retrieval.service';
+import { ChunkedNoteIndexService } from './chunked-note-index.service';
+import type { EmbeddingProviderPort } from '../ports/embedding-provider.port';
 
 export interface AiBridgeServiceDependencies {
   readonly noteSource: NoteSourcePort;
@@ -34,6 +41,8 @@ export interface AiBridgeServiceDependencies {
   readonly actionExecutor: ActionExecutorPort;
   readonly vaultVerifier: VaultVerificationService;
   readonly relations: SemanticNoteRelationsService;
+  readonly embeddingProvider?: EmbeddingProviderPort;
+  readonly semanticExcludePaths?: readonly string[];
 }
 
 function normalizeText(value: string): string {
@@ -72,7 +81,7 @@ function toNoteSummary(note: NoteSnapshotDto): AiBridgeNoteSummaryDto {
 function collectVerifiedMarkdownPaths(entry: VaultEntryDto, paths: Set<string>): void {
   if (entry.kind === 'file') {
     if (entry.extension.toLowerCase() === 'md') {
-      paths.add(entry.relativePath);
+      paths.add(normalizeRelativePath(entry.relativePath));
     }
     return;
   }
@@ -138,6 +147,23 @@ function mergeRelevantPaths(
   return [...new Set(values)];
 }
 
+function normalizeRelativePath(value: string): string {
+  return value.replace(/\\/g, '/').replace(/^\.\//, '').trim();
+}
+
+function filterNotesByScope(notes: readonly NoteSnapshotDto[], scopePath: string | undefined): readonly NoteSnapshotDto[] {
+  const normalizedScope = normalizeRelativePath(scopePath ?? '');
+  if (!normalizedScope) {
+    return notes;
+  }
+
+  if (/\.(md|markdown)$/i.test(normalizedScope)) {
+    return notes.filter((note) => normalizeRelativePath(note.relativePath) === normalizedScope);
+  }
+
+  return notes.filter((note) => normalizeRelativePath(note.relativePath).startsWith(`${normalizedScope}/`));
+}
+
 function summarizePlan(provider: string, actionCount: number, dryRun: boolean): string {
   if (actionCount === 0) {
     return dryRun ? 'Preview found no changes to apply.' : 'Apply found no changes to execute.';
@@ -148,12 +174,48 @@ function summarizePlan(provider: string, actionCount: number, dryRun: boolean): 
     : `${provider} executed plan with ${actionCount} action(s).`;
 }
 
+function buildAgentContextSummary(params: {
+  query?: string;
+  focusTitle?: string;
+  chunkCount: number;
+  relatedTitles: readonly string[];
+}): string {
+  const parts: string[] = [];
+
+  if (params.focusTitle) {
+    parts.push(`Foco principal em ${params.focusTitle}`);
+  } else if (params.query) {
+    parts.push(`Contexto montado para ${params.query}`);
+  } else {
+    parts.push('Contexto montado para a tarefa atual');
+  }
+
+  parts.push(`${params.chunkCount} chunk(s) principais selecionados`);
+
+  if (params.relatedTitles.length > 0) {
+    parts.push(`relações fortes com ${params.relatedTitles.slice(0, 2).join(' e ')}`);
+  }
+
+  return `${parts.join(', ')}.`;
+}
+
+function inferRetrievalMode(chunks: readonly { rankingMode?: 'lexical-only' | 'hybrid' }[]): 'lexical-only' | 'hybrid' {
+  return chunks.some((chunk) => chunk.rankingMode === 'hybrid') ? 'hybrid' : 'lexical-only';
+}
+
 export class AiBridgeService {
   private readonly contextService = new OrganizationContextService();
   private readonly planService = new OrganizationPlanService();
   private readonly searchService = new LocalNoteSearchService();
+  private readonly retrievalService: SemanticRetrievalService;
 
-  constructor(private readonly dependencies: AiBridgeServiceDependencies) {}
+  constructor(private readonly dependencies: AiBridgeServiceDependencies) {
+    this.retrievalService = new SemanticRetrievalService(
+      new ChunkedNoteIndexService(dependencies.embeddingProvider, { excludedPaths: dependencies.semanticExcludePaths }),
+      dependencies.embeddingProvider,
+      { excludedPaths: dependencies.semanticExcludePaths }
+    );
+  }
 
   async loadContext(request: AiBridgeContextRequestDto): Promise<AiBridgeResponseDto<AiBridgeContextDataDto>> {
     try {
@@ -166,6 +228,18 @@ export class AiBridgeService {
       const relationResult = focusNote
         ? this.dependencies.relations.getRelated(report.vaultRoot, notes, focusNote.relativePath, request.relatedLimit ?? 12)
         : null;
+      const relevantPaths = mergeRelevantPaths(focusNote?.relativePath ?? focusPath, relationResult?.backlinks ?? [], relationResult?.related ?? []);
+      const retrieval = focusNote
+        ? await this.retrievalService.retrieve(notes, {
+            vaultRoot: report.vaultRoot,
+            query: [focusNote.title ?? '', ...focusNote.tags].filter(Boolean).join(' ').trim() || focusNote.relativePath,
+            tags: focusNote.tags,
+            focusPath: focusNote.relativePath,
+            scopePaths: relevantPaths,
+            maxChunks: 6,
+            maxCharacters: 3600
+          })
+        : { chunks: [] };
       const issues = focusPath && !focusNote
         ? [{ code: 'NOTE_NOT_FOUND', message: `Focus note not found: ${focusPath}`, path: focusPath }]
         : [];
@@ -181,7 +255,9 @@ export class AiBridgeService {
         notes: notes.map(toNoteSummary),
         backlinks: relationResult?.backlinks ?? [],
         relatedNotes: relationResult?.related ?? [],
-        relevantPaths: mergeRelevantPaths(focusNote?.relativePath ?? focusPath, relationResult?.backlinks ?? [], relationResult?.related ?? []),
+        supportingChunks: retrieval.chunks,
+        retrievalMode: inferRetrievalMode(retrieval.chunks),
+        relevantPaths,
         summary: {
           folderCount: report.folderCount,
           fileCount: report.fileCount,
@@ -212,22 +288,35 @@ export class AiBridgeService {
     try {
       const report = await this.dependencies.vaultVerifier.verify(request.vaultRoot);
       const notes = await this.dependencies.noteSource.listNotes(report.vaultRoot);
+      const scopedNotes = filterNotesByScope(notes, request.scopePath);
       const query = request.query?.trim() || undefined;
       const phrase = request.phrase?.trim() || undefined;
       const tags = this.searchService.normalizeTags(request.tags);
       const verifiedMarkdownPaths = new Set<string>();
       collectVerifiedMarkdownPaths(report.root, verifiedMarkdownPaths);
-      const verifiedNotes = notes.filter((note) => verifiedMarkdownPaths.has(note.relativePath));
+      const verifiedNotes = scopedNotes.filter((note) => verifiedMarkdownPaths.has(normalizeRelativePath(note.relativePath)));
       const matches = this.searchService.buildMatches(verifiedNotes, { query, phrase, tags });
-      const data: AiBridgeSearchDataDto = {
+      const retrieval = await this.retrievalService.retrieve(verifiedNotes, {
         vaultRoot: report.vaultRoot,
-        query,
-        phrase,
+        query: [query, phrase].filter(Boolean).join(' ').trim() || undefined,
         tags,
-        matches,
-        counts: {
+        scopePaths: request.scopePath ? [request.scopePath] : undefined,
+        maxChunks: 8,
+        maxCharacters: 4200
+      });
+        const data: AiBridgeSearchDataDto = {
+          vaultRoot: report.vaultRoot,
+          query,
+          phrase,
+          tags,
+          scopePath: request.scopePath?.trim() || undefined,
+          matches,
+          chunks: retrieval.chunks,
+          retrievalMode: inferRetrievalMode(retrieval.chunks),
+          counts: {
           notes: verifiedNotes.length,
-          matches: matches.length
+          matches: matches.length,
+          chunks: retrieval.chunks.length
         }
       };
 
@@ -245,8 +334,149 @@ export class AiBridgeService {
         query: request.query?.trim() || undefined,
         phrase: request.phrase?.trim() || undefined,
         tags: request.tags ?? [],
+        scopePath: request.scopePath?.trim() || undefined,
         matches: [],
-        counts: { notes: 0, matches: 0 }
+        chunks: [],
+        retrievalMode: 'lexical-only',
+        counts: { notes: 0, matches: 0, chunks: 0 }
+      });
+    }
+  }
+
+  async retrieve(request: AiBridgeRetrieveRequestDto): Promise<AiBridgeResponseDto<AiBridgeRetrieveDataDto>> {
+    try {
+      const report = await this.dependencies.vaultVerifier.verify(request.vaultRoot);
+      const notes = await this.dependencies.noteSource.listNotes(report.vaultRoot);
+      const scopedNotes = filterNotesByScope(notes, request.scopePath);
+      const tags = this.searchService.normalizeTags(request.tags);
+      const retrieval = await this.retrievalService.retrieve(scopedNotes, {
+        vaultRoot: report.vaultRoot,
+        query: request.query?.trim() || undefined,
+        tags,
+        scopePaths: request.scopePath ? [request.scopePath] : undefined,
+        maxChunks: request.maxChunks,
+        maxCharacters: request.maxCharacters
+      });
+      const status: AiBridgeStatus = retrieval.chunks.length > 0 ? 'success' : 'noop';
+
+      return {
+        provider: 'system',
+        summary: retrieval.chunks.length > 0
+          ? `Retrieved ${retrieval.chunks.length} context chunk(s).`
+          : 'No relevant context chunks found.',
+        actions: [],
+        status,
+        issues: report.issues.map((issue) => ({ code: 'VAULT_ISSUE', message: issue })),
+        data: {
+          vaultRoot: report.vaultRoot,
+          query: request.query?.trim() || undefined,
+          tags,
+          scopePath: request.scopePath?.trim() || undefined,
+          chunks: retrieval.chunks,
+          retrievalMode: inferRetrievalMode(retrieval.chunks),
+          counts: {
+            notes: scopedNotes.length,
+            chunks: retrieval.chunks.length
+          }
+        }
+      };
+    } catch (error) {
+      return this.errorResponse('Failed to retrieve agent context.', error, {
+        vaultRoot: request.vaultRoot,
+        query: request.query?.trim() || undefined,
+        tags: request.tags ?? [],
+        scopePath: request.scopePath?.trim() || undefined,
+        chunks: [],
+        retrievalMode: 'lexical-only',
+        counts: { notes: 0, chunks: 0 }
+      });
+    }
+  }
+
+  async loadAgentContext(request: AiBridgeAgentContextRequestDto): Promise<AiBridgeResponseDto<AiBridgeAgentContextDataDto>> {
+    const maxChunks = 8;
+    const maxCharacters = 4800;
+
+    try {
+      const report = await this.dependencies.vaultVerifier.verify(request.vaultRoot);
+      const notes = await this.dependencies.noteSource.listNotes(report.vaultRoot);
+      const scopedNotes = filterNotesByScope(notes, request.scopePath);
+      const focusPath = request.focusPath?.trim() || undefined;
+      const focusNote = focusPath
+        ? scopedNotes.find((note) => note.relativePath === focusPath || noteMatchesTarget(note, focusPath))
+        : undefined;
+      const query = request.query?.trim() || focusNote?.title || undefined;
+      const tags = this.searchService.normalizeTags(request.tags ?? focusNote?.tags ?? []);
+      const related = focusNote
+        ? this.dependencies.relations.getRelated(report.vaultRoot, scopedNotes, focusNote.relativePath, 6)
+        : null;
+      const relevantPaths = mergeRelevantPaths(
+        focusNote?.relativePath ?? focusPath,
+        related?.backlinks ?? [],
+        related?.related ?? []
+      );
+      const retrieval = await this.retrievalService.retrieve(scopedNotes, {
+        vaultRoot: report.vaultRoot,
+        query,
+        tags,
+        focusPath: focusNote?.relativePath,
+        scopePaths: relevantPaths.length > 0 ? relevantPaths : request.scopePath ? [request.scopePath] : undefined,
+        maxChunks,
+        maxCharacters
+      });
+
+      return {
+        provider: 'system',
+        summary: retrieval.chunks.length > 0
+          ? `Prepared agent context with ${retrieval.chunks.length} chunk(s).`
+          : 'No agent context could be prepared from the current vault scope.',
+        actions: [],
+        status: retrieval.chunks.length > 0 || focusNote ? 'success' : 'noop',
+        issues: [],
+        data: {
+          vaultRoot: report.vaultRoot,
+          query,
+          summaryText: buildAgentContextSummary({
+            query,
+            focusTitle: focusNote?.title,
+            chunkCount: retrieval.chunks.length,
+            relatedTitles: (related?.related ?? []).map((item) => item.title)
+          }),
+          scopePath: request.scopePath?.trim() || undefined,
+          focusPath: focusNote?.relativePath ?? focusPath,
+          focusNote: focusNote
+            ? {
+                ...toNoteSummary(focusNote),
+                content: focusNote.content
+              }
+            : undefined,
+          supportingChunks: retrieval.chunks,
+          retrievalMode: inferRetrievalMode(retrieval.chunks),
+          relatedNotes: related?.related ?? [],
+          relevantPaths,
+          budget: {
+            maxChunks,
+            maxCharacters,
+            deliveredChunks: retrieval.chunks.length
+          }
+        }
+      };
+    } catch (error) {
+      return this.errorResponse('Failed to load agent context.', error, {
+        vaultRoot: request.vaultRoot,
+        query: request.query?.trim() || undefined,
+        summaryText: '',
+        scopePath: request.scopePath?.trim() || undefined,
+        focusPath: request.focusPath?.trim() || undefined,
+        supportingChunks: [],
+        retrievalMode: 'lexical-only',
+        relatedNotes: [],
+        relevantPaths: [],
+        budget: {
+          maxChunks,
+          maxCharacters,
+          deliveredChunks: 0
+        }
       });
     }
   }
@@ -264,6 +494,8 @@ export class AiBridgeService {
       vaultRoot: request.vaultRoot,
       previewId: request.previewId?.trim() || '',
       dryRun: false,
+      scopePath: request.scopePath?.trim() || undefined,
+      query: request.query?.trim() || undefined,
       executedActions: [],
       skippedActions: []
     });
@@ -274,7 +506,11 @@ export class AiBridgeService {
             provider: 'manual',
             actions: this.planService.validate({ provider: 'manual', summary: 'Manual apply request', actions: request.actions })
           }
-        : await this.createPlannedActions(request.vaultRoot);
+        : await this.createPlannedActions(
+            request.vaultRoot,
+            request.scopePath?.trim() || undefined,
+            request.query?.trim() || undefined
+          );
       const provider = planned.provider;
       const plan = planned.actions;
       const serializedActions = serializeActions(plan);
@@ -332,13 +568,15 @@ export class AiBridgeService {
         actions: serializedActions,
         status,
         issues,
-        data: {
-          vaultRoot: request.vaultRoot,
-          previewId,
-          dryRun: false,
-          executedActions,
-          skippedActions
-        }
+          data: {
+            vaultRoot: request.vaultRoot,
+            previewId,
+            dryRun: false,
+            scopePath: request.scopePath?.trim() || undefined,
+            query: request.query?.trim() || undefined,
+            executedActions,
+            skippedActions
+          }
       };
     } catch (error) {
       return this.errorResponse('Failed to apply actions.', error, emptyData());
@@ -349,11 +587,15 @@ export class AiBridgeService {
     const emptyData: AiBridgePlanDataDto = {
       vaultRoot: request.vaultRoot,
       dryRun,
-      previewId: ''
+      previewId: '',
+      scopePath: request.scopePath?.trim() || undefined,
+      query: request.query?.trim() || undefined
     };
 
     try {
-      const aiResponse = await this.createAiResponse(request.vaultRoot);
+      const scopePath = request.scopePath?.trim() || undefined;
+      const query = request.query?.trim() || undefined;
+      const aiResponse = await this.createAiResponse(request.vaultRoot, scopePath, query);
       const plannedActions = this.planService.validate(aiResponse);
       const actions = serializeActions(plannedActions);
       const previewId = buildPreviewId(request.vaultRoot, actions);
@@ -368,7 +610,9 @@ export class AiBridgeService {
         data: {
           vaultRoot: request.vaultRoot,
           dryRun,
-          previewId
+          previewId,
+          scopePath,
+          query
         }
       };
     } catch (error) {
@@ -376,14 +620,23 @@ export class AiBridgeService {
     }
   }
 
-  private async createAiResponse(vaultRoot: string) {
+  private async createAiResponse(vaultRoot: string, scopePath?: string, query?: string) {
     const notes = await this.dependencies.noteSource.listNotes(vaultRoot);
-    const context = this.contextService.build(vaultRoot, notes);
+    const scopedNotes = filterNotesByScope(notes, scopePath);
+    const queryValue = query?.trim() || undefined;
+    const filteredNotes = queryValue
+      ? (() => {
+          const matches = this.searchService.buildMatches(scopedNotes, { query: queryValue });
+          const matchedPaths = new Set(matches.map((match) => match.path));
+          return scopedNotes.filter((note) => matchedPaths.has(note.relativePath));
+        })()
+      : scopedNotes;
+    const context = this.contextService.build(vaultRoot, filteredNotes);
     return this.dependencies.aiProvider.generateOrganizationPlan(context);
   }
 
-  private async createPlannedActions(vaultRoot: string): Promise<{ readonly provider: string; readonly actions: readonly OrganizationAction[] }> {
-    const aiResponse = await this.createAiResponse(vaultRoot);
+  private async createPlannedActions(vaultRoot: string, scopePath?: string, query?: string): Promise<{ readonly provider: string; readonly actions: readonly OrganizationAction[] }> {
+    const aiResponse = await this.createAiResponse(vaultRoot, scopePath, query);
     return {
       provider: aiResponse.provider,
       actions: this.planService.validate(aiResponse)

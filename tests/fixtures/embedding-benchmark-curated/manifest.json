@@ -1,0 +1,122 @@
+{
+  "notes": [
+    {
+      "id": "architecture-runtime-guidance",
+      "relativePath": "architecture/runtime-guidance.md",
+      "tags": ["architecture", "curated-benchmark"]
+    },
+    {
+      "id": "architecture-glossary",
+      "relativePath": "architecture/layers-glossary.md",
+      "tags": ["architecture", "curated-benchmark", "distractor"]
+    },
+    {
+      "id": "operations-incident-playbook",
+      "relativePath": "operations/incident-playbook.md",
+      "tags": ["operations", "curated-benchmark"]
+    },
+    {
+      "id": "operations-recovery-language",
+      "relativePath": "operations/recovery-language.md",
+      "tags": ["operations", "curated-benchmark", "distractor"]
+    },
+    {
+      "id": "product-discovery-loop",
+      "relativePath": "product/discovery-loop.md",
+      "tags": ["product", "curated-benchmark"]
+    },
+    {
+      "id": "learning-practice-routine",
+      "relativePath": "learning/practice-routine.md",
+      "tags": ["learning", "curated-benchmark"]
+    },
+    {
+      "id": "knowledge-relationship-map",
+      "relativePath": "knowledge/relationship-map.md",
+      "tags": ["knowledge", "curated-benchmark"]
+    },
+    {
+      "id": "knowledge-link-terminology",
+      "relativePath": "knowledge/link-terminology.md",
+      "tags": ["knowledge", "curated-benchmark", "distractor"]
+    },
+    {
+      "id": "writing-revision-loop",
+      "relativePath": "writing/revision-loop.md",
+      "tags": ["writing", "curated-benchmark"]
+    },
+    {
+      "id": "writing-editing-terms",
+      "relativePath": "writing/editing-terms.md",
+      "tags": ["writing", "curated-benchmark", "distractor"]
+    },
+    {
+      "id": "finance-spending-plan",
+      "relativePath": "finance/spending-plan.md",
+      "tags": ["finance", "curated-benchmark"]
+    },
+    {
+      "id": "finance-budget-vocabulary",
+      "relativePath": "finance/budget-vocabulary.md",
+      "tags": ["finance", "curated-benchmark", "distractor"]
+    }
+  ],
+  "queries": [
+    {
+      "label": "curated-direct-architecture",
+      "query": "use cases adapters domain rules",
+      "expectedDomain": "architecture",
+      "queryType": "direct",
+      "expectedPathPrefix": "architecture/runtime-guidance"
+    },
+    {
+      "label": "curated-hard-architecture",
+      "query": "software design layers",
+      "expectedDomain": "architecture",
+      "queryType": "hard-conceptual",
+      "expectedPathPrefix": "architecture/runtime-guidance"
+    },
+    {
+      "label": "curated-hard-operations",
+      "query": "support diagnosis during outage",
+      "expectedDomain": "operations",
+      "queryType": "hard-conceptual",
+      "expectedPathPrefix": "operations/incident-playbook"
+    },
+    {
+      "label": "curated-hard-product",
+      "query": "customer learning assumption testing",
+      "expectedDomain": "product",
+      "queryType": "hard-conceptual",
+      "expectedPathPrefix": "product/discovery-loop"
+    },
+    {
+      "label": "curated-hard-learning",
+      "query": "memory retention knowledge reinforcement",
+      "expectedDomain": "learning",
+      "queryType": "hard-conceptual",
+      "expectedPathPrefix": "learning/practice-routine"
+    },
+    {
+      "label": "curated-hard-knowledge",
+      "query": "connected ideas across notes",
+      "expectedDomain": "knowledge",
+      "queryType": "hard-conceptual",
+      "expectedPathPrefix": "knowledge/relationship-map"
+    },
+    {
+      "label": "curated-hard-writing",
+      "query": "text refinement before publication",
+      "expectedDomain": "writing",
+      "queryType": "hard-conceptual",
+      "expectedPathPrefix": "writing/revision-loop"
+    },
+    {
+      "label": "curated-hard-finance",
+      "query": "money planning spending control",
+      "expectedDomain": "finance",
+      "queryType": "hard-conceptual",
+      "expectedPathPrefix": "finance/spending-plan"
+    }
+  ]
+}
