@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { NoteSnapshotDto } from '../../dto/note-snapshot.dto';
+import type { EmbeddingProviderPort, LocalChunkEmbeddingInput, LocalEmbeddingVector, LocalQueryEmbeddingInput } from '../../ports/embedding-provider.port';
 import { ChunkedNoteIndexService } from '../../services/chunked-note-index.service';
 import { SemanticRetrievalService } from '../../services/semantic-retrieval.service';
 import { TokenHashEmbeddingProvider } from '../../../infra/ai/local-models/token-hash-embedding.provider';
@@ -56,6 +57,26 @@ Document before implementing and keep contracts explicit.
       content: '# scratch\n\nclean architecture maybe maybe maybe\n'
     }
   ];
+}
+
+class CountingQueryEmbeddingProvider implements EmbeddingProviderPort {
+  readonly providerId = 'counting-query-provider';
+  queryCalls = 0;
+
+  async embedChunk(_input: LocalChunkEmbeddingInput): Promise<LocalEmbeddingVector | null> {
+    return null;
+  }
+
+  async embedQuery(input: LocalQueryEmbeddingInput): Promise<LocalEmbeddingVector | null> {
+    this.queryCalls += 1;
+    return {
+      model: this.providerId,
+      version: '1',
+      dimensions: 3,
+      vector: [1, 2, 3],
+      fingerprint: input.text.trim().toLowerCase()
+    };
+  }
 }
 
 describe('SemanticRetrievalService', () => {
@@ -264,6 +285,41 @@ Interfaces remain thin and infrastructure stays replaceable around the domain.
 
       expect(result.chunks[0]?.path).toBe('product/discovery-loop.md');
       expect(result.chunks[0]?.rerankReasons).toContain('concept alias: product-discovery');
+    } finally {
+      await fs.rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('persists query embeddings across service instances to avoid recomputation between sessions', async () => {
+    const vaultRoot = await createVaultRoot();
+    const provider = new CountingQueryEmbeddingProvider();
+    const firstService = new SemanticRetrievalService(new ChunkedNoteIndexService(), provider);
+    const secondService = new SemanticRetrievalService(new ChunkedNoteIndexService(), provider);
+
+    try {
+      const notes = createNotes(vaultRoot);
+
+      await firstService.retrieve(notes, {
+        vaultRoot,
+        query: 'clean architecture boundaries',
+        maxChunks: 4,
+        maxCharacters: 2200
+      });
+
+      await secondService.retrieve(notes, {
+        vaultRoot,
+        query: 'clean architecture boundaries',
+        maxChunks: 4,
+        maxCharacters: 2200
+      });
+
+      expect(provider.queryCalls).toBe(1);
+
+      const persisted = JSON.parse(await fs.readFile(path.join(vaultRoot, '.orion', 'index', 'semantic-query-embeddings.json'), 'utf8')) as {
+        providers: Record<string, Record<string, { vector: number[] }>>;
+      };
+      expect(persisted.providers['counting-query-provider']).toBeDefined();
+      expect(Object.values(persisted.providers['counting-query-provider'])[0]?.vector).toEqual([1, 2, 3]);
     } finally {
       await fs.rm(vaultRoot, { recursive: true, force: true });
     }

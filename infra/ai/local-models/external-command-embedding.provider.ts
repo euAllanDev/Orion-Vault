@@ -12,6 +12,11 @@ type ExternalEmbeddingCommandRequest = {
   readonly tags?: readonly string[];
 };
 
+type ExternalEmbeddingBatchRequest = {
+  readonly kind: 'batch';
+  readonly items: ReadonlyArray<(ExternalEmbeddingCommandRequest & { readonly requestId: string })>;
+};
+
 type ExternalEmbeddingCommandResponse = {
   readonly requestId?: string;
   readonly model?: string;
@@ -20,10 +25,20 @@ type ExternalEmbeddingCommandResponse = {
   readonly vector?: readonly number[];
 };
 
+type ExternalEmbeddingBatchResponse = {
+  readonly kind?: 'batch-result';
+  readonly items?: readonly ExternalEmbeddingCommandResponse[];
+};
+
 type PendingPersistentRequest = {
   readonly fingerprint: string;
   readonly resolve: (value: LocalEmbeddingVector | null) => void;
   readonly timeout: NodeJS.Timeout;
+};
+
+type QueuedPersistentRequest = {
+  readonly requestId: string;
+  readonly request: ExternalEmbeddingCommandRequest;
 };
 
 function parseCommand(command: string): { file: string; args: string[] } | null {
@@ -85,6 +100,10 @@ export class ExternalCommandEmbeddingProvider implements EmbeddingProviderPort {
   private stdoutBuffer = '';
   private nextRequestId = 0;
   private readonly pendingRequests = new Map<string, PendingPersistentRequest>();
+  private readonly embeddingCache = new Map<string, LocalEmbeddingVector>();
+  private readonly inFlightRequests = new Map<string, Promise<LocalEmbeddingVector | null>>();
+  private readonly queuedPersistentRequests: QueuedPersistentRequest[] = [];
+  private batchFlushTimeout: NodeJS.Timeout | null = null;
 
   constructor(private readonly command: string) {
     this.parsedCommand = parseCommand(command);
@@ -117,16 +136,42 @@ export class ExternalCommandEmbeddingProvider implements EmbeddingProviderPort {
   }
 
   private async run(request: ExternalEmbeddingCommandRequest): Promise<LocalEmbeddingVector | null> {
+    const cacheKey = this.buildCacheKey(request);
+    const cached = this.embeddingCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const inFlight = this.inFlightRequests.get(cacheKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
     const parsedCommand = this.parsedCommand;
     if (!parsedCommand) {
       return null;
     }
 
-    if (this.persistentMode) {
-      return this.runPersistent(request, parsedCommand);
-    }
+    const promise = (this.persistentMode
+      ? this.runPersistent(request, parsedCommand)
+      : this.runSingleRequest(request, parsedCommand))
+      .then((result) => {
+        if (result) {
+          this.embeddingCache.set(cacheKey, result);
+        }
 
-    return this.runSingleRequest(request, parsedCommand);
+        return result;
+      })
+      .finally(() => {
+        this.inFlightRequests.delete(cacheKey);
+      });
+
+    this.inFlightRequests.set(cacheKey, promise);
+    return promise;
+  }
+
+  private buildCacheKey(request: ExternalEmbeddingCommandRequest): string {
+    return `${request.kind}:${request.fingerprint}`;
   }
 
   private async runSingleRequest(
@@ -186,8 +231,39 @@ export class ExternalCommandEmbeddingProvider implements EmbeddingProviderPort {
         timeout
       });
 
-      stdin.write(`${JSON.stringify({ ...request, requestId })}\n`);
+      this.queuedPersistentRequests.push({ requestId, request });
+      this.scheduleBatchFlush(stdin);
     });
+  }
+
+  private scheduleBatchFlush(stdin: NodeJS.WritableStream): void {
+    if (this.batchFlushTimeout) {
+      return;
+    }
+
+    this.batchFlushTimeout = setTimeout(() => {
+      this.batchFlushTimeout = null;
+      this.flushQueuedPersistentRequests(stdin);
+    }, 0);
+  }
+
+  private flushQueuedPersistentRequests(stdin: NodeJS.WritableStream): void {
+    if (stdin.destroyed || this.queuedPersistentRequests.length === 0) {
+      return;
+    }
+
+    const queued = this.queuedPersistentRequests.splice(0, this.queuedPersistentRequests.length);
+    if (queued.length === 1) {
+      const single = queued[0];
+      stdin.write(`${JSON.stringify({ ...single.request, requestId: single.requestId })}\n`);
+      return;
+    }
+
+    const batchPayload: ExternalEmbeddingBatchRequest = {
+      kind: 'batch',
+      items: queued.map((item) => ({ ...item.request, requestId: item.requestId }))
+    };
+    stdin.write(`${JSON.stringify(batchPayload)}\n`);
   }
 
   private ensurePersistentChild(parsedCommand: { file: string; args: string[] }) {
@@ -222,6 +298,11 @@ export class ExternalCommandEmbeddingProvider implements EmbeddingProviderPort {
     const child = this.persistentChild;
     this.persistentChild = null;
     this.stdoutBuffer = '';
+    if (this.batchFlushTimeout) {
+      clearTimeout(this.batchFlushTimeout);
+      this.batchFlushTimeout = null;
+    }
+    this.queuedPersistentRequests.length = 0;
 
     for (const [requestId, pending] of this.pendingRequests.entries()) {
       clearTimeout(pending.timeout);
@@ -246,24 +327,39 @@ export class ExternalCommandEmbeddingProvider implements EmbeddingProviderPort {
       }
 
       try {
-        const parsed = JSON.parse(trimmed) as ExternalEmbeddingCommandResponse;
-        const requestId = parsed.requestId?.trim();
-        if (!requestId) {
+        const parsed = JSON.parse(trimmed) as ExternalEmbeddingCommandResponse | ExternalEmbeddingBatchResponse;
+        if (this.isBatchResponse(parsed)) {
+          for (const item of parsed.items) {
+            this.resolvePendingPersistentRequest(item);
+          }
           continue;
         }
 
-        const pending = this.pendingRequests.get(requestId);
-        if (!pending) {
-          continue;
-        }
-
-        clearTimeout(pending.timeout);
-        this.pendingRequests.delete(requestId);
-        pending.resolve(this.toEmbeddingVector(parsed, pending.fingerprint));
+        this.resolvePendingPersistentRequest(parsed);
       } catch {
         // Ignore malformed lines so the provider can continue operating.
       }
     }
+  }
+
+  private isBatchResponse(value: ExternalEmbeddingCommandResponse | ExternalEmbeddingBatchResponse): value is ExternalEmbeddingBatchResponse {
+    return Array.isArray((value as ExternalEmbeddingBatchResponse).items);
+  }
+
+  private resolvePendingPersistentRequest(parsed: ExternalEmbeddingCommandResponse): void {
+    const requestId = parsed.requestId?.trim();
+    if (!requestId) {
+      return;
+    }
+
+    const pending = this.pendingRequests.get(requestId);
+    if (!pending) {
+      return;
+    }
+
+    clearTimeout(pending.timeout);
+    this.pendingRequests.delete(requestId);
+    pending.resolve(this.toEmbeddingVector(parsed, pending.fingerprint));
   }
 
   private toEmbeddingVector(raw: string | ExternalEmbeddingCommandResponse, fingerprint: string): LocalEmbeddingVector | null {

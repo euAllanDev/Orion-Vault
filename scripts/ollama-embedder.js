@@ -54,6 +54,24 @@ function toVector(data) {
 }
 
 async function requestEmbedding(host, model, text, timeoutMs) {
+  let lastVector = [];
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const vector = await requestEmbeddingOnce(host, model, text, timeoutMs);
+    if (vector.length > 0) {
+      return vector;
+    }
+
+    lastVector = vector;
+    if (attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+  }
+
+  return lastVector;
+}
+
+async function requestEmbeddingOnce(host, model, text, timeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -86,6 +104,8 @@ async function requestEmbedding(host, model, text, timeoutMs) {
 
     const legacyData = await legacyResponse.json();
     return toVector(legacyData);
+  } catch {
+    return [];
   } finally {
     clearTimeout(timeout);
   }
@@ -124,6 +144,22 @@ async function buildResponse(payload) {
   }
 }
 
+async function buildAnyResponse(payload) {
+  if (payload.kind === 'batch' && Array.isArray(payload.items)) {
+    const items = [];
+    for (const item of payload.items) {
+      items.push(await buildResponse(item));
+    }
+
+    return {
+      kind: 'batch-result',
+      items
+    };
+  }
+
+  return buildResponse(payload);
+}
+
 async function readStdin() {
   const chunks = [];
   for await (const chunk of process.stdin) {
@@ -142,14 +178,14 @@ async function main() {
       }
 
       const payload = JSON.parse(trimmed);
-      process.stdout.write(`${JSON.stringify(await buildResponse(payload))}\n`);
+      process.stdout.write(`${JSON.stringify(await buildAnyResponse(payload))}\n`);
     }
     return;
   }
 
   const raw = await readStdin();
   const payload = raw ? JSON.parse(raw) : {};
-  process.stdout.write(JSON.stringify(await buildResponse(payload)));
+  process.stdout.write(JSON.stringify(await buildAnyResponse(payload)));
 }
 
 main().catch(() => {

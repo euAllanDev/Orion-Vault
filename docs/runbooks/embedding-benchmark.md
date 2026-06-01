@@ -203,3 +203,5 @@ pnpm benchmark:embeddings
 
 Observacao:
 - se o Ollama local nao estiver disponivel ou nao devolver vetor valido, o bridge devolve vetor vazio e o runtime continua podendo cair para `lexical-only`
+- o bridge atual tambem possui retry curto para startup fria do Ollama; isso ajuda a transformar uma primeira falha de conexao em retrieval `hybrid` quando o modelo ainda esta aquecendo, mas nao altera a necessidade de medir custo e relevancia separadamente
+- no estado atual da investigacao, `nomic-embed-text` e `mxbai-embed-large` ja foram comparados no corpus `curated`; ambos operaram em `hybrid`, mas permaneceram empatados com o baseline lexical+heuristico em relevancia pratica, sem justificar promocao automatica

@@ -1,11 +1,26 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { NoteSnapshotDto } from '../dto/note-snapshot.dto';
 import type { RetrievalChunkDto, SemanticRetrievalRequestDto, SemanticRetrievalResponseDto } from '../dto/semantic-retrieval.dto';
 import { ChunkedNoteIndexService, type IndexedChunk } from './chunked-note-index.service';
-import type { EmbeddingProviderPort } from '../ports/embedding-provider.port';
+import type { EmbeddingProviderPort, LocalEmbeddingVector } from '../ports/embedding-provider.port';
 
 export interface SemanticRetrievalServiceOptions {
   readonly excludedPaths?: readonly string[];
 }
+
+type PersistedQueryEmbedding = {
+  readonly model: string;
+  readonly version: string;
+  readonly dimensions: number;
+  readonly vector: readonly number[];
+  readonly fingerprint: string;
+};
+
+type PersistedQueryEmbeddingIndex = {
+  readonly version: 1;
+  readonly providers: Record<string, Record<string, PersistedQueryEmbedding>>;
+};
 
 type ConceptAliasPack = {
   readonly id: string;
@@ -159,6 +174,21 @@ function matchesExcludedPath(notePath: string, excludedPaths: readonly string[])
     const normalizedExcludedPath = normalizeRelativePath(excludedPath);
     return normalizedPath === normalizedExcludedPath || normalizedPath.startsWith(`${normalizedExcludedPath}/`);
   });
+}
+
+async function readPersistedQueryEmbeddingIndex(indexPath: string): Promise<PersistedQueryEmbeddingIndex | null> {
+  try {
+    const raw = await fs.readFile(indexPath, 'utf8');
+    const parsed = JSON.parse(raw) as PersistedQueryEmbeddingIndex;
+    return parsed.version === 1 && parsed.providers ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writePersistedQueryEmbeddingIndex(indexPath: string, index: PersistedQueryEmbeddingIndex): Promise<void> {
+  await fs.mkdir(path.dirname(indexPath), { recursive: true });
+  await fs.writeFile(indexPath, JSON.stringify(index, null, 2), 'utf8');
 }
 
 function cosineSimilarity(left: readonly number[], right: readonly number[]): number {
@@ -436,6 +466,8 @@ function rerankChunks(
 }
 
 export class SemanticRetrievalService {
+  private readonly queryEmbeddingIndexCache = new Map<string, PersistedQueryEmbeddingIndex>();
+
   constructor(
     private readonly indexService = new ChunkedNoteIndexService(),
     private readonly embeddingProvider?: EmbeddingProviderPort,
@@ -466,7 +498,7 @@ export class SemanticRetrievalService {
       : notes;
     const index = await this.indexService.build(request.vaultRoot, eligibleNotes);
     const queryEmbedding = query
-      ? (await this.embeddingProvider?.embedQuery({ text: query }))?.vector
+      ? (await this.resolveQueryEmbedding(request.vaultRoot, query))?.vector
       : undefined;
     const maxChunks = Math.max(1, request.maxChunks ?? 8);
     const maxCharacters = Math.max(400, request.maxCharacters ?? 5000);
@@ -513,5 +545,47 @@ export class SemanticRetrievalService {
       query,
       chunks
     };
+  }
+
+  private async resolveQueryEmbedding(vaultRoot: string, query: string): Promise<LocalEmbeddingVector | null> {
+    if (!this.embeddingProvider) {
+      return null;
+    }
+
+    const fingerprint = normalizeText(query);
+    const providerKey = this.embeddingProvider.providerId;
+    const indexPath = path.join(vaultRoot, '.orion', 'index', 'semantic-query-embeddings.json');
+    const cacheKey = `${vaultRoot}::${providerKey}`;
+
+    let persistedIndex = this.queryEmbeddingIndexCache.get(cacheKey);
+    if (!persistedIndex) {
+      persistedIndex = (await readPersistedQueryEmbeddingIndex(indexPath)) ?? { version: 1, providers: {} };
+      this.queryEmbeddingIndexCache.set(cacheKey, persistedIndex);
+    }
+
+    const providerEntries = persistedIndex.providers[providerKey] ?? {};
+    const cached = providerEntries[fingerprint];
+    if (cached && cached.vector.length > 0) {
+      return { ...cached, vector: [...cached.vector] };
+    }
+
+    const computed = await this.embeddingProvider.embedQuery({ text: query });
+    if (!computed || computed.vector.length === 0) {
+      return null;
+    }
+
+    persistedIndex.providers[providerKey] = {
+      ...providerEntries,
+      [fingerprint]: {
+        model: computed.model,
+        version: computed.version,
+        dimensions: computed.dimensions,
+        vector: [...computed.vector],
+        fingerprint: computed.fingerprint
+      }
+    };
+    this.queryEmbeddingIndexCache.set(cacheKey, persistedIndex);
+    await writePersistedQueryEmbeddingIndex(indexPath, persistedIndex);
+    return computed;
   }
 }

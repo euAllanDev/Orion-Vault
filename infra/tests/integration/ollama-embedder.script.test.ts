@@ -121,4 +121,71 @@ describe('ollama-embedder script', () => {
       expect(requests[1]).toMatch(/^search_query:\s+/);
     });
   });
+
+  it('retries when the first embed request fails before Ollama is ready', async () => {
+    const requests = [];
+    let requestCount = 0;
+    const server = createServer(async (request, response) => {
+      if (request.method !== 'POST' || request.url !== '/api/embed') {
+        response.statusCode = 404;
+        response.end();
+        return;
+      }
+
+      requestCount += 1;
+      if (requestCount === 1) {
+        response.statusCode = 503;
+        response.end();
+        return;
+      }
+
+      const chunks = [];
+      for await (const chunk of request) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      requests.push(String(body.input ?? ''));
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({
+        model: body.model,
+        embeddings: [[0.25, 0.5, 0.75, String(body.input ?? '').length]]
+      }));
+    });
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Failed to bind fake Ollama server.');
+    }
+
+    const previousHost = process.env.OLLAMA_HOST;
+    const previousModel = process.env.OLLAMA_EMBED_MODEL;
+    process.env.OLLAMA_HOST = `http://127.0.0.1:${address.port}`;
+    process.env.OLLAMA_EMBED_MODEL = 'nomic-embed-text';
+
+    try {
+      const provider = new ExternalCommandEmbeddingProvider(createCommand());
+      const result = await provider.embedQuery({ text: 'software design layers' });
+
+      expect(result?.model).toBe('ollama:nomic-embed-text');
+      expect(result?.dimensions).toBe(4);
+      expect(requestCount).toBe(2);
+      expect(requests).toHaveLength(1);
+    } finally {
+      if (previousHost === undefined) {
+        delete process.env.OLLAMA_HOST;
+      } else {
+        process.env.OLLAMA_HOST = previousHost;
+      }
+
+      if (previousModel === undefined) {
+        delete process.env.OLLAMA_EMBED_MODEL;
+      } else {
+        process.env.OLLAMA_EMBED_MODEL = previousModel;
+      }
+
+      await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
 });

@@ -73,6 +73,17 @@ function buildResponse(payload) {
   };
 }
 
+function buildAnyResponse(payload) {
+  if (payload.kind === 'batch' && Array.isArray(payload.items)) {
+    return {
+      kind: 'batch-result',
+      items: payload.items.map((item) => buildResponse(item))
+    };
+  }
+
+  return buildResponse(payload);
+}
+
 async function readStdin() {
   const chunks = [];
   for await (const chunk of process.stdin) {
@@ -95,14 +106,14 @@ async function main() {
       }
 
       const payload = JSON.parse(trimmed);
-      process.stdout.write(`${JSON.stringify(buildResponse(payload))}\n`);
+      process.stdout.write(`${JSON.stringify(buildAnyResponse(payload))}\n`);
     }
     return;
   }
 
   const raw = await readStdin();
   const payload = raw ? JSON.parse(raw) : {};
-  process.stdout.write(JSON.stringify(buildResponse(payload)));
+  process.stdout.write(JSON.stringify(buildAnyResponse(payload)));
 }
 
 main().catch(() => {

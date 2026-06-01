@@ -192,6 +192,9 @@ Resultado atual do benchmark inicial:
 - a rodada seguinte confirmou essa aposta: reforcos de chunking deterministico por sentenca, deduplicacao de contexto, reranking em segunda passada e um sinal interpretavel de `concept alias` destravaram os casos `product` e `learning` no corpus `curated`, elevando o baseline atualizado para `8/8` em `top1Hits` e `6/8` em `top1PathHits` sem depender de promover embeddings
 - a validacao manual no vault real repetiu o mesmo comportamento em `lexical-only`, com `customer learning assumption testing` apontando para `product/discovery-loop.md` e `support diagnosis during outage` priorizando `operations/incident-playbook.md`
 - por outro lado, a rodada sintetica em `small`, `medium` e `large` manteve a mesma leitura de custo: `token-hash` continua perto de `2.8x` o tamanho do indice baseline e `expanded-token-hash` perto de `4.5x`, sem um delta de relevancia que justifique promovê-los antes de novas evidencias
+- a infraestrutura do caminho `external-command` amadureceu nesta fase com cache em memoria, deduplicacao de requests concorrentes, retry para startup fria do Ollama, micro-batching em modo persistente e cache persistido de query embeddings. Isso reduziu parte do atrito operacional para experimentar embeddings reais locais sem mudar o contrato do app
+- com essa base estabilizada, dois modelos reais via Ollama foram comparados de forma curta e direta: `nomic-embed-text` e `mxbai-embed-large`. Ambos conseguiram operar em `hybrid`, mas nenhum superou o baseline lexical+heuristico ja melhorado no corpus `curated`; os dois permaneceram empatados em `8/8` para `top1Hits` e `6/8` para `top1PathHits`
+- o `mxbai-embed-large` nao trouxe ganho semântico visível sobre o `nomic-embed-text` e ainda manteve custo alto de indice e consulta. Com isso, a leitura consolidada da rodada atual deixa de ser “falta integrar embedding real” e passa a ser “os candidatos locais reais testados ainda nao justificam promocao sobre o baseline atual” 
 
 ### Fase 2: beta
 - embeddings hibridos disponiveis para usuario dev
@@ -246,3 +249,4 @@ O melhor proximo passo e:
 - usar o corpus `curated` para decidir qualquer promocao futura
 - priorizar, numa proxima etapa, experimentos de chunking e reranking antes de insistir em nova troca de provider
 - so depois decidir se o modo hibrido vira padrao
+- encerrar a rodada atual de comparacao de providers locais reais enquanto nao houver um novo candidato com hipotese mais forte de ganho semântico
