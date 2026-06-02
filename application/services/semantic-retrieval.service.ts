@@ -28,6 +28,60 @@ type ConceptAliasPack = {
   readonly evidenceTokens: readonly string[];
 };
 
+type ConceptAliasScore = {
+  readonly score: number;
+  readonly reasons: readonly string[];
+  readonly matchedPackIds: readonly string[];
+  readonly evidenceHits: number;
+};
+
+type ChunkRerankResult = {
+  readonly score: number;
+  readonly reasons: readonly string[];
+  readonly coverageRatio: number;
+  readonly titleHits: number;
+  readonly headingHits: number;
+  readonly textHits: number;
+  readonly pathHits: number;
+  readonly exactTextMatch: number;
+  readonly exactHeadingMatch: number;
+  readonly exactTitleMatch: number;
+  readonly focusBoost: number;
+  readonly conceptAlias: ConceptAliasScore;
+};
+
+type NoteRerankSummary = {
+  readonly path: string;
+  readonly chunkCount: number;
+  readonly matchedTerms: ReadonlySet<string>;
+  readonly titleHits: number;
+  readonly headingHits: number;
+  readonly textHits: number;
+  readonly pathHits: number;
+  readonly exactTextMatches: number;
+  readonly exactHeadingMatches: number;
+  readonly exactTitleMatches: number;
+  readonly focusBoost: number;
+  readonly conceptAliasScore: number;
+  readonly conceptAliasEvidenceHits: number;
+  readonly conceptAliasPacks: ReadonlySet<string>;
+  readonly noteTokenCount: number;
+  readonly referenceSignalHits: number;
+  readonly actionSignalHits: number;
+  readonly structuralSignalHits: number;
+  readonly titleReferenceSignalHits: number;
+  readonly titleStructuralSignalHits: number;
+};
+
+type NoteRerankResult = {
+  readonly score: number;
+  readonly reasons: readonly string[];
+};
+
+const referenceStyleTokens = new Set(['glossary', 'terminology', 'vocabulary', 'wording', 'reference', 'definitions', 'naming']);
+const actionStyleTokens = new Set(['playbook', 'runbook', 'checklist', 'workflow', 'guide', 'steps', 'triage', 'rollback', 'practical', 'actions']);
+const structuralStyleTokens = new Set(['map', 'maps', 'navigate', 'navigation', 'structure', 'structured', 'path', 'paths', 'connected', 'connections', 'clusters', 'cluster', 'across']);
+
 const conceptAliasPacks: readonly ConceptAliasPack[] = [
   {
     id: 'architecture-core',
@@ -303,6 +357,10 @@ function scoreChunk(
   ) * chunk.qualityWeight;
   const rankingMode = vectorScore > 0 ? 'hybrid' as const : 'lexical-only' as const;
 
+  if (chunk.tokenCount < 8 && vectorScore === 0 && conceptAlias.score > 0 && matchedTerms.length <= 1 && lexicalScore < 3.2) {
+    return null;
+  }
+
   if (score <= 0 || (queryTokens.length > 0 && matchedTerms.length === 0 && tagTokens.length === 0 && vectorScore === 0 && conceptAlias.score === 0)) {
     return null;
   }
@@ -339,9 +397,9 @@ function countTokenHits(text: string, queryTokens: readonly string[]): number {
 function scoreConceptAlias(
   chunk: Pick<RetrievalChunkDto, 'title' | 'heading' | 'path' | 'tags' | 'text'>,
   queryTokens: readonly string[]
-): { score: number; reasons: string[] } {
+): ConceptAliasScore {
   if (queryTokens.length === 0) {
-    return { score: 0, reasons: [] };
+    return { score: 0, reasons: [], matchedPackIds: [], evidenceHits: 0 };
   }
 
   const chunkTokens = new Set(tokenize([
@@ -354,6 +412,8 @@ function scoreConceptAlias(
   const queryTokenSet = new Set(queryTokens);
   let totalScore = 0;
   const reasons: string[] = [];
+  const matchedPackIds: string[] = [];
+  let totalEvidenceHits = 0;
 
   for (const pack of conceptAliasPacks) {
     const triggerHits = pack.triggerTokens.filter((token) => queryTokenSet.has(token)).length;
@@ -368,9 +428,11 @@ function scoreConceptAlias(
 
     totalScore += (triggerHits * 0.28) + (evidenceHits * 0.36);
     reasons.push(`concept alias: ${pack.id}`);
+    matchedPackIds.push(pack.id);
+    totalEvidenceHits += evidenceHits;
   }
 
-  return { score: totalScore, reasons };
+  return { score: totalScore, reasons, matchedPackIds, evidenceHits: totalEvidenceHits };
 }
 
 function rerankChunk(
@@ -378,7 +440,7 @@ function rerankChunk(
   queryTokens: readonly string[],
   query: string | undefined,
   focusPath?: string
-): { score: number; reasons: string[] } {
+): ChunkRerankResult {
   const normalizedQuery = normalizeText(query ?? '');
   const coverageRatio = queryTokens.length > 0
     ? chunk.matchedTerms.length / queryTokens.length
@@ -429,6 +491,183 @@ function rerankChunk(
       + (exactTitleMatch * 0.6)
       + focusBoost
       + conceptAlias.score,
+    reasons,
+    coverageRatio,
+    titleHits,
+    headingHits,
+    textHits,
+    pathHits,
+    exactTextMatch,
+    exactHeadingMatch,
+    exactTitleMatch,
+    focusBoost,
+    conceptAlias
+  };
+}
+
+function buildNoteRerankSummaries(
+  items: readonly Array<{ chunk: RetrievalChunkDto; rerank: ChunkRerankResult }>
+): ReadonlyMap<string, NoteRerankSummary> {
+  const summaries = new Map<string, {
+    chunkCount: number;
+    matchedTerms: Set<string>;
+    titleHits: number;
+    headingHits: number;
+    textHits: number;
+    pathHits: number;
+    exactTextMatches: number;
+    exactHeadingMatches: number;
+    exactTitleMatches: number;
+    focusBoost: number;
+    conceptAliasScore: number;
+    conceptAliasEvidenceHits: number;
+    conceptAliasPacks: Set<string>;
+    noteTokenCount: number;
+  }>();
+
+  for (const item of items) {
+    const current = summaries.get(item.chunk.path) ?? {
+      chunkCount: 0,
+      matchedTerms: new Set<string>(),
+      titleHits: 0,
+      headingHits: 0,
+      textHits: 0,
+      pathHits: 0,
+      exactTextMatches: 0,
+      exactHeadingMatches: 0,
+      exactTitleMatches: 0,
+      focusBoost: 0,
+      conceptAliasScore: 0,
+      conceptAliasEvidenceHits: 0,
+      conceptAliasPacks: new Set<string>(),
+      noteTokenCount: 0,
+      referenceSignalHits: 0,
+      actionSignalHits: 0,
+      structuralSignalHits: 0,
+      titleReferenceSignalHits: 0,
+      titleStructuralSignalHits: 0
+    };
+
+    current.chunkCount += 1;
+    current.titleHits += item.rerank.titleHits;
+    current.headingHits += item.rerank.headingHits;
+    current.textHits += item.rerank.textHits;
+    current.pathHits += item.rerank.pathHits;
+    current.exactTextMatches += item.rerank.exactTextMatch;
+    current.exactHeadingMatches += item.rerank.exactHeadingMatch;
+    current.exactTitleMatches += item.rerank.exactTitleMatch;
+    current.focusBoost = Math.max(current.focusBoost, item.rerank.focusBoost);
+    current.conceptAliasScore += item.rerank.conceptAlias.score;
+    current.conceptAliasEvidenceHits += item.rerank.conceptAlias.evidenceHits;
+    current.noteTokenCount += item.chunk.tokenCount;
+    const noteStyleTokens = tokenize([item.chunk.title ?? '', item.chunk.heading ?? '', item.chunk.text].join(' '));
+    const titleTokens = tokenize(item.chunk.title ?? '');
+    current.referenceSignalHits += noteStyleTokens.filter((token) => referenceStyleTokens.has(token)).length;
+    current.actionSignalHits += noteStyleTokens.filter((token) => actionStyleTokens.has(token)).length;
+    current.structuralSignalHits += noteStyleTokens.filter((token) => structuralStyleTokens.has(token)).length;
+    current.titleReferenceSignalHits += titleTokens.filter((token) => referenceStyleTokens.has(token)).length;
+    current.titleStructuralSignalHits += titleTokens.filter((token) => structuralStyleTokens.has(token)).length;
+
+    for (const term of item.chunk.matchedTerms) {
+      current.matchedTerms.add(term);
+    }
+
+    for (const packId of item.rerank.conceptAlias.matchedPackIds) {
+      current.conceptAliasPacks.add(packId);
+    }
+
+    summaries.set(item.chunk.path, current);
+  }
+
+  return new Map([...summaries.entries()].map(([path, summary]) => [path, {
+    path,
+    chunkCount: summary.chunkCount,
+    matchedTerms: summary.matchedTerms,
+    titleHits: summary.titleHits,
+    headingHits: summary.headingHits,
+    textHits: summary.textHits,
+    pathHits: summary.pathHits,
+    exactTextMatches: summary.exactTextMatches,
+    exactHeadingMatches: summary.exactHeadingMatches,
+    exactTitleMatches: summary.exactTitleMatches,
+    focusBoost: summary.focusBoost,
+    conceptAliasScore: summary.conceptAliasScore,
+    conceptAliasEvidenceHits: summary.conceptAliasEvidenceHits,
+    conceptAliasPacks: summary.conceptAliasPacks,
+    noteTokenCount: summary.noteTokenCount,
+    referenceSignalHits: summary.referenceSignalHits,
+    actionSignalHits: summary.actionSignalHits,
+    structuralSignalHits: summary.structuralSignalHits,
+    titleReferenceSignalHits: summary.titleReferenceSignalHits,
+    titleStructuralSignalHits: summary.titleStructuralSignalHits
+  }]));
+}
+
+function rerankNote(
+  summary: NoteRerankSummary,
+  queryTokens: readonly string[],
+  focusPath?: string
+): NoteRerankResult {
+  const coverageRatio = queryTokens.length > 0
+    ? summary.matchedTerms.size / queryTokens.length
+    : 0;
+  const hasCoreAlignment = summary.matchedTerms.size > 0 || summary.conceptAliasScore > 0;
+  const reasons: string[] = [];
+
+  if (summary.conceptAliasPacks.size > 0) {
+    reasons.push(`note concept support: ${[...summary.conceptAliasPacks].join(', ')}`);
+  }
+  if (summary.chunkCount > 1) {
+    reasons.push('note multi-chunk support');
+  }
+  if (coverageRatio >= 0.75) {
+    reasons.push('note query coverage');
+  }
+  if (summary.noteTokenCount >= 70) {
+    reasons.push('note semantic depth');
+  }
+  if (focusPath && summary.path === focusPath) {
+    reasons.push('note focus boost');
+  }
+  if (summary.referenceSignalHits > 0) {
+    reasons.push('note reference-style signal');
+  }
+  if (summary.actionSignalHits > 0) {
+    reasons.push('note action-style signal');
+  }
+  if (summary.structuralSignalHits > 0) {
+    reasons.push('note structural-style signal');
+  }
+  if (summary.titleReferenceSignalHits > 0) {
+    reasons.push('note reference title signal');
+  }
+  if (summary.titleStructuralSignalHits > 0) {
+    reasons.push('note structural title signal');
+  }
+  if (!hasCoreAlignment) {
+    reasons.push('note weak alignment guard');
+  }
+
+  return {
+    score: (
+      (coverageRatio * 0.45)
+      + Math.min(0.6, Math.max(0, summary.chunkCount - 1) * 0.24)
+      + Math.min(4.6, summary.conceptAliasScore * 1.1)
+      + Math.min(2.2, summary.conceptAliasEvidenceHits * 0.35)
+      + (summary.exactTitleMatches > 0 ? 0.2 : 0)
+      + (summary.exactHeadingMatches > 0 ? 0.14 : 0)
+      + (summary.exactTextMatches > 0 ? 0.1 : 0)
+      + Math.min(0.2, summary.titleHits * 0.025)
+      + Math.min(0.14, summary.headingHits * 0.02)
+      + Math.min(0.08, summary.pathHits * 0.015)
+      + (summary.noteTokenCount >= 70 ? 0.8 : summary.noteTokenCount >= 35 ? 0.35 : 0)
+      + (focusPath && summary.path === focusPath ? 0.2 : 0)
+      + Math.min(2, summary.actionSignalHits * 0.4)
+      + Math.min(1.8, summary.structuralSignalHits * 0.3)
+      + Math.min(1.6, summary.titleStructuralSignalHits * 0.8)
+      - Math.min(1.4, summary.referenceSignalHits * 0.35)
+      - Math.min(1.8, summary.titleReferenceSignalHits * 0.9)
+    ) * (hasCoreAlignment ? 1 : 0.08),
     reasons
   };
 }
@@ -445,23 +684,39 @@ function rerankChunks(
 
   if (chunks.length === 1) {
     const rerank = rerankChunk(chunks[0], queryTokens, query, focusPath);
+    const noteRerank = rerankNote(buildNoteRerankSummaries([{ chunk: chunks[0], rerank }]).get(chunks[0].path)!, queryTokens, focusPath);
     return [{
       ...chunks[0],
-      rerankScore: rerank.score,
-      rerankReasons: rerank.reasons
+      rerankScore: rerank.score + noteRerank.score,
+      rerankReasons: [...new Set([...rerank.reasons, ...noteRerank.reasons])]
     }];
   }
 
-  return chunks
-    .map((chunk) => ({
+  const reranked = chunks.map((chunk) => ({
       chunk,
       rerank: rerankChunk(chunk, queryTokens, query, focusPath)
-    }))
-    .sort((left, right) => right.rerank.score - left.rerank.score || right.chunk.score - left.chunk.score || left.chunk.path.localeCompare(right.chunk.path))
+    }));
+  const noteSummaries = buildNoteRerankSummaries(reranked);
+  const noteReranks = new Map<string, NoteRerankResult>(
+    [...noteSummaries.entries()].map(([path, summary]) => [path, rerankNote(summary, queryTokens, focusPath)])
+  );
+
+  return reranked
+    .sort((left, right) => {
+      const leftNoteScore = noteReranks.get(left.chunk.path)?.score ?? 0;
+      const rightNoteScore = noteReranks.get(right.chunk.path)?.score ?? 0;
+      return rightNoteScore - leftNoteScore
+        || right.rerank.score - left.rerank.score
+        || right.chunk.score - left.chunk.score
+        || left.chunk.path.localeCompare(right.chunk.path);
+    })
     .map((item) => ({
       ...item.chunk,
-      rerankScore: item.rerank.score,
-      rerankReasons: item.rerank.reasons
+      rerankScore: item.rerank.score + (noteReranks.get(item.chunk.path)?.score ?? 0),
+      rerankReasons: [...new Set([
+        ...item.rerank.reasons,
+        ...(noteReranks.get(item.chunk.path)?.reasons ?? [])
+      ])]
     }));
 }
 

@@ -190,6 +190,7 @@ Resultado atual do benchmark inicial:
 - experimentos de composicao (`full` vs `body-only`), prefixos de query/documento e pesos `vector-heavy` tambem nao destravaram esses erros
 - por isso, a trilha futura mais promissora deixa de ser "trocar provider de embedding" e passa a ser "rever chunking e reranking"
 - a rodada seguinte confirmou essa aposta: reforcos de chunking deterministico por sentenca, deduplicacao de contexto, reranking em segunda passada e um sinal interpretavel de `concept alias` destravaram os casos `product` e `learning` no corpus `curated`, elevando o baseline atualizado para `8/8` em `top1Hits` e `6/8` em `top1PathHits` sem depender de promover embeddings
+- a rodada posterior fechou tambem a lacuna de nota canônica restante com um reranking por nota mais forte, agregando sinais por `notePath`, diferenciando notas estruturais/operacionais de notas de referência e limitando boosts sem alinhamento semântico central. Com isso, `noop` e `token-hash` passaram a `8/8` tambem em `top1PathHits` no corpus `curated`, incluindo o caso `knowledge/relationship-map` acima de `knowledge/link-terminology`
 - a validacao manual no vault real repetiu o mesmo comportamento em `lexical-only`, com `customer learning assumption testing` apontando para `product/discovery-loop.md` e `support diagnosis during outage` priorizando `operations/incident-playbook.md`
 - por outro lado, a rodada sintetica em `small`, `medium` e `large` manteve a mesma leitura de custo: `token-hash` continua perto de `2.8x` o tamanho do indice baseline e `expanded-token-hash` perto de `4.5x`, sem um delta de relevancia que justifique promovê-los antes de novas evidencias
 - a infraestrutura do caminho `external-command` amadureceu nesta fase com cache em memoria, deduplicacao de requests concorrentes, retry para startup fria do Ollama, micro-batching em modo persistente e cache persistido de query embeddings. Isso reduziu parte do atrito operacional para experimentar embeddings reais locais sem mudar o contrato do app
@@ -238,6 +239,7 @@ Estado da investigacao atual:
 - o benchmark agora possui tambem casos manuais de ground truth e metricas como `top1PathHit` e `top3PathHit`, que ajudam a separar melhor acerto por dominio de acerto na nota canonica esperada
 - o corpus `curated` versionado passou a ser a referencia mais confiavel para decidir promocao, porque ele mostra com mais clareza os erros de nota canonica que o corpus sintetico escondia
 - a hipotese de que o problema estava so em metadados extras no embedding, em prefixos de input do modelo ou nos pesos do score hibrido ficou enfraquecida pelos experimentos atuais
+- a nova evidência reforça ainda mais essa leitura: o salto final para `8/8` em `top1PathHits` veio do reranking heurístico por nota canônica, nao de qualquer provider vetorial adicional
 
 ## Recomendacao pratica
 O melhor proximo passo nao e substituir o retrieval atual.
@@ -248,5 +250,6 @@ O melhor proximo passo e:
 - validar ganho real com benchmark sintetico e com avaliacao manual curada
 - usar o corpus `curated` para decidir qualquer promocao futura
 - priorizar, numa proxima etapa, experimentos de chunking e reranking antes de insistir em nova troca de provider
+- preservar o reranking por nota canônica como parte do baseline atual antes de reabrir a discussao sobre promocao de embeddings
 - so depois decidir se o modo hibrido vira padrao
 - encerrar a rodada atual de comparacao de providers locais reais enquanto nao houver um novo candidato com hipotese mais forte de ganho semântico

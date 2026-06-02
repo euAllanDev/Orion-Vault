@@ -290,6 +290,98 @@ Interfaces remain thin and infrastructure stays replaceable around the domain.
     }
   });
 
+  it('uses note-level reranking to prefer the canonical incident playbook over a terminology note', async () => {
+    const vaultRoot = await createVaultRoot();
+    const service = new SemanticRetrievalService();
+
+    try {
+      const notes: NoteSnapshotDto[] = [
+        {
+          id: 'incident-playbook',
+          absolutePath: path.join(vaultRoot, 'manual', 'operations-incident-playbook.md'),
+          relativePath: 'manual/operations-incident-playbook.md',
+          title: 'Incident Playbook',
+          tags: ['operations'],
+          content: `# Incident Playbook
+
+When the service becomes unstable, the operator narrows the fault, checks rollback safety, and restores a safe operating state without widening the blast radius.
+
+The playbook focuses on triage, rollback decisions, recovery steps, and practical actions for diagnosing service incidents under pressure.`
+        },
+        {
+          id: 'recovery-language',
+          absolutePath: path.join(vaultRoot, 'manual', 'operations-recovery-language.md'),
+          relativePath: 'manual/operations-recovery-language.md',
+          title: 'Recovery Language',
+          tags: ['operations'],
+          content: `# Recovery Language
+
+This note defines support diagnosis during outage communication, service recovery terminology, and failure handling wording.
+
+It is a vocabulary reference and not the operational playbook used to decide rollback or incident response steps.`
+        }
+      ];
+
+      const result = await service.retrieve(notes, {
+        vaultRoot,
+        query: 'support diagnosis during outage',
+        maxChunks: 4,
+        maxCharacters: 2200
+      });
+
+      expect(result.chunks[0]?.path).toBe('manual/operations-incident-playbook.md');
+      expect(result.chunks[0]?.rerankReasons).toContain('note concept support: operations-incident');
+    } finally {
+      await fs.rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('uses note-level reranking to prefer a relationship map over link terminology', async () => {
+    const vaultRoot = await createVaultRoot();
+    const service = new SemanticRetrievalService();
+
+    try {
+      const notes: NoteSnapshotDto[] = [
+        {
+          id: 'relationship-map',
+          absolutePath: path.join(vaultRoot, 'knowledge', 'relationship-map.md'),
+          relativePath: 'knowledge/relationship-map.md',
+          title: 'Relationship Map',
+          tags: ['knowledge'],
+          content: `# Relationship Map
+
+This note explains how separate notes become easier to navigate when recurring ideas are tied together through explicit references and meaningful connections.
+
+Its focus is building a map of related concepts so a person can move across the vault by idea, not only by folder or exact wording.`
+        },
+        {
+          id: 'link-terminology',
+          absolutePath: path.join(vaultRoot, 'knowledge', 'link-terminology.md'),
+          relativePath: 'knowledge/link-terminology.md',
+          title: 'Link Terminology',
+          tags: ['knowledge'],
+          content: `# Link Terminology
+
+This glossary lists backlinks, semantic links, graph view, relation labels, and common words used when describing note connections.
+
+It helps with naming, but it is not the note that teaches how to navigate knowledge through connected ideas.`
+        }
+      ];
+
+      const result = await service.retrieve(notes, {
+        vaultRoot,
+        query: 'linked ideas note relationships',
+        maxChunks: 6,
+        maxCharacters: 3000
+      });
+
+      expect(result.chunks[0]?.path).toBe('knowledge/relationship-map.md');
+      expect(result.chunks[0]?.rerankReasons).toContain('note structural-style signal');
+    } finally {
+      await fs.rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
   it('persists query embeddings across service instances to avoid recomputation between sessions', async () => {
     const vaultRoot = await createVaultRoot();
     const provider = new CountingQueryEmbeddingProvider();
