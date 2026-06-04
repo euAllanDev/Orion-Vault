@@ -64,6 +64,9 @@ Regras de comportamento:
 - a árvore deve refletir pastas vazias recém-criadas assim que o refresh local terminar
 - diálogos internos de criação, renomeação e movimento devem invalidar sessões anteriores para evitar callbacks acumulados
 - o título da nota aberta pode funcionar como ponto de rename inline, desde que a validação e a fronteira do vault permaneçam no backend
+- diálogos internos, menus contextuais e notificações locais podem ser modularizados separadamente, desde que preservem a mesma coordenação de sessão e o mesmo fechamento previsível das superfícies auxiliares
+- a orquestração de abertura do vault pode ser modularizada separadamente, desde que preserve o mesmo contrato de bootstrap e a mesma sincronização entre raiz visual e raiz realmente aberta
+- a composição entre módulos da interface deve evitar acesso antecipado a controllers ainda não inicializados; quando houver dependência cíclica prática, a ligação deve acontecer por callback tardio
 
 ## Estados
 - vazio: nenhum vault selecionado

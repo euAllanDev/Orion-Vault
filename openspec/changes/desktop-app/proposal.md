@@ -4,7 +4,7 @@ Status: draft
 Date: 2026-05-07
 
 ## Objetivo
-Criar um app desktop local-first em TypeScript para o Marika, com armazenamento no dispositivo do usuário, sem dependência de internet para uso, validação ou execução dos fluxos principais.
+Criar um app desktop local-first em TypeScript para o Orion Vault, com armazenamento no dispositivo do usuario, sem dependencia de internet para uso, validacao ou execucao dos fluxos principais.
 
 ## Problema
 A experiência atual depende de uma superfície web local e de um fluxo ainda fragmentado entre visualização, comandos e persistência. Para distribuição ao usuário final, o projeto precisa de um shell desktop simples, instalável e orientado ao vault local.

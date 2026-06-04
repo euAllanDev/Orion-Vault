@@ -79,6 +79,8 @@ O shell desktop deve reaproveitar o core local existente e expor a mesma frontei
 - A superfície principal de escrita deve permanecer visualmente contínua, sem molduras internas competindo com o fundo base `#131316`.
 - O terminal da IA precisa expor o contexto do app sem esconder o vault ativo; abrir no vault diretamente dificulta a descoberta do guia e dos comandos do produto.
 - O refresh do workspace não pode depender apenas de ações internas da UI quando o vault estiver sendo alterado por terminal local.
+- A modularização incremental do renderer não pode alterar os contratos de bootstrap, agenda, relações, workspace, overview, editor, graph, busca local, modelos, seleção de links, diálogos internos ou readiness do shell; ela deve apenas separar responsabilidades de apresentação, assistência, comandos de edição, histórico local, graph local, graph global e orquestração.
+- A composição do renderer não pode usar referências prematuras entre controllers que impeçam o registro dos handlers da interface ou deixem a aplicação presa na tela inicial.
 
 ## Cenários
 

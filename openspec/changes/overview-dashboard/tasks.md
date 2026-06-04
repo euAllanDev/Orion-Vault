@@ -5,3 +5,4 @@
 - [x] Adicionar card de resumo do vault
 - [x] Integrar gráficos visuais no canto do Overview
 - [x] Validar responsividade e consistência visual
+- [x] Registrar a extração do `overview dashboard` como módulo dedicado do renderer sem alterar o comportamento do Overview

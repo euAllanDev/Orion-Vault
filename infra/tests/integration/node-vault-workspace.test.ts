@@ -6,7 +6,7 @@ import { NodeVaultWorkspace } from '../../filesystem/workspace/node-vault-worksp
 
 describe('NodeVaultWorkspace', () => {
   it('creates, edits, renames, moves and deletes vault entries safely', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'marika-workspace-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'orion-workspace-'));
     const workspace = new NodeVaultWorkspace();
 
     try {
@@ -31,7 +31,7 @@ describe('NodeVaultWorkspace', () => {
   });
 
   it('rejects paths that escape the vault', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'marika-workspace-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'orion-workspace-'));
     const workspace = new NodeVaultWorkspace();
 
     try {
@@ -43,7 +43,7 @@ describe('NodeVaultWorkspace', () => {
   });
 
   it('rejects overwrite and missing file edits', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'marika-workspace-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'orion-workspace-'));
     const workspace = new NodeVaultWorkspace();
 
     try {

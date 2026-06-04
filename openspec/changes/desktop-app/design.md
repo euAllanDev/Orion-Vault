@@ -55,6 +55,13 @@ Na experiência desktop, o workspace deve ser a primeira superfície visível qu
 - criar uma pasta vazia deve atualizar a árvore no refresh seguinte, sem depender de abrir outra tela
 - a lista local de atividade e outros estados auxiliares não devem sugerir outro vault nem reidratar caminhos que não existam na árvore atual
 
+## Modularização incremental do renderer
+- o renderer desktop pode evoluir por extrações incrementais orientadas por intenção, mantendo `app.js` como composição principal da superfície
+- as extrações atuais cobrem `Modo dev`, `agenda`, `relations`, `workspace tree`, `workspace core`, `overview dashboard`, `editor presentation`, `editor assist`, `editor history`, `editor formatting`, `workspace graph`, `global graph`, `resource browser`, `ui shell` e `vault bootstrap`
+- cada módulo do renderer deve receber dependências explícitas e continuar reutilizando os contratos existentes de vault, agenda, relações, overview, editor e graph
+- modularizar não pode criar um caminho paralelo para bootstrap, escrita, refresh, serialização Markdown, undo/redo, rascunho local, autosave, comandos de formatação, busca local, seleção de links, uso de modelos, sessões de diálogo, readiness do shell ou navegação dos graphs fora das regras já formalizadas pelo shell desktop
+- quando um módulo depender de outro inicializado depois, a composição do renderer deve usar callback tardio ou wrapper equivalente, evitando referências prematuras que abortem o registro dos handlers da interface
+
 ## Diálogos internos
 - os diálogos internos de input precisam operar com apenas uma sessão ativa por vez
 - abrir um novo diálogo deve invalidar callbacks pendentes do anterior

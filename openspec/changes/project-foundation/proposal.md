@@ -4,7 +4,7 @@ Status: draft
 Date: 2026-05-06
 
 ## Objetivo
-Estabelecer a fundação técnica do projeto `Marika CLI Notes` com stack TypeScript, estrutura modular, tooling de qualidade e base documental compatível com OpenSpec e SDD.
+Estabelecer a fundacao tecnica do projeto `Orion Vault` com stack TypeScript, estrutura modular, tooling de qualidade e base documental compativel com OpenSpec e SDD.
 
 ## Problema
 O projeto ainda não possui uma base executável consistente para desenvolvimento, validação, documentação e evolução assistida por IA. Sem essa fundação, a implementação de features fica frágil, acoplada e difícil de validar.

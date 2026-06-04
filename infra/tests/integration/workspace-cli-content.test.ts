@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 const execFileAsync = promisify(execFile);
 
 async function createVaultRoot(): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), 'marika-workspace-cli-'));
+  return fs.mkdtemp(path.join(os.tmpdir(), 'orion-workspace-cli-'));
 }
 
 async function runCli(args: readonly string[]): Promise<void> {

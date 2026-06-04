@@ -28,3 +28,4 @@
 - O caso real corrigido no desktop mostrou que um workspace visualmente montado ainda pode estar sem vault ativo pronto.
 - O próximo agente deve tratar esse estado como `loading`, não como `ready`.
 - O próximo agente também deve evitar qualquer reintrodução de listeners acumulados em diálogos internos da interface.
+- O caso real mais recente também mostrou que referências prematuras entre controllers do renderer podem abortar a inicialização e deixar a UI sem navegação ou ações registradas.

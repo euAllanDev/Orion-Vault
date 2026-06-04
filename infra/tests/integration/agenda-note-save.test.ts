@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { startWebServer } from '../../../interfaces/web/server';
 
 async function createTempVault(): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), 'marika-agenda-'));
+  return fs.mkdtemp(path.join(os.tmpdir(), 'orion-agenda-'));
 }
 
 describe('agenda note api', () => {

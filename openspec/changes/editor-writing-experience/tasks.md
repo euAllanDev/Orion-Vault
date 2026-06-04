@@ -32,3 +32,7 @@
 ## Specs e documentação
 - [x] Registrar os novos comportamentos de escrita em spec dedicada
 - [x] Manter o vocabulário coerente com as demais specs do projeto
+- [x] Documentar a extração da camada visual do editor para módulo dedicado sem alterar serialização, histórico ou autosave
+- [x] Documentar a extração do editor assist para módulo dedicado sem alterar atalhos, menções, slash commands ou persistência
+- [x] Documentar a extração de histórico local, rascunho e autosave para módulo dedicado sem alterar o contrato de salvamento
+- [x] Documentar a extração dos comandos de formatação do editor para módulo dedicado sem alterar atalhos ou Markdown persistido

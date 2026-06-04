@@ -32,6 +32,10 @@ O editor da vault desktop deve acelerar a escrita de notas Markdown com comandos
 26. O `Tab` deve continuar útil em texto comum, inserindo recuo textual quando a seleção atual não representar lista ou bloco estrutural equivalente.
 27. O editor deve exibir um indicador discreto de estado para rascunho local, salvando ou sincronizado.
 28. O editor deve disparar autosave local-first após alguns segundos de inatividade de digitação, sem exigir ação manual do usuário.
+29. A camada visual de apresentação do editor pode ser modularizada separadamente da persistência, desde que continue renderizando a mesma estrutura Markdown e preserve os contratos existentes de histórico, rascunho e salvamento.
+30. A camada de assistência inline do editor pode ser modularizada separadamente, desde que preserve os mesmos gatilhos de slash command e menção, a mesma navegação por teclado e a mesma aplicação Markdown sobre o conteúdo persistido.
+31. A camada de histórico local, rascunho e autosave pode ser modularizada separadamente, desde que preserve a mesma sequência de salvamento, o mesmo controle de concorrência e a mesma fonte de verdade em Markdown persistido.
+32. A camada de comandos de formatação do editor pode ser modularizada separadamente, desde que preserve os mesmos atalhos, as mesmas transformações de seleção e a mesma saída Markdown persistida.
 
 ## Pontos de atenção
 - A superfície DOM do editor não pode romper a persistência atual em Markdown no filesystem.
@@ -45,6 +49,10 @@ O editor da vault desktop deve acelerar a escrita de notas Markdown com comandos
 - O histórico local não pode se misturar entre notas diferentes quando o usuário troca de arquivo no workspace.
 - O rascunho local não pode sobreviver após um salvamento bem-sucedido da mesma nota.
 - O autosave não pode competir com um salvamento manual em andamento nem gerar múltiplas gravações simultâneas da mesma nota.
+- A modularização da apresentação visual do editor não pode criar um pipeline paralelo de serialização nem mover a fonte de verdade para fora do Markdown persistido.
+- A modularização do editor assist não pode mover a lógica de persistência para fora do fluxo principal nem alterar a prioridade dos atalhos e confirmações já previstas para slash commands e menções.
+- A modularização de histórico, rascunho e autosave não pode alterar o bloqueio de gravações simultâneas nem perder o vínculo entre seleção restaurada, estado visual e conteúdo Markdown salvo.
+- A modularização dos comandos de formatação não pode alterar a semântica dos atalhos locais nem gerar uma sintaxe Markdown diferente daquela já reconhecida pelo restante do editor.
 
 ## Cenários
 
@@ -146,3 +154,27 @@ Given o usuário está digitando em uma nota aberta
 When ele para por alguns segundos sem novas mudanças
 Then o editor salva automaticamente a nota no vault ativo
 And o rascunho local correspondente é limpo após o salvamento bem-sucedido
+
+### Cenário 18: apresentação visual do editor pode ser extraída sem mudar o comportamento
+Given a interface desktop modulariza a camada visual do editor em um módulo dedicado
+When uma nota Markdown é aberta, lida ou editada na superfície principal
+Then headings, listas, checklists, citações, divisores e links continuam renderizados com a mesma leitura visual
+And o conteúdo persistido continua sendo o mesmo Markdown usado por histórico, rascunho e salvamento
+
+### Cenário 19: editor assist pode ser extraído sem mudar o comportamento
+Given a interface desktop modulariza slash commands e menções em um módulo dedicado de assistência inline
+When o usuário digita `/` no início da linha ou `@` em contexto de menção dentro de uma nota
+Then o editor continua exibindo o mesmo menu inline com navegação por teclado e clique
+And a opção confirmada continua aplicando o mesmo Markdown persistido no fluxo principal do editor
+
+### Cenário 20: histórico e autosave podem ser extraídos sem mudar o comportamento
+Given a interface desktop modulariza histórico local, rascunho e autosave em um módulo dedicado
+When o usuário edita, desfaz, refaz ou aguarda o autosave de uma nota aberta
+Then o editor continua restaurando seleção e conteúdo compatíveis com a superfície visual atual
+And o salvamento continua usando o mesmo fluxo principal e o mesmo Markdown persistido no vault ativo
+
+### Cenário 21: comandos de formatação podem ser extraídos sem mudar o comportamento
+Given a interface desktop modulariza os comandos de formatação do editor em um módulo dedicado
+When o usuário aplica atalhos de negrito, headings, listas, checklist, código, Enter estrutural ou Tab de indentação
+Then o editor continua produzindo as mesmas transformações sobre a seleção atual
+And o resultado persistido continua sendo o mesmo Markdown compatível com o restante do fluxo de escrita

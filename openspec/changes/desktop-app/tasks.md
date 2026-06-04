@@ -40,6 +40,7 @@
 - [ ] Garantir operação local-first sem internet obrigatória
 - [ ] Cobrir erros de configuração e fronteira com mensagens controladas
 - [x] Atualizar specs conforme o comportamento desktop evoluir
+- [x] Consolidar em spec a modularização incremental do renderer desktop, incluindo extrações de `Modo dev`, `agenda`, `relations`, `workspace tree`, `workspace core`, `overview dashboard`, `editor presentation`, `editor assist`, `editor history`, `editor formatting`, `workspace graph`, `global graph`, `resource browser`, `ui shell` e `vault bootstrap`
 
 ## Notes
 - O bug mais importante encontrado no fluxo desktop não era troca real de vault, mas bootstrap tardio combinado com ações de criação liberadas cedo demais.

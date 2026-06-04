@@ -1,7 +1,7 @@
 # Comandos da Aplicação
 
 ## Propósito
-Este arquivo define os comandos oficiais necessários para instalar, validar, executar e operar a aplicação `Marika CLI Notes`.
+Este arquivo define os comandos oficiais necessarios para instalar, validar, executar e operar a aplicacao `Orion Vault`.
 
 Ele deve ser usado como referência canônica para a IA e para o processo de mudança, garantindo que todos os comandos exigidos para rodar a aplicação estejam documentados de forma explícita e versionável.
 
