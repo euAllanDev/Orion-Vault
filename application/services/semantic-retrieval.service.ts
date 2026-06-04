@@ -70,6 +70,7 @@ type NoteRerankSummary = {
   readonly actionSignalHits: number;
   readonly structuralSignalHits: number;
   readonly titleReferenceSignalHits: number;
+  readonly titleActionSignalHits: number;
   readonly titleStructuralSignalHits: number;
 };
 
@@ -78,7 +79,9 @@ type NoteRerankResult = {
   readonly reasons: readonly string[];
 };
 
-const referenceStyleTokens = new Set(['glossary', 'terminology', 'vocabulary', 'wording', 'reference', 'definitions', 'naming']);
+const noteRerankWeight = 2;
+
+const referenceStyleTokens = new Set(['glossary', 'terminology', 'vocabulary', 'wording', 'reference', 'definitions', 'naming', 'language', 'term', 'terms']);
 const actionStyleTokens = new Set(['playbook', 'runbook', 'checklist', 'workflow', 'guide', 'steps', 'triage', 'rollback', 'practical', 'actions']);
 const structuralStyleTokens = new Set(['map', 'maps', 'navigate', 'navigation', 'structure', 'structured', 'path', 'paths', 'connected', 'connections', 'clusters', 'cluster', 'across']);
 
@@ -184,7 +187,7 @@ function calculateTokenOverlap(left: ReadonlySet<string>, right: ReadonlySet<str
 
 function isNearDuplicateChunk(
   candidate: RetrievalChunkDto,
-  selected: readonly Array<{ normalizedText: string; tokenSet: ReadonlySet<string> }>
+  selected: ReadonlyArray<{ normalizedText: string; tokenSet: ReadonlySet<string> }>
 ): boolean {
   const candidateSignature = buildChunkDuplicateSignature(candidate.text);
   if (!candidateSignature.normalizedText) {
@@ -506,7 +509,7 @@ function rerankChunk(
 }
 
 function buildNoteRerankSummaries(
-  items: readonly Array<{ chunk: RetrievalChunkDto; rerank: ChunkRerankResult }>
+  items: ReadonlyArray<{ chunk: RetrievalChunkDto; rerank: ChunkRerankResult }>
 ): ReadonlyMap<string, NoteRerankSummary> {
   const summaries = new Map<string, {
     chunkCount: number;
@@ -523,6 +526,12 @@ function buildNoteRerankSummaries(
     conceptAliasEvidenceHits: number;
     conceptAliasPacks: Set<string>;
     noteTokenCount: number;
+    referenceSignalHits: number;
+    actionSignalHits: number;
+    structuralSignalHits: number;
+    titleReferenceSignalHits: number;
+    titleActionSignalHits: number;
+    titleStructuralSignalHits: number;
   }>();
 
   for (const item of items) {
@@ -545,6 +554,7 @@ function buildNoteRerankSummaries(
       actionSignalHits: 0,
       structuralSignalHits: 0,
       titleReferenceSignalHits: 0,
+      titleActionSignalHits: 0,
       titleStructuralSignalHits: 0
     };
 
@@ -566,6 +576,7 @@ function buildNoteRerankSummaries(
     current.actionSignalHits += noteStyleTokens.filter((token) => actionStyleTokens.has(token)).length;
     current.structuralSignalHits += noteStyleTokens.filter((token) => structuralStyleTokens.has(token)).length;
     current.titleReferenceSignalHits += titleTokens.filter((token) => referenceStyleTokens.has(token)).length;
+    current.titleActionSignalHits += titleTokens.filter((token) => actionStyleTokens.has(token)).length;
     current.titleStructuralSignalHits += titleTokens.filter((token) => structuralStyleTokens.has(token)).length;
 
     for (const term of item.chunk.matchedTerms) {
@@ -599,6 +610,7 @@ function buildNoteRerankSummaries(
     actionSignalHits: summary.actionSignalHits,
     structuralSignalHits: summary.structuralSignalHits,
     titleReferenceSignalHits: summary.titleReferenceSignalHits,
+    titleActionSignalHits: summary.titleActionSignalHits,
     titleStructuralSignalHits: summary.titleStructuralSignalHits
   }]));
 }
@@ -608,10 +620,18 @@ function rerankNote(
   queryTokens: readonly string[],
   focusPath?: string
 ): NoteRerankResult {
+  const queryReferenceHits = queryTokens.filter((token) => referenceStyleTokens.has(token)).length;
+  const queryActionHits = queryTokens.filter((token) => actionStyleTokens.has(token)).length;
+  const queryStructuralHits = queryTokens.filter((token) => structuralStyleTokens.has(token)).length;
   const coverageRatio = queryTokens.length > 0
     ? summary.matchedTerms.size / queryTokens.length
     : 0;
   const hasCoreAlignment = summary.matchedTerms.size > 0 || summary.conceptAliasScore > 0;
+  const structuralAligned = queryStructuralHits > 0 || summary.conceptAliasPacks.has('knowledge-links');
+  const actionAligned = queryActionHits > 0 || summary.conceptAliasPacks.has('operations-incident');
+  const structuralOverreach = !structuralAligned && summary.structuralSignalHits > 0 && summary.titleStructuralSignalHits > 0 && summary.conceptAliasScore === 0;
+  const operationalReferencePenalty = actionAligned && summary.referenceSignalHits > 0 && summary.actionSignalHits === 0;
+  const operationalTitlePenalty = actionAligned && summary.titleReferenceSignalHits > 0 && summary.titleActionSignalHits === 0;
   const reasons: string[] = [];
 
   if (summary.conceptAliasPacks.size > 0) {
@@ -632,17 +652,29 @@ function rerankNote(
   if (summary.referenceSignalHits > 0) {
     reasons.push('note reference-style signal');
   }
-  if (summary.actionSignalHits > 0) {
+  if (summary.actionSignalHits > 0 && actionAligned) {
     reasons.push('note action-style signal');
   }
-  if (summary.structuralSignalHits > 0) {
+  if (summary.structuralSignalHits > 0 && structuralAligned) {
     reasons.push('note structural-style signal');
   }
   if (summary.titleReferenceSignalHits > 0) {
     reasons.push('note reference title signal');
   }
-  if (summary.titleStructuralSignalHits > 0) {
+  if (summary.titleActionSignalHits > 0 && actionAligned) {
+    reasons.push('note action title signal');
+  }
+  if (summary.titleStructuralSignalHits > 0 && structuralAligned) {
     reasons.push('note structural title signal');
+  }
+  if (structuralOverreach) {
+    reasons.push('note structural overreach guard');
+  }
+  if (operationalReferencePenalty) {
+    reasons.push('note operational-reference guard');
+  }
+  if (operationalTitlePenalty) {
+    reasons.push('note operational title guard');
   }
   if (!hasCoreAlignment) {
     reasons.push('note weak alignment guard');
@@ -662,11 +694,16 @@ function rerankNote(
       + Math.min(0.08, summary.pathHits * 0.015)
       + (summary.noteTokenCount >= 70 ? 0.8 : summary.noteTokenCount >= 35 ? 0.35 : 0)
       + (focusPath && summary.path === focusPath ? 0.2 : 0)
-      + Math.min(2, summary.actionSignalHits * 0.4)
-      + Math.min(1.8, summary.structuralSignalHits * 0.3)
-      + Math.min(1.6, summary.titleStructuralSignalHits * 0.8)
+      + (actionAligned ? Math.min(3, summary.actionSignalHits * 0.7) : 0)
+      + (actionAligned ? Math.min(3.2, summary.titleActionSignalHits * 1.6) : 0)
+      + (structuralAligned ? Math.min(1.8, summary.structuralSignalHits * 0.3) : 0)
+      + (structuralAligned ? Math.min(1.6, summary.titleStructuralSignalHits * 0.8) : 0)
       - Math.min(1.4, summary.referenceSignalHits * 0.35)
       - Math.min(1.8, summary.titleReferenceSignalHits * 0.9)
+      - (structuralOverreach ? Math.min(1.8, summary.structuralSignalHits * 0.22) + Math.min(1.2, summary.titleStructuralSignalHits * 0.55) : 0)
+      - (queryReferenceHits === 0 && summary.titleReferenceSignalHits > 0 && summary.conceptAliasScore === 0 ? Math.min(0.9, summary.titleReferenceSignalHits * 0.35) : 0)
+      - (operationalReferencePenalty ? Math.min(2.4, summary.referenceSignalHits * 0.45) + Math.min(1.8, summary.titleReferenceSignalHits * 0.9) : 0)
+      - (operationalTitlePenalty ? Math.min(2.2, summary.titleReferenceSignalHits * 1.1) : 0)
     ) * (hasCoreAlignment ? 1 : 0.08),
     reasons
   };
@@ -687,7 +724,7 @@ function rerankChunks(
     const noteRerank = rerankNote(buildNoteRerankSummaries([{ chunk: chunks[0], rerank }]).get(chunks[0].path)!, queryTokens, focusPath);
     return [{
       ...chunks[0],
-      rerankScore: rerank.score + noteRerank.score,
+      rerankScore: rerank.score + (noteRerank.score * noteRerankWeight),
       rerankReasons: [...new Set([...rerank.reasons, ...noteRerank.reasons])]
     }];
   }
@@ -705,14 +742,17 @@ function rerankChunks(
     .sort((left, right) => {
       const leftNoteScore = noteReranks.get(left.chunk.path)?.score ?? 0;
       const rightNoteScore = noteReranks.get(right.chunk.path)?.score ?? 0;
-      return rightNoteScore - leftNoteScore
+      const leftCombinedScore = left.rerank.score + (leftNoteScore * noteRerankWeight);
+      const rightCombinedScore = right.rerank.score + (rightNoteScore * noteRerankWeight);
+      return rightCombinedScore - leftCombinedScore
+        || rightNoteScore - leftNoteScore
         || right.rerank.score - left.rerank.score
         || right.chunk.score - left.chunk.score
         || left.chunk.path.localeCompare(right.chunk.path);
     })
     .map((item) => ({
       ...item.chunk,
-      rerankScore: item.rerank.score + (noteReranks.get(item.chunk.path)?.score ?? 0),
+      rerankScore: item.rerank.score + ((noteReranks.get(item.chunk.path)?.score ?? 0) * noteRerankWeight),
       rerankReasons: [...new Set([
         ...item.rerank.reasons,
         ...(noteReranks.get(item.chunk.path)?.reasons ?? [])
@@ -808,7 +848,7 @@ export class SemanticRetrievalService {
     }
 
     const fingerprint = normalizeText(query);
-    const providerKey = this.embeddingProvider.providerId;
+    const providerKey = this.embeddingProvider.cacheKey ?? this.embeddingProvider.providerId;
     const indexPath = path.join(vaultRoot, '.orion', 'index', 'semantic-query-embeddings.json');
     const cacheKey = `${vaultRoot}::${providerKey}`;
 
@@ -824,7 +864,13 @@ export class SemanticRetrievalService {
       return { ...cached, vector: [...cached.vector] };
     }
 
-    const computed = await this.embeddingProvider.embedQuery({ text: query });
+    let computed = null;
+    try {
+      computed = await this.embeddingProvider.embedQuery({ text: query });
+    } catch {
+      computed = null;
+    }
+
     if (!computed || computed.vector.length === 0) {
       return null;
     }

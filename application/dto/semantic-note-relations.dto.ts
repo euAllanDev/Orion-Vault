@@ -24,6 +24,13 @@ export interface RelatedNoteDto {
   readonly intensity: RelationIntensity;
   readonly signals: RelationSignalsDto;
   readonly reasons: readonly string[];
+  readonly evidenceChunks?: readonly {
+    readonly chunkId: string;
+    readonly heading?: string;
+    readonly snippet: string;
+    readonly score: number;
+    readonly matchedTerms: readonly string[];
+  }[];
   readonly kind: 'manual' | 'inferred';
 }
 

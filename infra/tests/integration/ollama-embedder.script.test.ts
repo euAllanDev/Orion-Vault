@@ -122,8 +122,28 @@ describe('ollama-embedder script', () => {
     });
   });
 
+  it('changes the provider cache key when the Ollama model changes under the same command', async () => {
+    const previousModel = process.env.OLLAMA_EMBED_MODEL;
+
+    try {
+      process.env.OLLAMA_EMBED_MODEL = 'nomic-embed-text';
+      const first = new ExternalCommandEmbeddingProvider(createPersistentCommand());
+
+      process.env.OLLAMA_EMBED_MODEL = 'mxbai-embed-large';
+      const second = new ExternalCommandEmbeddingProvider(createPersistentCommand());
+
+      expect(first.cacheKey).not.toBe(second.cacheKey);
+    } finally {
+      if (previousModel === undefined) {
+        delete process.env.OLLAMA_EMBED_MODEL;
+      } else {
+        process.env.OLLAMA_EMBED_MODEL = previousModel;
+      }
+    }
+  });
+
   it('retries when the first embed request fails before Ollama is ready', async () => {
-    const requests = [];
+    const requests: string[] = [];
     let requestCount = 0;
     const server = createServer(async (request, response) => {
       if (request.method !== 'POST' || request.url !== '/api/embed') {
@@ -139,7 +159,7 @@ describe('ollama-embedder script', () => {
         return;
       }
 
-      const chunks = [];
+      const chunks: Buffer[] = [];
       for await (const chunk of request) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
@@ -153,7 +173,7 @@ describe('ollama-embedder script', () => {
       }));
     });
 
-    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     if (!address || typeof address === 'string') {
       throw new Error('Failed to bind fake Ollama server.');
@@ -185,7 +205,7 @@ describe('ollama-embedder script', () => {
         process.env.OLLAMA_EMBED_MODEL = previousModel;
       }
 
-      await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
   });
 });

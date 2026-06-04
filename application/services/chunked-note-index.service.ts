@@ -18,10 +18,12 @@ type PersistedChunk = {
   readonly embeddingDimensions?: number;
   readonly embedding?: readonly number[];
   readonly embeddingFingerprint?: string;
+  readonly embeddingProviderKey?: string;
 };
 
 type PersistedNoteEntry = {
   readonly fingerprint: string;
+  readonly chunkingStrategy?: ChunkingStrategy;
   readonly chunks: readonly PersistedChunk[];
 };
 
@@ -55,6 +57,30 @@ export interface ChunkedNoteIndex {
 
 export interface ChunkedNoteIndexServiceOptions {
   readonly excludedPaths?: readonly string[];
+  readonly chunkingStrategy?: ChunkingStrategy;
+}
+
+export type ChunkingStrategy = 'section-balanced' | 'sentence-tight';
+
+type ChunkingConfig = {
+  readonly sentenceWindowTokens: number;
+  readonly chunkMaxTokens: number;
+};
+
+function resolveChunkingConfig(strategy: ChunkingStrategy): ChunkingConfig {
+  switch (strategy) {
+    case 'sentence-tight':
+      return {
+        sentenceWindowTokens: 80,
+        chunkMaxTokens: 110
+      };
+    case 'section-balanced':
+    default:
+      return {
+        sentenceWindowTokens: 140,
+        chunkMaxTokens: 180
+      };
+  }
 }
 
 function normalizeText(value: string): string {
@@ -258,12 +284,17 @@ function splitIntoSections(note: NoteSnapshotDto): Array<{ heading?: string; tex
   return sections.length > 0 ? sections : [{ heading: note.title, text: note.content.trim() }];
 }
 
-function chunkSection(note: NoteSnapshotDto, heading: string | undefined, sectionText: string): readonly PersistedChunk[] {
+function chunkSection(
+  note: NoteSnapshotDto,
+  heading: string | undefined,
+  sectionText: string,
+  config: ChunkingConfig
+): readonly PersistedChunk[] {
   const paragraphs = sectionText
     .split(/\n\s*\n/g)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean);
-  const paragraphWindows = paragraphs.flatMap((paragraph) => splitParagraphIntoSentenceWindows(paragraph, 140));
+  const paragraphWindows = paragraphs.flatMap((paragraph) => splitParagraphIntoSentenceWindows(paragraph, config.sentenceWindowTokens));
   const chunks: PersistedChunk[] = [];
   let currentParts: string[] = [];
   let currentTokens = 0;
@@ -292,7 +323,7 @@ function chunkSection(note: NoteSnapshotDto, heading: string | undefined, sectio
 
   for (const paragraph of paragraphWindows) {
     const paragraphTokens = tokenize(paragraph).length;
-    if (currentTokens > 0 && currentTokens + paragraphTokens > 180) {
+    if (currentTokens > 0 && currentTokens + paragraphTokens > config.chunkMaxTokens) {
       flush();
     }
 
@@ -319,9 +350,10 @@ function chunkSection(note: NoteSnapshotDto, heading: string | undefined, sectio
   return chunks;
 }
 
-function buildChunksForNote(note: NoteSnapshotDto): readonly PersistedChunk[] {
+function buildChunksForNote(note: NoteSnapshotDto, strategy: ChunkingStrategy): readonly PersistedChunk[] {
   const sections = splitIntoSections(note);
-  return sections.flatMap((section) => chunkSection(note, section.heading, section.text));
+  const config = resolveChunkingConfig(strategy);
+  return sections.flatMap((section) => chunkSection(note, section.heading, section.text, config));
 }
 
 async function readPersistedIndex(indexPath: string): Promise<PersistedIndex | null> {
@@ -344,16 +376,20 @@ function embeddingsSatisfyProvider(chunks: readonly PersistedChunk[], provider?:
     return true;
   }
 
-  return chunks.every((chunk) => chunk.embeddingModel === provider.providerId && Array.isArray(chunk.embedding) && chunk.embedding.length > 0);
+  const providerKey = provider.cacheKey ?? provider.providerId;
+  return chunks.every((chunk) => chunk.embeddingProviderKey === providerKey && Array.isArray(chunk.embedding) && chunk.embedding.length > 0);
 }
 
 export class ChunkedNoteIndexService {
   private readonly indexFolderName = '.orion';
+  private readonly chunkingStrategy: ChunkingStrategy;
 
   constructor(
     private readonly embeddingProvider?: EmbeddingProviderPort,
     private readonly options: ChunkedNoteIndexServiceOptions = {}
-  ) {}
+  ) {
+    this.chunkingStrategy = options.chunkingStrategy ?? 'section-balanced';
+  }
 
   async build(vaultRoot: string, notes: readonly NoteSnapshotDto[]): Promise<ChunkedNoteIndex> {
     const indexPath = path.join(vaultRoot, this.indexFolderName, 'index', 'semantic-chunks.json');
@@ -366,12 +402,15 @@ export class ChunkedNoteIndexService {
     for (const note of eligibleNotes) {
       const fingerprint = buildFingerprint(note);
       const previousEntry = previous?.notes[note.relativePath];
-      const chunks = previousEntry?.fingerprint === fingerprint && embeddingsSatisfyProvider(previousEntry.chunks, this.embeddingProvider)
+      const chunks = previousEntry?.fingerprint === fingerprint
+        && previousEntry.chunkingStrategy === this.chunkingStrategy
+        && embeddingsSatisfyProvider(previousEntry.chunks, this.embeddingProvider)
         ? previousEntry.chunks
-        : await this.enrichChunksWithEmbeddings(note, buildChunksForNote(note), previousEntry?.chunks);
+        : await this.enrichChunksWithEmbeddings(note, buildChunksForNote(note, this.chunkingStrategy), previousEntry?.chunks);
 
       notesRecord[note.relativePath] = {
         fingerprint,
+        chunkingStrategy: this.chunkingStrategy,
         chunks
       };
     }
@@ -422,9 +461,10 @@ export class ChunkedNoteIndexService {
       return chunks;
     }
 
+    const providerKey = this.embeddingProvider.cacheKey ?? this.embeddingProvider.providerId;
     const reusableChunks = new Map<string, PersistedChunk>();
     for (const previousChunk of previousChunks) {
-      if (previousChunk.embeddingModel !== this.embeddingProvider.providerId || !Array.isArray(previousChunk.embedding) || previousChunk.embedding.length === 0) {
+      if (previousChunk.embeddingProviderKey !== providerKey || !Array.isArray(previousChunk.embedding) || previousChunk.embedding.length === 0) {
         continue;
       }
 
@@ -443,20 +483,26 @@ export class ChunkedNoteIndexService {
           embeddingVersion: reusableChunk.embeddingVersion,
           embeddingDimensions: reusableChunk.embeddingDimensions,
           embedding: reusableChunk.embedding,
-          embeddingFingerprint: fingerprint
+          embeddingFingerprint: fingerprint,
+          embeddingProviderKey: providerKey
         });
         continue;
       }
 
-      const embedding = await this.embeddingProvider.embedChunk({
-        chunkId: chunk.chunkId,
-        notePath: note.relativePath,
-        text: chunk.text,
-        title: chunk.title,
-        heading: chunk.heading,
-        tags: chunk.tags,
-        fingerprint
-      });
+      let embedding = null;
+      try {
+        embedding = await this.embeddingProvider.embedChunk({
+          chunkId: chunk.chunkId,
+          notePath: note.relativePath,
+          text: chunk.text,
+          title: chunk.title,
+          heading: chunk.heading,
+          tags: chunk.tags,
+          fingerprint
+        });
+      } catch {
+        embedding = null;
+      }
 
       enriched.push(embedding
         ? {
@@ -465,7 +511,8 @@ export class ChunkedNoteIndexService {
             embeddingVersion: embedding.version,
             embeddingDimensions: embedding.dimensions,
             embedding: [...embedding.vector],
-            embeddingFingerprint: embedding.fingerprint
+            embeddingFingerprint: embedding.fingerprint,
+            embeddingProviderKey: providerKey
           }
         : chunk);
     }

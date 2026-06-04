@@ -21,6 +21,8 @@ O sistema deve manter um índice semântico local e persistente por chunks de no
 15. O sistema deve expor de forma explícita o modo de retrieval efetivamente usado, como `lexical-only` ou `hybrid`, em respostas estruturadas ou diagnósticos equivalentes.
 16. O sistema pode aceitar providers locais de embeddings plugáveis por configuração explícita, incluindo comandos externos locais, sem tornar esse provider o padrão automaticamente.
 17. Providers vetoriais experimentais só devem ser promovidos além de modo experimental quando benchmarks repetíveis mostrarem ganho real de relevância com custo local aceitável.
+18. O reaproveitamento de embeddings persistidos deve considerar a identidade efetiva do provider configurado, incluindo mudanças relevantes de modelo, versão, dimensões ou configuração externa que alterem o vetor produzido.
+19. Se um provider externo local ficar pendurado sem responder, o sistema deve encerrar a tentativa em tempo razoável e continuar conseguindo operar em `lexical-only`.
 
 ## Pontos de atenção
 - O índice precisa ser leve o suficiente para não degradar a experiência desktop em vaults comuns.
@@ -86,6 +88,19 @@ Given existe um provider vetorial experimental local
 When o time executa o benchmark repetível de embeddings em vaults pequeno, médio e maior
 Then a promoção desse provider depende de ganho claro em consultas conceituais
 And depende também de custo local aceitável de latência e tamanho de índice
+
+### Cenário 10: mudança de modelo invalida embeddings persistidos
+Given o índice local já possui embeddings persistidos para um provider externo configurado
+When a identidade efetiva desse provider muda, como em troca de modelo ou configuração vetorial relevante
+Then o sistema não reaproveita silenciosamente os vetores antigos
+And os embeddings e caches de query passam a ser recalculados para a nova identidade
+
+### Cenário 11: comando externo pendurado não bloqueia retrieval
+Given o app está configurado para usar um provider local externo de embeddings
+When esse comando inicia mas não devolve resposta válida em tempo razoável
+Then a tentativa vetorial é encerrada
+And o retrieval continua funcionando com o ranking lexical e estrutural atual
+And o modo efetivo exposto ao consumidor permanece `lexical-only`
 
 ## Refinamento futuro
 - suportar políticas configuráveis por pasta, tag e tipo de nota

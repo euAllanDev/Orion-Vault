@@ -22,6 +22,7 @@ export interface LocalQueryEmbeddingInput {
 
 export interface EmbeddingProviderPort {
   readonly providerId: string;
+  readonly cacheKey?: string;
   embedChunk(input: LocalChunkEmbeddingInput): Promise<LocalEmbeddingVector | null>;
   embedQuery(input: LocalQueryEmbeddingInput): Promise<LocalEmbeddingVector | null>;
 }

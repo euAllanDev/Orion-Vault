@@ -26,6 +26,11 @@
       "tags": ["product", "curated-benchmark"]
     },
     {
+      "id": "product-research-vocabulary",
+      "relativePath": "product/research-vocabulary.md",
+      "tags": ["product", "curated-benchmark", "distractor"]
+    },
+    {
       "id": "learning-practice-routine",
       "relativePath": "learning/practice-routine.md",
       "tags": ["learning", "curated-benchmark"]
@@ -91,6 +96,27 @@
       "expectedPathPrefix": "product/discovery-loop"
     },
     {
+      "label": "curated-chunk-architecture-runtime-boundary",
+      "query": "keep business policy independent from transport and storage details",
+      "expectedDomain": "architecture",
+      "queryType": "hard-conceptual",
+      "expectedPathPrefix": "architecture/runtime-guidance"
+    },
+    {
+      "label": "curated-chunk-operations-blast-radius",
+      "query": "restore service safely without widening the blast radius",
+      "expectedDomain": "operations",
+      "queryType": "hard-conceptual",
+      "expectedPathPrefix": "operations/incident-playbook"
+    },
+    {
+      "label": "curated-chunk-product-uncertainty",
+      "query": "reduce uncertainty before expanding a solution",
+      "expectedDomain": "product",
+      "queryType": "hard-conceptual",
+      "expectedPathPrefix": "product/discovery-loop"
+    },
+    {
       "label": "curated-hard-learning",
       "query": "memory retention knowledge reinforcement",
       "expectedDomain": "learning",
@@ -100,6 +126,13 @@
     {
       "label": "curated-hard-knowledge",
       "query": "connected ideas across notes",
+      "expectedDomain": "knowledge",
+      "queryType": "hard-conceptual",
+      "expectedPathPrefix": "knowledge/relationship-map"
+    },
+    {
+      "label": "curated-chunk-knowledge-navigation",
+      "query": "move across notes by idea instead of folder naming",
       "expectedDomain": "knowledge",
       "queryType": "hard-conceptual",
       "expectedPathPrefix": "knowledge/relationship-map"

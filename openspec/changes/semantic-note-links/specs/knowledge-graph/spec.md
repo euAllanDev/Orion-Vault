@@ -26,6 +26,8 @@ O sistema deve oferecer um graph global local-first para explorar notas e pastas
 20. Quando não houver imagem associada à nota, a visualização deve conseguir representar a nota com título, cor, textura ou outro tratamento local equivalente.
 21. A representação visual inicial das notas no graph deve ser híbrida: em repouso cada nota aparece como nó compacto com rótulo implícito, e ao ganhar foco ela revela informações textuais como título e resumo curto.
 22. O estado abstrato da nota deve priorizar legibilidade da malha global, enquanto o estado em foco deve priorizar compreensão e navegação da entidade selecionada.
+23. A implementação do graph local do workspace e dos controles da surface de relações pode ser modularizada separadamente, desde que preserve a mesma navegação por clique, zoom, drag e abertura de nota ou pasta dentro do vault ativo.
+24. A implementação principal do graph global por ilhas e de seus handlers de foco, hover, drag, zoom e overlay pode ser modularizada separadamente, desde que preserve a mesma navegação e o mesmo foco visual dentro do vault ativo.
 
 ## Pontos de atenção
 - Um graph global totalmente conectado tende a perder valor; a visualização precisa controlar limiares, foco e densidade.
@@ -35,6 +37,8 @@ O sistema deve oferecer um graph global local-first para explorar notas e pastas
 - A composição por ilhas deve continuar subordinada ao modelo de navegação por notas, não o contrário.
 - O graph precisa funcionar com dados locais da nota, sem depender de catálogo de imagens externas para parecer completo.
 - Exibir texto completo em todos os nós ao mesmo tempo tende a poluir a cena; o graph deve revelar informação textual principalmente no foco.
+- A modularização do graph local não pode alterar o contrato de navegação do workspace nem criar um fluxo paralelo de abertura fora do vault ativo.
+- A modularização do graph global não pode alterar o contrato de foco, abertura, overlay e navegação por ilhas nem criar uma superfície paralela desconectada do vault ativo.
 
 ## Cenários
 
@@ -111,6 +115,18 @@ Given um vault cujas notas não possuem imagens associadas
 When o graph global é renderizado
 Then a interface ainda representa as notas de forma visualmente útil
 And não depende de imagens externas para navegar o conteúdo
+
+### Cenário 8: graph local do workspace pode ser extraído sem mudar o comportamento
+Given a interface desktop modulariza o graph local do workspace e os controles da surface de relações em um módulo dedicado
+When o usuário alterna entre overview e graph, navega por clique ou aplica zoom e drag no graph local
+Then a interface continua exibindo a mesma rede local da nota ou pasta ativa
+And a abertura de nota ou pasta continua usando o mesmo fluxo principal do workspace
+
+### Cenário 9: graph global por ilhas pode ser extraído sem mudar o comportamento
+Given a interface desktop modulariza a surface principal do graph global por ilhas em um módulo dedicado
+When o usuário foca notas, assuntos, overlay, zoom ou drag dentro do graph global
+Then a interface continua exibindo a mesma leitura por ilhas e o mesmo foco visual do contexto ativo
+And a abertura de nota ou pasta continua usando o mesmo fluxo principal do vault ativo
 
 ## Refinamento futuro
 - adicionar modos de cluster por tema, tag ou root semântico

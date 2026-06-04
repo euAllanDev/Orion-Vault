@@ -18,6 +18,7 @@ IA e agentes devem receber apenas o contexto local mais relevante para uma pergu
 12. Quando possível, `agent-context` deve incluir um resumo curto e determinístico do contexto montado para acelerar a leitura inicial da IA ou do agente.
 13. O pacote de contexto deve indicar explicitamente se o retrieval operou em modo `lexical-only` ou `hybrid`.
 14. Se um provider vetorial local opcional falhar ou estiver indisponível, `agent-context` deve continuar funcionando com o mesmo contrato e cair para `lexical-only`.
+15. Se um provider externo local não responder em tempo razoável, `agent-context` deve encerrar a tentativa vetorial e preservar o fallback para `lexical-only`.
 
 ## Pontos de atenção
 - Mais contexto nem sempre melhora a resposta; o orçamento precisa ser tratado como parte do contrato.
@@ -74,6 +75,12 @@ And esse resumo ajuda a IA a entender rapidamente o contexto antes de ler todos 
 ### Cenário 8: fallback preserva contrato do agent-context
 Given o app tenta usar um provider local opcional de embeddings durante a montagem do pacote
 When esse provider falha ou não devolve vetor válido
+Then `agent-context` continua devolvendo foco, chunks e orçamento no mesmo formato
+And o pacote indica que o modo efetivo usado foi `lexical-only`
+
+### Cenário 9: provider externo pendurado não bloqueia o pacote
+Given o app tenta usar um provider local externo de embeddings durante a montagem do pacote
+When esse provider fica pendurado e não responde em tempo razoável
 Then `agent-context` continua devolvendo foco, chunks e orçamento no mesmo formato
 And o pacote indica que o modo efetivo usado foi `lexical-only`
 

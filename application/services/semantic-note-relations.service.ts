@@ -367,6 +367,104 @@ function combineSignals(signals: RelationSignalsDto): number {
   );
 }
 
+function snippetForEvidence(text: string, terms: readonly string[]): string {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  if (!compact) return '';
+
+  for (const term of terms) {
+    const index = normalizeText(compact).indexOf(normalizeText(term));
+    if (index >= 0) {
+      const start = Math.max(0, index - 56);
+      const end = Math.min(compact.length, index + term.length + 56);
+      const prefix = start > 0 ? '...' : '';
+      const suffix = end < compact.length ? '...' : '';
+      return `${prefix}${compact.slice(start, end)}${suffix}`;
+    }
+  }
+
+  return compact.slice(0, 150);
+}
+
+function buildSectionChunks(note: IndexedNote): Array<{ chunkId: string; heading?: string; text: string }> {
+  const lines = note.note.content.split(/\r?\n/);
+  const chunks: Array<{ chunkId: string; heading?: string; text: string }> = [];
+  let currentHeading = note.title;
+  let buffer: string[] = [];
+  let index = 0;
+
+  const flush = () => {
+    const text = buffer.join('\n').trim();
+    if (!text) return;
+    chunks.push({
+      chunkId: `${note.note.relativePath}#${index}`,
+      heading: currentHeading,
+      text
+    });
+    index += 1;
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    const headingMatch = line.trim().match(/^#{1,6}\s+(.+)$/);
+    if (headingMatch) {
+      flush();
+      currentHeading = String(headingMatch[1] ?? '').trim() || currentHeading;
+      buffer.push(line);
+      continue;
+    }
+
+    buffer.push(line);
+  }
+
+  flush();
+  return chunks;
+}
+
+function buildEvidenceChunks(source: IndexedNote, target: IndexedNote): NonNullable<RelatedNoteDto['evidenceChunks']> {
+  const queryTerms = unique([
+    ...source.titleTokens,
+    ...source.headingTokens,
+    ...source.tagTokens
+  ]).filter((term) => term.length >= 3);
+
+  if (queryTerms.length === 0) {
+    return [];
+  }
+
+  return buildSectionChunks(target)
+    .map((chunk) => {
+      let score = 0;
+      const matchedTerms: string[] = [];
+      const normalizedHeading = normalizeText(chunk.heading ?? '');
+      const normalizedText = normalizeText(chunk.text);
+
+      for (const term of queryTerms) {
+        let count = 0;
+        if (normalizedText.includes(term)) {
+          count += 1;
+        }
+        if (count > 0) {
+          matchedTerms.push(term);
+          score += count;
+          if (normalizedHeading.includes(term)) {
+            score += 1.4;
+          }
+        }
+      }
+
+      return {
+        chunkId: chunk.chunkId,
+        heading: chunk.heading,
+        snippet: snippetForEvidence(chunk.text, matchedTerms),
+        score: Number(score.toFixed(3)),
+        matchedTerms: unique(matchedTerms)
+      };
+    })
+    .filter((chunk) => chunk.score > 0 && chunk.matchedTerms.length > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 2);
+}
+
 function buildDiff(before: string, after: string): { before: string[]; after: string[] } {
   const beforeLines = before.split(/\r?\n/);
   const afterLines = after.split(/\r?\n/);
@@ -601,6 +699,7 @@ export class SemanticNoteRelationsService {
           intensity: intensityForScore(score),
           signals,
           reasons: extractReasons(signals, sourceIndexed, target, false),
+          evidenceChunks: buildEvidenceChunks(sourceIndexed, target),
           kind: 'inferred' as const
         } satisfies RelatedNoteDto;
       })

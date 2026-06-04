@@ -79,6 +79,54 @@ class CountingQueryEmbeddingProvider implements EmbeddingProviderPort {
   }
 }
 
+class ThrowingEmbeddingProvider implements EmbeddingProviderPort {
+  readonly providerId = 'throwing-provider';
+
+  async embedChunk(_input: LocalChunkEmbeddingInput): Promise<LocalEmbeddingVector | null> {
+    throw new Error('chunk embedding failed');
+  }
+
+  async embedQuery(_input: LocalQueryEmbeddingInput): Promise<LocalEmbeddingVector | null> {
+    throw new Error('query embedding failed');
+  }
+}
+
+class VersionedCountingEmbeddingProvider implements EmbeddingProviderPort {
+  readonly providerId = 'versioned-provider';
+  readonly cacheKey: string;
+  chunkCalls = 0;
+  queryCalls = 0;
+
+  constructor(
+    private readonly version: string,
+    private readonly dimensions: number
+  ) {
+    this.cacheKey = `${this.providerId}:${version}:${dimensions}`;
+  }
+
+  async embedChunk(input: LocalChunkEmbeddingInput): Promise<LocalEmbeddingVector | null> {
+    this.chunkCalls += 1;
+    return {
+      model: this.providerId,
+      version: this.version,
+      dimensions: this.dimensions,
+      vector: new Array(this.dimensions).fill(1),
+      fingerprint: input.fingerprint
+    };
+  }
+
+  async embedQuery(input: LocalQueryEmbeddingInput): Promise<LocalEmbeddingVector | null> {
+    this.queryCalls += 1;
+    return {
+      model: this.providerId,
+      version: this.version,
+      dimensions: this.dimensions,
+      vector: new Array(this.dimensions).fill(1),
+      fingerprint: input.text.trim().toLowerCase()
+    };
+  }
+}
+
 describe('SemanticRetrievalService', () => {
   it('retrieves focused chunks for architecture questions and deprioritizes draft noise', async () => {
     const vaultRoot = await createVaultRoot();
@@ -382,6 +430,108 @@ It helps with naming, but it is not the note that teaches how to navigate knowle
     }
   });
 
+  it('avoids promoting structural knowledge notes over architecture runtime guidance for non-structural queries', async () => {
+    const vaultRoot = await createVaultRoot();
+    const service = new SemanticRetrievalService();
+
+    try {
+      const notes: NoteSnapshotDto[] = [
+        {
+          id: 'architecture-runtime-guidance',
+          absolutePath: path.join(vaultRoot, 'architecture', 'runtime-guidance.md'),
+          relativePath: 'architecture/runtime-guidance.md',
+          title: 'Runtime Guidance',
+          tags: ['architecture'],
+          content: `# Runtime Guidance
+
+## Runtime Flow
+
+Use cases coordinate domain rules while transport, storage, and framework mechanics stay outside the business core.
+
+## Delivery Boundary
+
+Adapters remain at the edges and the application flow keeps business policy independent from transport and storage details.`
+        },
+        {
+          id: 'knowledge-relationship-map',
+          absolutePath: path.join(vaultRoot, 'knowledge', 'relationship-map.md'),
+          relativePath: 'knowledge/relationship-map.md',
+          title: 'Relationship Map',
+          tags: ['knowledge'],
+          content: `# Relationship Map
+
+## Navigational Use
+
+This note explains how separate notes become easier to navigate when recurring ideas are tied together through explicit references and meaningful connections.
+
+## Connection Maintenance
+
+Useful relationship maps keep a few strong paths visible so a person can move across notes by idea instead of folder naming.`
+        }
+      ];
+
+      const result = await service.retrieve(notes, {
+        vaultRoot,
+        query: 'keep business policy independent from transport and storage details',
+        maxChunks: 6,
+        maxCharacters: 3000
+      });
+
+      expect(result.chunks[0]?.path).toBe('architecture/runtime-guidance.md');
+      expect(result.chunks[0]?.rerankReasons).not.toContain('note structural-style signal');
+    } finally {
+      await fs.rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('still promotes structural knowledge notes when the query is explicitly navigational', async () => {
+    const vaultRoot = await createVaultRoot();
+    const service = new SemanticRetrievalService();
+
+    try {
+      const notes: NoteSnapshotDto[] = [
+        {
+          id: 'architecture-runtime-guidance',
+          absolutePath: path.join(vaultRoot, 'architecture', 'runtime-guidance.md'),
+          relativePath: 'architecture/runtime-guidance.md',
+          title: 'Runtime Guidance',
+          tags: ['architecture'],
+          content: `# Runtime Guidance
+
+Use cases coordinate domain rules while transport and storage stay outside the business core.`
+        },
+        {
+          id: 'knowledge-relationship-map',
+          absolutePath: path.join(vaultRoot, 'knowledge', 'relationship-map.md'),
+          relativePath: 'knowledge/relationship-map.md',
+          title: 'Relationship Map',
+          tags: ['knowledge'],
+          content: `# Relationship Map
+
+## Navigational Use
+
+This note helps a person move across notes by idea instead of folder naming.
+
+## Connection Maintenance
+
+Useful relationship maps make connected ideas easier to navigate across the vault.`
+        }
+      ];
+
+      const result = await service.retrieve(notes, {
+        vaultRoot,
+        query: 'move across notes by idea instead of folder naming',
+        maxChunks: 6,
+        maxCharacters: 3000
+      });
+
+      expect(result.chunks[0]?.path).toBe('knowledge/relationship-map.md');
+      expect(result.chunks[0]?.rerankReasons).toContain('note structural-style signal');
+    } finally {
+      await fs.rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
   it('persists query embeddings across service instances to avoid recomputation between sessions', async () => {
     const vaultRoot = await createVaultRoot();
     const provider = new CountingQueryEmbeddingProvider();
@@ -412,6 +562,74 @@ It helps with naming, but it is not the note that teaches how to navigate knowle
       };
       expect(persisted.providers['counting-query-provider']).toBeDefined();
       expect(Object.values(persisted.providers['counting-query-provider'])[0]?.vector).toEqual([1, 2, 3]);
+    } finally {
+      await fs.rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to lexical-only when the embedding provider throws', async () => {
+    const vaultRoot = await createVaultRoot();
+    const provider = new ThrowingEmbeddingProvider();
+    const service = new SemanticRetrievalService(new ChunkedNoteIndexService(provider), provider);
+
+    try {
+      const notes = createNotes(vaultRoot);
+      const result = await service.retrieve(notes, {
+        vaultRoot,
+        query: 'clean architecture use cases',
+        maxChunks: 4,
+        maxCharacters: 2200
+      });
+
+      expect(result.chunks.length).toBeGreaterThan(0);
+      expect(result.chunks.every((chunk) => chunk.rankingMode === 'lexical-only')).toBe(true);
+      expect(result.chunks.some((chunk) => chunk.path === 'Architecture/Clean Architecture.md')).toBe(true);
+    } finally {
+      await fs.rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('recomputes persisted chunk and query embeddings when the provider cache key changes', async () => {
+    const vaultRoot = await createVaultRoot();
+    const firstProvider = new VersionedCountingEmbeddingProvider('1', 3);
+    const secondProvider = new VersionedCountingEmbeddingProvider('2', 4);
+    const firstService = new SemanticRetrievalService(new ChunkedNoteIndexService(firstProvider), firstProvider);
+    const secondService = new SemanticRetrievalService(new ChunkedNoteIndexService(secondProvider), secondProvider);
+
+    try {
+      const notes = createNotes(vaultRoot);
+
+      await firstService.retrieve(notes, {
+        vaultRoot,
+        query: 'clean architecture boundaries',
+        maxChunks: 4,
+        maxCharacters: 2200
+      });
+
+      await secondService.retrieve(notes, {
+        vaultRoot,
+        query: 'clean architecture boundaries',
+        maxChunks: 4,
+        maxCharacters: 2200
+      });
+
+      expect(firstProvider.chunkCalls).toBeGreaterThan(0);
+      expect(firstProvider.queryCalls).toBe(1);
+      expect(secondProvider.chunkCalls).toBeGreaterThan(0);
+      expect(secondProvider.queryCalls).toBe(1);
+
+      const persistedChunks = JSON.parse(await fs.readFile(path.join(vaultRoot, '.orion', 'index', 'semantic-chunks.json'), 'utf8')) as {
+        notes: Record<string, { chunks: Array<{ embeddingVersion?: string; embeddingDimensions?: number; embeddingProviderKey?: string }> }>;
+      };
+      const persistedQueries = JSON.parse(await fs.readFile(path.join(vaultRoot, '.orion', 'index', 'semantic-query-embeddings.json'), 'utf8')) as {
+        providers: Record<string, Record<string, { version: string; dimensions: number }>>;
+      };
+
+      const cleanArchitectureChunks = persistedChunks.notes['Architecture/Clean Architecture.md']?.chunks ?? [];
+      expect(cleanArchitectureChunks.some((chunk) => chunk.embeddingVersion === '2' && chunk.embeddingDimensions === 4 && chunk.embeddingProviderKey === secondProvider.cacheKey)).toBe(true);
+      expect(persistedQueries.providers[firstProvider.cacheKey]).toBeDefined();
+      expect(persistedQueries.providers[secondProvider.cacheKey]).toBeDefined();
+      expect(Object.values(persistedQueries.providers[secondProvider.cacheKey])[0]).toMatchObject({ version: '2', dimensions: 4 });
     } finally {
       await fs.rm(vaultRoot, { recursive: true, force: true });
     }

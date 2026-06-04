@@ -28,6 +28,11 @@ function createCounterPersistentCommand(): string {
   return `${createCounterCommand()} --stdio-server`;
 }
 
+function createHangCommand(): string {
+  const scriptPath = fileURLToPath(new URL('../../../tests/fixtures/external-command-hang.js', import.meta.url));
+  return `"${process.execPath}" "${path.resolve(scriptPath)}"`;
+}
+
 describe('ExternalCommandEmbeddingProvider', () => {
   it('returns a vector for chunk input through the local embedder command', async () => {
     const provider = new ExternalCommandEmbeddingProvider(createCommand());
@@ -152,5 +157,16 @@ describe('ExternalCommandEmbeddingProvider', () => {
       delete process.env.ORION_TEST_COUNTER_FILE;
       await fs.rm(path.dirname(counterFilePath), { recursive: true, force: true });
     }
+  });
+
+  it('times out and returns null when a single-request command hangs', async () => {
+    const provider = new ExternalCommandEmbeddingProvider(createHangCommand(), { requestTimeoutMs: 50 });
+    const startedAt = Date.now();
+    const result = await provider.embedQuery({ text: 'software design layers' });
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(result).toBeNull();
+    expect(elapsedMs).toBeGreaterThanOrEqual(40);
+    expect(elapsedMs).toBeLessThan(1_000);
   });
 });

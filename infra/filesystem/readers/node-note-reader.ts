@@ -2,11 +2,19 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { NoteSourcePort } from '../../../application/ports/note-source.port';
 
+function shouldIgnoreVaultEntry(name: string): boolean {
+  return ['.orion', '.opencode', 'node_modules'].includes(name.trim().toLowerCase());
+}
+
 async function walkMarkdownFiles(rootPath: string, currentPath = rootPath): Promise<string[]> {
   const entries = await fs.readdir(currentPath, { withFileTypes: true });
   const files: string[] = [];
 
   for (const entry of entries) {
+    if (shouldIgnoreVaultEntry(entry.name)) {
+      continue;
+    }
+
     const absolutePath = path.join(currentPath, entry.name);
 
     if (entry.isDirectory()) {
@@ -124,7 +132,7 @@ export class NodeNoteReader implements NoteSourcePort {
         return {
           id: absolutePath,
           absolutePath,
-          relativePath: path.relative(vaultRoot, absolutePath),
+          relativePath: path.relative(vaultRoot, absolutePath).replace(/\\/g, '/'),
           content,
           title: extractTitle(content),
           tags: extractTags(content)

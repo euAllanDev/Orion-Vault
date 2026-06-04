@@ -42,7 +42,9 @@ Uso:
 
 ## Providers comparados hoje
 - `noop`
+- `noop-sentence-tight`
 - `token-hash`
+- `token-hash-sentence-tight`
 - `token-hash-body-only`
 - `expanded-token-hash`
 - `expanded-token-hash-body-only`
@@ -53,6 +55,9 @@ Uso:
 - `external-command` quando `ORION_BENCHMARK_EMBEDDINGS_COMMAND` estiver configurado
 
 Observacao:
+- os sufixos `-sentence-tight` exercitam uma variante experimental de chunking mais granular no baseline de indexacao, sem mudar o reranking atual; servem para medir se o proximo ganho vem mais de unidade de recuperacao do que de provider vetorial
+- no corpus `curated` ampliado com notas longas, essa variante passou a ser exercitada de verdade. Ate aqui, a leitura pratica continua sendo: ela pode mudar custo e distribuicao de chunks, mas nao mostrou ganho de `top1PathHit` por si so; o maior aprendizado da rodada nova veio de falsos positivos entre domínios abstratos, especialmente notas estruturais de `knowledge`
+- depois do ajuste de reranking seguinte, esses falsos positivos cross-domain foram contidos e o corpus ampliado passou a fechar o dominio em `12/12`, com `11/12` na nota canônica esperada. A leitura prática atual ficou mais precisa: `sentence-tight` continua sem justificar promoção, enquanto o erro remanescente de maior valor está em separar melhor notas de referência e notas de execução dentro do mesmo domínio
 - `expanded-token-hash` e apenas prototipo de pesquisa; nao e provider oficial do runtime.
 - `local-embedder-persistent` e `local-embedder-expanded-persistent` exercitam o mesmo contrato `external-command` do runtime usando os scripts de referencia do repositorio em modo persistente por stdio.
 - os sufixos `-body-only` forcam o benchmark a embedar apenas o corpo do chunk, removendo `title`, `heading` e `tags` da entrada vetorial para medir se esses metadados estao ajudando ou contaminando o ranking.
@@ -166,6 +171,10 @@ O runtime agora aceita um modo `external-command` apenas por configuracao explic
 Contrato esperado do comando:
 - entrada via stdin em JSON com `kind`, `text`, `fingerprint` e metadados opcionais do chunk
 - saida via stdout em JSON com `model`, `version`, `dimensions` e `vector`
+
+Garantias operacionais atuais:
+- o runtime aplica timeout defensivo tambem no modo `single-request`; se o comando externo travar, a tentativa vetorial falha e o retrieval pode cair para `lexical-only`
+- o cache persistido do provider externo considera a identidade efetiva configurada; no bridge Ollama isso inclui mudancas relevantes como `OLLAMA_EMBED_MODEL` e `OLLAMA_HOST`, evitando reaproveitar embeddings antigos como se fossem do mesmo modelo
 
 Exemplo de uso:
 ```powershell

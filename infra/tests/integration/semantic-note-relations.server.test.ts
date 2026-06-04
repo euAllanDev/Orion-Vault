@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { startWebServer } from '../../../interfaces/web/server';
 
 async function createTempVault(): Promise<string> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'marika-relations-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'orion-relations-'));
   await fs.mkdir(path.join(root, 'Docs'), { recursive: true });
 
   await fs.writeFile(path.join(root, 'Docs', 'Alpha.md'), `---

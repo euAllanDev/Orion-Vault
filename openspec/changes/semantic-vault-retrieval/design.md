@@ -41,6 +41,8 @@ Na base atual, o retrieval já opera com:
 - indicação do modo efetivo de retrieval como `lexical-only` ou `hybrid`
 - benchmark local de custo e relevância, incluindo casos sintéticos e um conjunto manual de ground truth
 - provider externo por comando local, com modo persistente por stdio para reduzir o custo de experimentação
+- identidade efetiva do provider externo refletida no cache persistido para evitar reuso silencioso ao trocar modelo/configuração relevante
+- timeout defensivo também no modo `single-request`, preservando fallback quando o comando externo trava
 - benchmark curado versionado com nota canônica esperada e notas-distratoras
 - modo de debug na CLI para inspecionar score total, lexical, vetorial e modo de ranking
 - diagnóstico do índice semântico local em `maintenance-diagnose`
@@ -66,6 +68,12 @@ Isso desloca a próxima fase de investigação para:
 - chunking mais forte
 - preservar e refinar o reranking por nota canônica como baseline principal
 - possivelmente outra unidade de recuperação antes de promover qualquer provider vetorial
+
+A rodada imediatamente seguinte passa a comparar explicitamente o baseline atual contra uma variante experimental `sentence-tight`, que reduz o tamanho alvo dos chunks mantendo o mesmo reranking. Essa comparacao existe para responder se o próximo ganho vem da unidade de recuperação antes de reabrir a discussão sobre novos providers vetoriais.
+
+Depois de ampliar o corpus `curated` com notas longas e queries orientadas a boundaries de chunk, a resposta ficou mais clara: a variante `sentence-tight` alterou custo e exercitou mais a indexacao, mas nao mudou os acertos de nota canônica contra o baseline equivalente. O novo corpus, porém, revelou uma falha mais valiosa para a próxima etapa: uma generalizacao excessiva de notas estruturais como `knowledge/relationship-map`, que passaram a competir bem demais em queries abstratas de outros domínios. Com isso, a prioridade prática sai de `chunkingStrategy` e volta para calibragem de reranking/alias estrutural.
+
+Com a rodada de ajuste seguinte, esse falso positivo cross-domain foi contido sem depender de promover embeddings ou `sentence-tight`. O baseline voltou a acertar o dominio em `12/12` no corpus curado ampliado e ficou em `11/12` na nota canônica esperada. O erro remanescente ficou intra-domínio: `layers-glossary` ainda supera `runtime-guidance` em uma query abstrata de arquitetura. Isso desloca a próxima fase para diferenciar melhor notas de referência vs notas de execução dentro do mesmo domínio, especialmente quando a query usa linguagem conceitual parecida com a do glossário.
 
 ## Evolução futura
 O contrato deve permitir adicionar depois:

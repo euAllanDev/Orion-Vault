@@ -39,6 +39,7 @@ export class TokenHashEmbeddingProvider implements EmbeddingProviderPort {
   private readonly dimensions = 128;
   private readonly model = 'token-hash-local';
   private readonly version = '1';
+  readonly cacheKey = `${this.providerId}:${this.version}:${this.dimensions}`;
 
   async embedChunk(input: LocalChunkEmbeddingInput): Promise<LocalEmbeddingVector | null> {
     const text = [input.title ?? '', input.heading ?? '', input.tags.join(' '), input.text].filter(Boolean).join(' ');

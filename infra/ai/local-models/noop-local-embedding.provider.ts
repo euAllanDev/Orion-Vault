@@ -2,6 +2,7 @@ import type { EmbeddingProviderPort, LocalChunkEmbeddingInput, LocalEmbeddingVec
 
 export class NoopLocalEmbeddingProvider implements EmbeddingProviderPort {
   readonly providerId = 'noop';
+  readonly cacheKey = this.providerId;
 
   async embedChunk(_input: LocalChunkEmbeddingInput): Promise<LocalEmbeddingVector | null> {
     return null;

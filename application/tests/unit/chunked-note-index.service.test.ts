@@ -118,4 +118,41 @@ describe('ChunkedNoteIndexService', () => {
       await fs.rm(vaultRoot, { recursive: true, force: true });
     }
   });
+
+  it('supports a tighter sentence-first chunking strategy for experimental retrieval tuning', async () => {
+    const vaultRoot = await createVaultRoot();
+    const baselineService = new ChunkedNoteIndexService();
+    const experimentalService = new ChunkedNoteIndexService(undefined, { chunkingStrategy: 'sentence-tight' });
+    const longSentences = Array.from(
+      { length: 18 },
+      (_, index) => `Sentence ${index + 1} explains architectural boundaries, adapters, and domain orchestration with concrete operational details.`
+    ).join(' ');
+    const note: NoteSnapshotDto = {
+      id: 'tight-long-paragraph',
+      absolutePath: path.join(vaultRoot, 'Tight.md'),
+      relativePath: 'Tight.md',
+      title: 'Tight',
+      tags: ['architecture'],
+      content: `# Tight\n\n## Deep Dive\n\n${longSentences}`
+    };
+
+    try {
+      const baselineIndex = await baselineService.build(vaultRoot, [note]);
+      const experimentalIndex = await experimentalService.build(vaultRoot, [note]);
+      const baselineChunks = baselineIndex.chunks.filter((chunk) => chunk.heading === 'Deep Dive');
+      const experimentalChunks = experimentalIndex.chunks.filter((chunk) => chunk.heading === 'Deep Dive');
+
+      expect(experimentalChunks.length).toBeGreaterThan(baselineChunks.length);
+      expect(experimentalChunks.every((chunk) => chunk.tokenCount <= 110)).toBe(true);
+
+      const rebuiltExperimentalIndex = await experimentalService.build(vaultRoot, [note]);
+      expect(
+        rebuiltExperimentalIndex.chunks
+          .filter((chunk) => chunk.heading === 'Deep Dive')
+          .map((chunk) => chunk.chunkId)
+      ).toEqual(experimentalChunks.map((chunk) => chunk.chunkId));
+    } finally {
+      await fs.rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
 });

@@ -3,6 +3,10 @@ import path from 'node:path';
 import type { VaultEntryDto } from '../../../vault/dto/vault-entry.dto';
 import type { VaultScannerPort } from '../../../vault/ports/vault-scanner.port';
 
+function shouldIgnoreVaultEntry(name: string): boolean {
+  return ['.orion', '.opencode', 'node_modules'].includes(name.trim().toLowerCase());
+}
+
 function extractTitle(content: string): string | undefined {
   const heading = content.split(/\r?\n/).find((line) => line.startsWith('# '));
   return heading ? heading.replace(/^#\s+/, '').trim() || undefined : undefined;
@@ -22,6 +26,7 @@ async function scanEntry(rootPath: string, absolutePath: string): Promise<VaultE
     const entries = await fs.readdir(absolutePath, { withFileTypes: true });
     const children = await Promise.all(
       entries
+        .filter((entry) => !shouldIgnoreVaultEntry(entry.name))
         .sort((left, right) => left.name.localeCompare(right.name))
         .map((entry) => scanEntry(rootPath, path.join(absolutePath, entry.name)))
     );

@@ -51,6 +51,8 @@ describe('semantic note relations service', () => {
     expect(result.related[0]?.path).toBe('Docs/Beta.md');
     expect(result.related[0]?.score).toBeGreaterThan(0.35);
     expect(result.related[0]?.signals.tfidf).toBeGreaterThan(0);
+    expect(result.related[0]?.evidenceChunks?.length).toBeGreaterThan(0);
+    expect(result.related[0]?.evidenceChunks?.[0]?.matchedTerms.length).toBeGreaterThan(0);
   });
 
   it('parses wiki and markdown links', () => {

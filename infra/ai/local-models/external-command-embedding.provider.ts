@@ -1,6 +1,23 @@
 import { spawn } from 'node:child_process';
 import type { EmbeddingProviderPort, LocalChunkEmbeddingInput, LocalEmbeddingVector, LocalQueryEmbeddingInput } from '../../../application/ports/embedding-provider.port';
 
+const defaultRequestTimeoutMs = 30_000;
+
+function buildCommandEnvironmentSignature(command: string): string {
+  const trimmedCommand = command.trim();
+  if (!trimmedCommand) {
+    return '';
+  }
+
+  const fragments = [trimmedCommand];
+  if (/ollama-embedder\.js/i.test(trimmedCommand)) {
+    fragments.push(`OLLAMA_HOST=${String(process.env.OLLAMA_HOST ?? '').trim()}`);
+    fragments.push(`OLLAMA_EMBED_MODEL=${String(process.env.OLLAMA_EMBED_MODEL ?? '').trim()}`);
+  }
+
+  return fragments.join('|');
+}
+
 type ExternalEmbeddingCommandRequest = {
   readonly kind: 'chunk' | 'query';
   readonly text: string;
@@ -94,6 +111,7 @@ function parseCommand(command: string): { file: string; args: string[] } | null 
 
 export class ExternalCommandEmbeddingProvider implements EmbeddingProviderPort {
   readonly providerId = 'external-command-local';
+  readonly cacheKey: string;
   private readonly parsedCommand: { file: string; args: string[] } | null;
   private readonly persistentMode: boolean;
   private persistentChild: ReturnType<typeof spawn> | null = null;
@@ -105,7 +123,11 @@ export class ExternalCommandEmbeddingProvider implements EmbeddingProviderPort {
   private readonly queuedPersistentRequests: QueuedPersistentRequest[] = [];
   private batchFlushTimeout: NodeJS.Timeout | null = null;
 
-  constructor(private readonly command: string) {
+  constructor(
+    private readonly command: string,
+    private readonly options: { readonly requestTimeoutMs?: number } = {}
+  ) {
+    this.cacheKey = `${this.providerId}:${buildCommandEnvironmentSignature(command)}`;
     this.parsedCommand = parseCommand(command);
     this.persistentMode = this.parsedCommand?.args.includes('--stdio-server') ?? false;
   }
@@ -179,28 +201,50 @@ export class ExternalCommandEmbeddingProvider implements EmbeddingProviderPort {
     parsedCommand: { file: string; args: string[] }
   ): Promise<LocalEmbeddingVector | null> {
     return new Promise<LocalEmbeddingVector | null>((resolve) => {
+      let settled = false;
       const child = spawn(parsedCommand.file, parsedCommand.args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
         env: process.env
       });
       let stdout = '';
+      const timeout = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        if (!child.killed) {
+          child.kill();
+        }
+        resolve(null);
+      }, this.options.requestTimeoutMs ?? defaultRequestTimeoutMs);
+
+      const settle = (result: LocalEmbeddingVector | null) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timeout);
+        resolve(result);
+      };
 
       child.stdout.on('data', (chunk) => {
         stdout += chunk.toString();
       });
 
       child.on('error', () => {
-        resolve(null);
+        settle(null);
       });
 
       child.on('close', (code) => {
         if (code !== 0) {
-          resolve(null);
+          settle(null);
           return;
         }
 
-        resolve(this.toEmbeddingVector(stdout, request.fingerprint));
+        settle(this.toEmbeddingVector(stdout, request.fingerprint));
       });
 
       child.stdin.write(JSON.stringify(request));
@@ -223,7 +267,7 @@ export class ExternalCommandEmbeddingProvider implements EmbeddingProviderPort {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(requestId);
         resolve(null);
-      }, 30_000);
+      }, this.options.requestTimeoutMs ?? defaultRequestTimeoutMs);
 
       this.pendingRequests.set(requestId, {
         fingerprint: request.fingerprint,
@@ -248,7 +292,7 @@ export class ExternalCommandEmbeddingProvider implements EmbeddingProviderPort {
   }
 
   private flushQueuedPersistentRequests(stdin: NodeJS.WritableStream): void {
-    if (stdin.destroyed || this.queuedPersistentRequests.length === 0) {
+    if ((stdin as NodeJS.WritableStream & { destroyed?: boolean }).destroyed || this.queuedPersistentRequests.length === 0) {
       return;
     }
 
@@ -329,7 +373,7 @@ export class ExternalCommandEmbeddingProvider implements EmbeddingProviderPort {
       try {
         const parsed = JSON.parse(trimmed) as ExternalEmbeddingCommandResponse | ExternalEmbeddingBatchResponse;
         if (this.isBatchResponse(parsed)) {
-          for (const item of parsed.items) {
+          for (const item of parsed.items ?? []) {
             this.resolvePendingPersistentRequest(item);
           }
           continue;

@@ -6,7 +6,7 @@ import { NodeVaultScanner } from '../../filesystem/readers/node-vault-scanner';
 
 describe('NodeVaultScanner', () => {
   it('scans folders and files as a tree', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'marika-vault-'));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'orion-vault-'));
 
     try {
       await fs.mkdir(path.join(root, 'projects'));
@@ -30,6 +30,28 @@ describe('NodeVaultScanner', () => {
           expect(tree.children[1].title).toBe('Root');
           expect(tree.children[1].preview[0]).toBe('# Root');
         }
+      }
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('hides technical folders from the workspace tree', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'orion-vault-'));
+
+    try {
+      await fs.mkdir(path.join(root, '.orion', 'index'), { recursive: true });
+      await fs.mkdir(path.join(root, '.opencode', 'agents'), { recursive: true });
+      await fs.mkdir(path.join(root, 'node_modules', '.bin'), { recursive: true });
+      await fs.writeFile(path.join(root, 'visible.md'), '# Visible\n\nOk');
+
+      const scanner = new NodeVaultScanner();
+      const tree = await scanner.scan(root);
+
+      expect(tree.kind).toBe('folder');
+      if (tree.kind === 'folder') {
+        expect(tree.children).toHaveLength(1);
+        expect(tree.children[0]?.name).toBe('visible.md');
       }
     } finally {
       await fs.rm(root, { recursive: true, force: true });

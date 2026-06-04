@@ -19,6 +19,7 @@ O sistema deve manter uma representação vetorial local das notas do vault para
 13. No perfil inicial, o peso relativo do score deve seguir a proporção de `55%` para TF-IDF, `15%` para tags, `10%` para título e headings, `10%` para links manuais e backlinks, e `10%` para proximidade de pasta.
 14. O sistema deve classificar as relações por faixas de intensidade para guiar comandos, sugestões e graph.
 15. No perfil inicial, scores `>= 0.75` representam relação forte, scores entre `0.55` e `0.74` representam relação média, scores entre `0.35` e `0.54` representam relação fraca, e scores abaixo de `0.35` não devem aparecer por padrão como relação relevante.
+16. Quando possível, o sistema deve anexar evidências em nível de chunk para explicar quais trechos da nota relacionada contribuíram para a relação inferida.
 
 ## Pontos de atenção
 - A escolha do algoritmo inicial pode variar, mas a saída precisa ser auditável o suficiente para o usuário confiar no ranking.
@@ -70,6 +71,12 @@ Given duas notas com vocabulário parecido no título, headings ou corpo
 When o sistema calcula o componente principal de similaridade
 Then o sinal de conteúdo usa TF-IDF como estratégia inicial
 And os demais sinais apenas refinam o ranking final
+
+### Cenário 7: relação mostra trecho explicativo
+Given uma nota relacionada foi encontrada acima do limiar mínimo
+When o sistema retorna o resultado de `related`
+Then ele pode incluir um ou mais chunks curtos como evidência da relação
+And esses trechos ajudam revisão humana e montagem de contexto para IA
 
 ## Refinamento futuro
 - suportar múltiplas estratégias de vetorização sob o mesmo contrato

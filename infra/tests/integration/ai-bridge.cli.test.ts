@@ -152,6 +152,7 @@ describe('AI bridge CLI', () => {
       const response = JSON.parse(raw) as {
         vaultRoot: string;
         retrieval: {
+          effectiveProviderKey: string;
           indexPresent: boolean;
           indexedMode: string;
           indexedNotes: number;
@@ -166,6 +167,7 @@ describe('AI bridge CLI', () => {
       };
 
       expect(response.vaultRoot).toBe(vaultRoot);
+      expect(response.retrieval.effectiveProviderKey).toBe('noop');
       expect(response.retrieval.indexPresent).toBe(false);
       expect(response.retrieval.indexedMode).toBe('lexical-only');
       expect(response.retrieval.indexedNotes).toBe(0);
@@ -206,6 +208,7 @@ describe('AI bridge CLI', () => {
       const response = JSON.parse(raw) as {
         retrieval: {
           embeddingsProvider: string;
+          effectiveProviderKey: string;
           expectedMode: string;
           indexPresent: boolean;
           indexedMode: string;
@@ -218,6 +221,7 @@ describe('AI bridge CLI', () => {
       };
 
       expect(response.retrieval.embeddingsProvider).toBe('token-hash');
+      expect(response.retrieval.effectiveProviderKey).toBe('token-hash-local:1:128');
       expect(response.retrieval.expectedMode).toBe('hybrid');
       expect(response.retrieval.indexPresent).toBe(true);
       expect(response.retrieval.indexedMode).toBe('hybrid');

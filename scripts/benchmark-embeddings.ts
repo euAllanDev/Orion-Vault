@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { SemanticRetrievalService } from '../application/services/semantic-retrieval.service';
-import { ChunkedNoteIndexService } from '../application/services/chunked-note-index.service';
+import { ChunkedNoteIndexService, type ChunkingStrategy } from '../application/services/chunked-note-index.service';
 import { ExternalCommandEmbeddingProvider } from '../infra/ai/local-models/external-command-embedding.provider';
 import { NoopLocalEmbeddingProvider } from '../infra/ai/local-models/noop-local-embedding.provider';
 import { TokenHashEmbeddingProvider } from '../infra/ai/local-models/token-hash-embedding.provider';
@@ -53,6 +53,7 @@ type BenchmarkProviderCase = {
   readonly key: string;
   readonly providerName: string;
   readonly createProvider: () => EmbeddingProviderPort;
+  readonly chunkingStrategy?: ChunkingStrategy;
   readonly rankingWeights?: {
     readonly lexical: number;
     readonly vector: number;
@@ -657,9 +658,21 @@ function createBenchmarkProviders(): readonly BenchmarkProviderCase[] {
       createProvider: () => new NoopLocalEmbeddingProvider()
     },
     {
+      key: 'noop-sentence-tight',
+      providerName: 'noop',
+      createProvider: () => new NoopLocalEmbeddingProvider(),
+      chunkingStrategy: 'sentence-tight'
+    },
+    {
       key: 'token-hash',
       providerName: 'token-hash',
       createProvider: () => new TokenHashEmbeddingProvider()
+    },
+    {
+      key: 'token-hash-sentence-tight',
+      providerName: 'token-hash',
+      createProvider: () => new TokenHashEmbeddingProvider(),
+      chunkingStrategy: 'sentence-tight'
     },
     {
       key: 'token-hash-vector-heavy',
@@ -732,7 +745,9 @@ async function runCase(size: VaultSize, providerCase: BenchmarkProviderCase): Pr
   const vaultRoot = path.join(baseRoot, `${size.name}-${providerCase.key}`);
   const notes = await buildVault(vaultRoot, size);
   const provider = providerCase.createProvider();
-  const indexService = new ChunkedNoteIndexService(provider);
+  const indexService = new ChunkedNoteIndexService(provider, {
+    chunkingStrategy: providerCase.chunkingStrategy
+  });
   const service = new SemanticRetrievalService(indexService, provider);
   const queries: readonly BenchmarkQuery[] = size.name === 'curated'
     ? (await readCuratedManifest()).queries
