@@ -15,7 +15,7 @@ ipcRenderer.on('agenda:notify-sound', (_event, payload) => {
   playAgendaReminderSound(payload.src);
 });
 
-contextBridge.exposeInMainWorld('marikaDesktop', {
+contextBridge.exposeInMainWorld('orionDesktop', {
   openAiTerminal: (cwd) => ipcRenderer.invoke('ai-terminal:open', cwd),
   startupView: 'workspace',
   startVaultSetup: () => ipcRenderer.invoke('desktop:setup:start'),
@@ -38,5 +38,10 @@ contextBridge.exposeInMainWorld('marikaDesktop', {
     const listener = () => callback();
     ipcRenderer.on('agenda:open-from-notification', listener);
     return () => ipcRenderer.removeListener('agenda:open-from-notification', listener);
+  },
+  onAgendaNotification: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('agenda:notify-ui', listener);
+    return () => ipcRenderer.removeListener('agenda:notify-ui', listener);
   }
 });

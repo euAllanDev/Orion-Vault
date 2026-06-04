@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Notification, ipcMain, session } from 'electron';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, watch, type FSWatcher } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -8,11 +8,12 @@ import { loadAppConfig } from '../../infra/config/app-config';
 import { NodeNoteReader } from '../../infra/filesystem/readers/node-note-reader';
 import { NodeVaultWorkspace } from '../../infra/filesystem/workspace/node-vault-workspace';
 import { startWebServer } from '../web/server';
+import { createAiTerminalOpenHandler } from './ai-terminal';
 
 const desktopShell = {
-  appId: 'com.marika.desktop',
-  appName: 'Marika',
-  title: 'Marika Desktop',
+  appId: 'com.orionvault.desktop',
+  appName: 'Orion Vault',
+  title: 'Orion Vault Desktop',
   defaultWindow: {
     width: 1400,
     height: 920,
@@ -24,7 +25,7 @@ const desktopShell = {
   internetRequired: false
 } as const;
 
-const startupLogPath = path.join(process.env.TEMP ?? process.cwd(), 'marika-desktop-startup.log');
+const startupLogPath = path.join(process.env.TEMP ?? process.cwd(), 'orion-vault-desktop-startup.log');
 
 async function logStartup(message: string): Promise<void> {
   try {
@@ -35,7 +36,7 @@ async function logStartup(message: string): Promise<void> {
 }
 
 const preloadPath = fileURLToPath(new URL('../../interfaces/desktop/preload.cjs', import.meta.url));
-const agendaReminderSoundPath = 'C:\\Users\\as409\\Marika\\sounds\\notificacao_lembrete_premium_leve (online-audio-converter.com).mp3';
+const agendaReminderSoundPath = path.join(app.getAppPath(), 'sounds', 'notificacao_lembrete_premium_leve (online-audio-converter.com).mp3');
 const desktopNotificationIconCandidates = [
   path.join(process.resourcesPath, 'build', 'icon.ico'),
   path.join(app.getAppPath(), 'build', 'icon.ico'),
@@ -72,6 +73,51 @@ function getActiveDesktopVaultRoot(): string {
   return desktopWebOptions.activeVaultRoot ?? getDesktopVaultRoot();
 }
 
+function isDesktopAppRoot(candidate: string): boolean {
+  return existsSync(path.join(candidate, 'package.json'))
+    && existsSync(path.join(candidate, 'interfaces', 'cli', 'main.ts'))
+    && existsSync(path.join(candidate, 'scripts', 'start-ai-terminal.ps1'));
+}
+
+function resolveDesktopAppRoot(): string {
+  const rawAppPath = app.getAppPath();
+  const candidates = [
+    rawAppPath,
+    path.resolve(rawAppPath, '..'),
+    path.resolve(rawAppPath, '..', '..'),
+    process.cwd()
+  ];
+
+  return candidates.find((candidate) => isDesktopAppRoot(candidate)) ?? rawAppPath;
+}
+
+function resolveNodeRuntimePath(): string {
+  const configured = String(process.env.ORION_NODE_PATH ?? '').trim();
+  if (configured && existsSync(configured)) {
+    return configured;
+  }
+
+  try {
+    const result = spawnSync('where.exe', ['node.exe'], {
+      cwd: app.getPath('home'),
+      env: process.env,
+      windowsHide: true,
+      encoding: 'utf8'
+    });
+    const firstMatch = String(result.stdout ?? '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean);
+    if (firstMatch && existsSync(firstMatch)) {
+      return firstMatch;
+    }
+  } catch {
+    // Fall back to PowerShell Get-Command when the desktop shell opens.
+  }
+
+  return '';
+}
+
 const desktopWorkspace = new NodeVaultWorkspace();
 const noteReader = new NodeNoteReader();
 const desktopWebOptions: { desktopSessionPath?: string; activeVaultRoot?: string } = {
@@ -82,7 +128,8 @@ let mainWindow: BrowserWindow | null = null;
 let webServer: Awaited<ReturnType<typeof startWebServer>>['server'] | null = null;
 let desktopUrl = 'http://127.0.0.1:4173';
 let desktopPort = 4173;
-const appRoot = app.getAppPath();
+const appRoot = resolveDesktopAppRoot();
+const nodeRuntimePath = resolveNodeRuntimePath();
 let desktopWindowReady = false;
 let vaultWatcher: FSWatcher | null = null;
 let vaultWatcherRoot = '';
@@ -218,6 +265,33 @@ function pickCatchUpAgendaReminderWindow(nowMs: number, dueMs: number): AgendaRe
   if (nowMs >= dueMs - (60 * 60 * 1000)) return '1h';
   if (nowMs >= dueMs - (24 * 60 * 60 * 1000)) return '1d';
   return null;
+}
+
+function collectImmediateAgendaReminderWindows(nowMs: number, dueMs: number): readonly AgendaReminderWindow[] {
+  const windows: AgendaReminderWindow[] = [];
+  for (const windowKey of ['1d', '1h', 'now'] as AgendaReminderWindow[]) {
+    if (shouldDispatchAgendaReminder(nowMs, dueMs, windowKey)) {
+      windows.push(windowKey);
+    }
+  }
+  return windows;
+}
+
+async function suppressImmediateAgendaRemindersForCreatedNote(filePath: string, content: string): Promise<void> {
+  const normalizedPath = normalizeApiPath(filePath);
+  const { fields } = parseFrontmatter(content);
+  const dueValue = String(fields.due ?? fields.date ?? '').trim();
+  if (!dueValue) return;
+
+  const due = new Date(dueValue);
+  const dueMs = due.getTime();
+  if (Number.isNaN(dueMs)) return;
+
+  const nowMs = Date.now();
+  for (const windowKey of collectImmediateAgendaReminderWindows(nowMs, dueMs)) {
+    agendaReminderKeys.add(`${normalizedPath}|${windowKey}|${due.toISOString()}`);
+  }
+  await writeAgendaReminderState();
 }
 
 async function readAgendaReminderState(): Promise<void> {
@@ -508,7 +582,7 @@ function createWindow(): BrowserWindow {
   });
 
   window.loadURL(startupUrl.toString()).catch((error) => {
-    console.error('Failed to load Marika desktop UI', error);
+    console.error('Failed to load Orion Vault desktop UI', error);
   });
 
   window.once('ready-to-show', () => {
@@ -649,6 +723,7 @@ function resolveAiTerminalStartupScript(): string | null {
 function buildAiTerminalInlineCommand(vaultRoot: string): string {
   const escapedAppRoot = escapePowerShellLiteral(appRoot);
   const escapedVaultRoot = escapePowerShellLiteral(vaultRoot);
+  const escapedNodePath = escapePowerShellLiteral(nodeRuntimePath);
 
   return [
     "$ErrorActionPreference = 'Stop'",
@@ -656,21 +731,24 @@ function buildAiTerminalInlineCommand(vaultRoot: string): string {
     'try { [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch {}',
     `$AppRoot = '${escapedAppRoot}'`,
     `$VaultRoot = '${escapedVaultRoot}'`,
+    `$NodePath = '${escapedNodePath}'`,
+    "$TsxCliPath = Join-Path $AppRoot 'node_modules/tsx/dist/cli.mjs'",
+    "$CliEntryPath = Join-Path $AppRoot 'interfaces/cli/main.ts'",
+    "if (-not $NodePath) { $NodeCommand = Get-Command node -ErrorAction SilentlyContinue; if ($NodeCommand) { $NodePath = $NodeCommand.Source } }",
     "if ($VaultRoot) { New-Item -ItemType Directory -Force -Path $VaultRoot | Out-Null }",
-    "[Environment]::SetEnvironmentVariable('MARIKA_VAULT_ROOT', $VaultRoot, 'Process')",
+    "[Environment]::SetEnvironmentVariable('ORION_VAULT_ROOT', $VaultRoot, 'Process')",
     "if ($VaultRoot) { Set-Location -LiteralPath $VaultRoot } else { Set-Location -LiteralPath $AppRoot }",
-    "function marika { param([Parameter(ValueFromRemainingArguments=`$true)][string[]]`$Arguments) & pnpm --dir `$AppRoot exec tsx (Join-Path `$AppRoot 'interfaces/cli/main.ts') @Arguments }",
+    "function orion { param([Parameter(ValueFromRemainingArguments=`$true)][string[]]`$Arguments) & `$NodePath `$TsxCliPath `$CliEntryPath @Arguments }",
+    "$OnboardingRaw = (orion /onboarding | Out-String).Trim()",
+    "$Onboarding = if ($OnboardingRaw) { $OnboardingRaw | ConvertFrom-Json } else { $null }",
     "Write-Host ''",
-    "Write-Host 'Marika AI ready.'",
+    "Write-Host 'Orion Vault AI ready.'",
+    "Write-Host 'Orion Vault e um app de notas local-first adaptado para IA e agentes.'",
     "if ($VaultRoot) { Write-Host \"Vault ativo: $VaultRoot\" }",
-    "Write-Host 'Helper: marika'",
+    "Write-Host 'Helper: orion'",
     "Write-Host ''",
     "Write-Host 'Resumo rapido:'",
-    "Write-Host '- marika /start: abre a orientacao inicial da IA para este app'",
-    "Write-Host '- marika /guide: abre o guia completo do produto'",
-    "Write-Host '- marika /context: mostra o contexto do vault em JSON estruturado'",
-    "Write-Host '- marika /preview: gera o preview da organizacao em JSON estruturado'",
-    "Write-Host '- marika /apply --preview-id <id>: aplica somente um preview validado'"
+    "if ($Onboarding) { foreach ($Line in $Onboarding.commandLines) { Write-Host \"- $Line\" }; Write-Host ''; Write-Host 'Se a pergunta for sobre o app em si: use orion /product-context.'; Write-Host ''; foreach ($Line in $Onboarding.policyLines) { Write-Host \"- $Line\" }; Write-Host ''; Write-Host $Onboarding.statusText } else { Write-Host '- orion /start'; Write-Host '- orion /guide'; Write-Host '- orion /skills'; Write-Host '- orion /context'; Write-Host '- orion /preview'; Write-Host '- orion /apply --preview-id <id>' }"
   ].join('; ');
 }
 
@@ -679,12 +757,43 @@ function openPowerShellInDirectory(cwd: string, vaultRoot: string): void {
   const powerShellPath = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   const startupScript = resolveAiTerminalStartupScript();
   const shellArgs = startupScript
-    ? ['-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', startupScript, '-AppRoot', appRoot, '-VaultRoot', vaultRoot]
+    ? [
+      '-NoLogo',
+      '-NoExit',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      startupScript,
+      '-AppRoot',
+      appRoot,
+      '-VaultRoot',
+      vaultRoot,
+      '-NodePath',
+      nodeRuntimePath
+    ]
     : ['-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', buildAiTerminalInlineCommand(vaultRoot)];
-  const wtCommand = ['new-tab', '--title', 'Marika AI', '--startingDirectory', cwd, 'powershell.exe', ...shellArgs];
-  const env = { ...process.env, MARIKA_VAULT_ROOT: vaultRoot };
+  const wtCommand = ['new-tab', '--title', 'Orion Vault AI', '--startingDirectory', cwd, 'powershell.exe', ...shellArgs];
+  const env = { ...process.env, ORION_VAULT_ROOT: vaultRoot };
+
+  const hasWindowsTerminal = (): boolean => {
+    try {
+      const result = spawnSync('where.exe', ['wt.exe'], {
+        cwd,
+        env,
+        stdio: 'ignore',
+        windowsHide: true
+      });
+      return result.status === 0;
+    } catch {
+      return false;
+    }
+  };
 
   const tryWindowsTerminal = (): boolean => {
+    if (!hasWindowsTerminal()) {
+      return false;
+    }
+
     try {
       const wt = spawn('wt.exe', wtCommand, {
         cwd,
@@ -733,12 +842,11 @@ function openPowerShellInDirectory(cwd: string, vaultRoot: string): void {
   }
 }
 
-ipcMain.handle('ai-terminal:open', (_event, _requestedVaultRoot?: string) => {
-  const vaultRoot = String(_requestedVaultRoot ?? '').trim() || getActiveDesktopVaultRoot();
-  const cwd = vaultRoot || appRoot;
-  openPowerShellInDirectory(cwd, vaultRoot);
-  return { cwd, vaultRoot };
-});
+ipcMain.handle('ai-terminal:open', createAiTerminalOpenHandler({
+  appRoot,
+  getActiveDesktopVaultRoot,
+  openAiTerminal: openPowerShellInDirectory
+}));
 
 ipcMain.handle('agenda:notify', async (_event, payload?: { title?: string; body?: string }) => {
   const title = String(payload?.title ?? 'Lembrete');
@@ -771,10 +879,21 @@ ipcMain.handle('agenda:create', async (_event, payload?: { vaultRoot?: string; p
   desktopWebOptions.activeVaultRoot = vaultRoot;
   await normalizeDesktopSessionFile(getDesktopSessionPath(), vaultRoot);
   await desktopWorkspace.createMarkdownFile(vaultRoot, filePath, content);
+  await suppressImmediateAgendaRemindersForCreatedNote(filePath, content);
   mainWindow?.webContents.send('agenda:saved', { vaultRoot, path: filePath });
   emitVaultChanged(vaultRoot, filePath, 'agenda');
   void pollAgendaReminders();
   return { ok: true, vaultRoot, path: filePath };
+});
+
+ipcMain.handle('desktop:setup:start', async () => {
+  const vaultRoot = getActiveDesktopVaultRoot();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+
+  return { ok: true, vaultRoot };
 });
 
 ipcMain.handle('vault:activate', async (_event, vaultRoot?: string) => {

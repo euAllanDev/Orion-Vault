@@ -15,7 +15,7 @@ ipcRenderer.on('agenda:notify-sound', (_event: Electron.IpcRendererEvent, payloa
   playAgendaReminderSound(payload.src);
 });
 
-contextBridge.exposeInMainWorld('marikaDesktop', {
+contextBridge.exposeInMainWorld('orionDesktop', {
   openAiTerminal: (cwd?: string) => ipcRenderer.invoke('ai-terminal:open', cwd),
   startupView: 'workspace',
   startVaultSetup: () => ipcRenderer.invoke('desktop:setup:start'),
