@@ -1,4 +1,5 @@
 import { loadAppConfig } from '../../../infra/config/app-config';
+import { createEmbeddingProvider } from '../../../infra/ai/local-models/embedding-provider.factory';
 import { NodeVaultScanner } from '../../../infra/filesystem/readers/node-vault-scanner';
 import { VaultVerificationService } from '../../../vault/services/vault-verification.service';
 import fs from 'node:fs/promises';
@@ -13,6 +14,7 @@ interface MaintenanceDiagnoseData {
   readonly vaultRoot: string;
   readonly retrieval: {
     readonly embeddingsProvider: string;
+    readonly effectiveProviderKey: string;
     readonly semanticExcludePaths: readonly string[];
     readonly expectedMode: 'lexical-only' | 'hybrid';
     readonly commandConfigured: boolean;
@@ -50,6 +52,7 @@ function presentText(data: MaintenanceDiagnoseData): void {
   console.log(`Maintenance diagnosis for ${data.vaultRoot}`);
   console.log(`Status: ${data.doctor.status}`);
   console.log(`Embeddings provider: ${data.retrieval.embeddingsProvider}`);
+  console.log(`Effective provider key: ${data.retrieval.effectiveProviderKey}`);
   if (data.retrieval.semanticExcludePaths.length > 0) {
     console.log(`Semantic exclude paths: ${data.retrieval.semanticExcludePaths.join(', ')}`);
   }
@@ -138,12 +141,14 @@ async function readSemanticIndexSummary(vaultRoot: string): Promise<{
 
 export async function executeMaintenanceDiagnoseCommand(options: MaintenanceDiagnoseCommandOptions): Promise<void> {
   const config = loadAppConfig();
+  const embeddingProvider = createEmbeddingProvider(config);
   const vaultRoot = options.vaultRoot?.trim() || config.vaultRoot;
   const service = new VaultVerificationService(new NodeVaultScanner());
   const [report, indexSummary] = await Promise.all([
     service.verify(vaultRoot),
     readSemanticIndexSummary(vaultRoot)
   ]);
+  const effectiveProviderKey = embeddingProvider.cacheKey ?? embeddingProvider.providerId;
   const commandConfigured = Boolean(config.embeddingsCommand?.trim());
   const expectedMode = config.embeddingsProvider === 'noop'
     ? 'lexical-only'
@@ -155,6 +160,7 @@ export async function executeMaintenanceDiagnoseCommand(options: MaintenanceDiag
     vaultRoot: report.vaultRoot,
     retrieval: {
       embeddingsProvider: config.embeddingsProvider,
+      effectiveProviderKey,
       semanticExcludePaths: config.semanticExcludePaths,
       expectedMode,
       commandConfigured,

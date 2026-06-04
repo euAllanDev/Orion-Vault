@@ -1,7 +1,7 @@
 # Spec: ai-cli-bridge
 
 ## Regra de negócio
-Uma IA local executada via CLI deve conseguir consultar, planejar e propor alterações nas notas do Marika usando os mesmos contratos do produto, sem bypassar a fronteira segura do vault.
+Uma IA local executada via CLI deve conseguir consultar, planejar e propor alteracoes nas notas do Orion Vault usando os mesmos contratos do produto, sem bypassar a fronteira segura do vault.
 
 ## Regras
 1. A IA deve obter contexto local antes de agir.
@@ -11,7 +11,7 @@ Uma IA local executada via CLI deve conseguir consultar, planejar e propor alter
 5. A IA deve reutilizar os comandos existentes do sistema.
 6. A IA deve receber respostas estruturadas de sucesso, conflito, no-op e erro.
 7. A IA deve permanecer opcional e local-first.
-8. A interação da IA via CLI deve usar slash commands como `/start`, `/guide`, `/context`, `/search`, `/plan`, `/preview` e `/apply`.
+8. A interação da IA via CLI deve usar slash commands como `/start`, `/guide`, `/context`, `/search`, `/retrieve`, `/plan`, `/preview` e `/apply`.
 9. O onboarding da IA deve orientar o usuário a abrir um terminal local visível no diretório adequado, ler a orientação inicial da IA e iniciar o fluxo por slash commands.
 10. O acesso da IA no desktop deve ser apresentado como uma ação fixa `Modo dev` na sidebar, sem depender de launcher flutuante.
 11. O painel de onboarding da IA pode exibir o fluxo de comandos e a lista de comandos sem depender de modais aninhados.
@@ -40,6 +40,12 @@ Given uma tarefa de edição ou organização
 When a IA chama `/search` por notas relacionadas
 Then o sistema retorna candidatos relevantes localmente
 And a IA consegue escolher o próximo passo com base nisso
+
+### Cenário 2b: retrieval explícito para contexto de task
+Given uma tarefa orientada a conhecimento ou execução por agente
+When a IA chama `/retrieve` com consulta e escopo opcional
+Then o sistema retorna um pacote de chunks relevantes para a tarefa
+And a IA pode montar a resposta ou a próxima ação com menos desperdício de tokens
 
 ### Cenário 3: plano antes da mutação
 Given uma intenção de alteração

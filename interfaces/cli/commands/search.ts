@@ -9,6 +9,7 @@ export interface SearchCommandOptions {
   readonly query?: string;
   readonly phrase?: string;
   readonly tags?: readonly string[];
+  readonly path?: string;
   readonly format?: 'text' | 'json';
 }
 
@@ -27,7 +28,8 @@ export async function executeSearchCommand(options: SearchCommandOptions): Promi
     vaultRoot,
     query: options.query,
     phrase: options.phrase,
-    tags: options.tags
+    tags: options.tags,
+    scopePath: options.path
   });
 
   if (options.format === 'json') {

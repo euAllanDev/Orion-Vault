@@ -59,5 +59,11 @@ export async function executeRelatedCommand(options: RelatedCommandOptions): Pro
     console.log(`  score: ${item.score.toFixed(3)} (${item.intensity})`);
     console.log(`  signals: tfidf=${item.signals.tfidf.toFixed(3)} tags=${item.signals.tags.toFixed(3)} title=${item.signals.titleHeadings.toFixed(3)} links=${item.signals.links.toFixed(3)} folder=${item.signals.folder.toFixed(3)}`);
     console.log(`  reasons: ${item.reasons.join('; ')}`);
+    if (item.evidenceChunks && item.evidenceChunks.length > 0) {
+      for (const chunk of item.evidenceChunks) {
+        console.log(`  evidence: ${chunk.heading ?? '(sem heading)'} score=${chunk.score.toFixed(3)} terms=${chunk.matchedTerms.join(', ')}`);
+        console.log(`    ${chunk.snippet}`);
+      }
+    }
   }
 }

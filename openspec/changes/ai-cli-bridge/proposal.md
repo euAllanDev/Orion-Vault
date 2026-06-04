@@ -4,7 +4,7 @@ Status: draft
 Date: 2026-05-07
 
 ## Objetivo
-Definir a ponte local entre uma IA executada via CLI e as notas do Marika, usando os mesmos contratos de leitura, busca, plano e workspace já existentes.
+Definir a ponte local entre uma IA executada via CLI e as notas do Orion Vault, usando os mesmos contratos de leitura, busca, plano e workspace ja existentes.
 
 ## Problema
 A proposta diferencial do projeto depende de uma IA local conseguir ler o vault, levantar contexto, sugerir planos e, quando necessário, propor mutações sem sair da fronteira segura.

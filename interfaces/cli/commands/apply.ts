@@ -4,6 +4,8 @@ import { createAiBridgeRunner } from '../runtime/ai-bridge-runner';
 export interface ApplyCommandOptions {
   readonly vaultRoot?: string;
   readonly previewId?: string;
+  readonly path?: string;
+  readonly query?: string;
   readonly force?: boolean;
   readonly format?: 'text' | 'json';
 }
@@ -13,6 +15,8 @@ export async function executeApplyCommand(options: ApplyCommandOptions): Promise
   const response = await service.apply({
     vaultRoot,
     previewId: options.previewId,
+    scopePath: options.path?.trim() || undefined,
+    query: options.query?.trim() || undefined,
     force: options.force
   });
 

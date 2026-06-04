@@ -21,6 +21,11 @@
 - [x] Retornar resultado estruturado para a IA
 
 ## Quality
-- [ ] Atualizar specs associadas ao command hub e ao desktop quando o vocabulário de slash commands evoluir
+- [x] Atualizar specs associadas ao command hub e ao desktop quando o vocabulário de slash commands evoluir
 - [x] Manter o fluxo opcional e local-first
 - [x] Registrar comportamento de erro e conflito
+
+## Estado real atual
+- [x] A CLI já expõe `/context`, `/search`, `/retrieve`, `/agent-context`, `/plan`, `/preview` e `/apply`
+- [x] O fluxo já retorna respostas estruturadas para sucesso, conflito, no-op e erro
+- [x] O pacote foi estendido por `vault-scoped-ai-terminal` para refletir skills, onboarding e launcher `orion`

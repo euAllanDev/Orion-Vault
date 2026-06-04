@@ -24,6 +24,8 @@ A interface deve expor os comandos existentes do sistema em uma página operacio
 18. O menu de opções da nota deve oferecer uma ação explícita de `linkar`, substituindo a ação de relações nessa superfície.
 19. No desktop, o acesso à IA deve aparecer como ação fixa `Modo dev` na sidebar, sem depender de launcher flutuante sobre o workspace.
 20. Mudanças feitas no vault por terminal, automação local ou outros fluxos externos devem aparecer no workspace sem exigir reinício manual do app.
+21. A implementação de busca local, modelos e seletor de links pode ser modularizada separadamente, desde que preserve os mesmos contratos de filtro local, abertura de nota, seleção de modelo e inserção de wiki link no vault ativo.
+22. A implementação de diálogos internos, menus contextuais e notificações locais pode ser modularizada separadamente, desde que preserve a mesma invalidação de sessões anteriores e o mesmo fechamento coordenado das superfícies auxiliares.
 
 ## Pontos de atenção
 - O hub deve refletir os contratos já existentes, não inventar novos comportamentos.
@@ -36,6 +38,8 @@ A interface deve expor os comandos existentes do sistema em uma página operacio
 - Um refresh da árvore após criação precisa cobrir pastas vazias e notas novas sem depender de navegação adicional.
 - Diálogos internos não podem acumular listeners antigos e disparar ações duplicadas ou cruzadas.
 - O seletor de links deve listar notas do vault ativo e permitir filtro local antes de inserir um wiki link.
+- A modularização dessas superfícies auxiliares não pode criar caminhos paralelos de abertura, escrita ou seleção fora do vault ativo.
+- A modularização dos diálogos e menus não pode reintroduzir listeners acumulados nem quebrar a regra de apenas uma sessão ativa por vez.
 
 ## Cenários
 
@@ -117,3 +121,15 @@ Given o workspace desktop está aberto em um vault ativo
 When uma pasta ou nota é criada por terminal local ou outro fluxo externo dentro do mesmo vault
 Then a árvore do workspace reflete a mudança sem reinício manual do app
 And o usuário continua vendo a raiz ativa correta
+
+### Cenário 11: busca, modelos e link picker podem ser extraídos sem mudar o comportamento
+Given a interface desktop modulariza busca local, modelos e seletor de links em um módulo dedicado
+When o usuário busca notas, escolhe um modelo ou seleciona uma nota para inserir um wiki link
+Then a interface continua aplicando o mesmo filtro local e a mesma abertura de nota
+And a seleção de modelo e a inserção de wiki link continuam usando o mesmo fluxo principal do vault ativo
+
+### Cenário 12: diálogos e menus podem ser extraídos sem mudar o comportamento
+Given a interface desktop modulariza diálogos internos, menus contextuais e notificações locais em um módulo dedicado
+When o usuário abre confirmações, entradas internas, menus de contexto ou superfícies auxiliares do workspace
+Then a interface continua mantendo apenas uma sessão ativa por vez quando aplicável
+And o fechamento coordenado dessas superfícies continua previsível dentro do mesmo fluxo principal do app

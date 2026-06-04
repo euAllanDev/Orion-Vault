@@ -1,7 +1,7 @@
 # Constitution
 
 ## Purpose
-Definir as regras imutáveis do projeto Marika CLI Notes para orientar mudanças, specs e implementação.
+Definir as regras imutaveis do projeto Orion Vault para orientar mudancas, specs e implementacao.
 
 ## Principles
 - Domain first

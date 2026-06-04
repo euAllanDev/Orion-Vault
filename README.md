@@ -1,12 +1,12 @@
-# Marika
+# Orion Vault
 
-Marika e um workspace local-first para notas Markdown que trata o vault como um sistema operavel, nao apenas como uma pasta de arquivos.
+Orion Vault e um workspace local-first para notas Markdown que trata o vault como um sistema operavel, nao apenas como uma pasta de arquivos.
 
 Ele combina leitura, busca, organizacao, relacoes entre notas, agenda, interface visual e automacao assistida por IA sob uma regra simples: a inteligencia pode sugerir, mas a seguranca e a execucao continuam sob controle do sistema.
 
-## O Que E O Marika
+## O Que E O Orion Vault
 
-O Marika nasce para quem quer mais profundidade do que um editor de texto e mais confiabilidade do que uma automacao cega.
+O Orion Vault nasce para quem quer mais profundidade do que um editor de texto e mais confiabilidade do que uma automacao cega.
 
 Na pratica, ele transforma um vault local em uma base viva de conhecimento com:
 
@@ -30,7 +30,7 @@ O resultado e um produto que tenta equilibrar tres coisas ao mesmo tempo:
 
 ### Observacao e diagnostico do vault
 
-Antes de editar, mover ou planejar qualquer coisa, o Marika consegue observar o vault e expor sinais uteis sobre ele.
+Antes de editar, mover ou planejar qualquer coisa, o Orion Vault consegue observar o vault e expor sinais uteis sobre ele.
 
 Capacidades:
 
@@ -66,7 +66,7 @@ Comandos centrais:
 
 ### Organizacao preview-first
 
-O fluxo de organizacao do Marika foi desenhado para reduzir risco. A ordem importa:
+O fluxo de organizacao do Orion Vault foi desenhado para reduzir risco. A ordem importa:
 
 1. observar
 2. entender contexto
@@ -92,7 +92,7 @@ Comandos centrais:
 
 ### Workspace seguro para notas
 
-O Marika nao para no diagnostico. Ele tambem entrega o basico que precisa funcionar bem em um vault real.
+O Orion Vault nao para no diagnostico. Ele tambem entrega o basico que precisa funcionar bem em um vault real.
 
 Capacidades:
 
@@ -125,7 +125,7 @@ Capacidades:
 
 ### Agenda e notas com prazo
 
-O Marika reserva uma superficie propria para notas ligadas a data.
+O Orion Vault reserva uma superficie propria para notas ligadas a data.
 
 Capacidades:
 
@@ -182,7 +182,7 @@ Arquivos principais:
 - `interfaces/desktop/main.ts`
 - `interfaces/desktop/preload.ts`
 
-## Diferenciais Do Marika
+## Diferenciais Do Orion Vault
 
 - local-first de verdade
 - vault como fronteira segura
@@ -294,7 +294,7 @@ Alguns conceitos estruturam o projeto:
 
 ## Seguranca E Confiabilidade
 
-Filesystem local e uma area sensivel. O Marika parte desse principio desde a fundacao.
+Filesystem local e uma area sensivel. O Orion Vault parte desse principio desde a fundacao.
 
 Regras centrais:
 
@@ -309,7 +309,7 @@ Esse modelo nao tenta ser espetaculoso. Ele tenta ser confiavel.
 
 ## SDD E OpenSpec
 
-O Marika usa uma abordagem orientada a especificacao. Aqui, comportamento importante nao deveria nascer escondido em implementacao incidental.
+O Orion Vault usa uma abordagem orientada a especificacao. Aqui, comportamento importante nao deveria nascer escondido em implementacao incidental.
 
 Ele nasce e evolui por meio de artefatos explicitamente versionados.
 
@@ -445,7 +445,7 @@ Para referencia operacional curta:
 
 ## Para Quem O Projeto Faz Sentido
 
-O Marika faz sentido para quem quer:
+O Orion Vault faz sentido para quem quer:
 
 - operar um vault Markdown com mais inteligencia local
 - ter automacao assistida sem perder controle
@@ -453,7 +453,7 @@ O Marika faz sentido para quem quer:
 - navegar por busca, backlinks, relacoes e graph
 - evoluir software com governanca tecnica real
 
-## O Que O Marika Nao Quer Ser
+## O Que O Orion Vault Nao Quer Ser
 
 Neste momento, o projeto nao quer ser:
 
@@ -481,7 +481,7 @@ Ja existe uma base funcional real para CLI, web local, workspace, agenda, relaco
 
 ## Resumo
 
-Marika e um produto para quem quer tratar notas Markdown como infraestrutura pessoal de conhecimento, e nao apenas como arquivos dispersos.
+Orion Vault e um produto para quem quer tratar notas Markdown como infraestrutura pessoal de conhecimento, e nao apenas como arquivos dispersos.
 
 Ele junta produto, arquitetura e governanca num mesmo eixo:
 

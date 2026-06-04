@@ -8,6 +8,11 @@ Lista de changes OpenSpec registradas no projeto.
 - `desktop-app` - draft
 - `ai-cli-bridge` - draft
 - `semantic-note-links` - draft
+- `semantic-vault-retrieval` - draft
+- `date-notes-agenda` - draft
+- `editor-writing-experience` - draft
+- `overview-dashboard` - draft
+- `vault-scoped-ai-terminal` - draft
 
 ## Modules
 - `domain/notes`
@@ -29,9 +34,21 @@ Lista de changes OpenSpec registradas no projeto.
 - `infra/ai/local-models`
 - `infra/ai/prompt-building`
 - `infra/logging`
+- `application/services/semantic-retrieval.service`
+- `application/services/chunked-note-index.service`
+- `application/dto/semantic-retrieval.dto`
+- `infra/filesystem/index-store`
 - `interfaces/cli`
 - `interfaces/cli/runtime`
 - `interfaces/cli/commands`
+- `application/ai/skills`
+- `interfaces/cli/commands/skills`
+- `interfaces/cli/commands/flows`
+- `interfaces/cli/commands/onboarding`
+- `interfaces/cli/commands/analyze-note`
+- `interfaces/cli/commands/prepare-edit-task`
+- `interfaces/cli/commands/prepare-writing-task`
+- `interfaces/cli/commands/maintenance-diagnose`
 - `interfaces/cli/commands/create-folder`
 - `interfaces/cli/commands/create-file`
 - `interfaces/cli/commands/edit`
@@ -44,4 +61,11 @@ Lista de changes OpenSpec registradas no projeto.
 - `openspec/changes/vault-interface/specs`
 - `openspec/changes/desktop-app/specs`
 - `openspec/changes/ai-cli-bridge/specs`
+- `openspec/changes/semantic-note-links/specs`
+- `openspec/changes/semantic-vault-retrieval/specs`
+- `openspec/changes/date-notes-agenda/specs`
+- `openspec/changes/editor-writing-experience/specs`
+- `openspec/changes/overview-dashboard/specs`
+- `openspec/changes/vault-scoped-ai-terminal/specs`
+- `docs/runbooks`
 - `scripts`
