@@ -1,5 +1,21 @@
+import { createAiDevModeController } from './modules/ai-dev-mode.js';
+import { createEditorAssistController } from './modules/editor-assist.js';
+import { createEditorFormattingController } from './modules/editor-formatting.js';
+import { createEditorHistoryController } from './modules/editor-history.js';
+import { createGlobalGraphController } from './modules/global-graph.js';
+import { createAgendaController } from './modules/agenda.js';
+import { createEditorPresentationController } from './modules/editor-presentation.js';
+import { createOverviewDashboardController } from './modules/overview-dashboard.js';
+import { createRelationsSurfaceController } from './modules/relations-surface.js';
+import { createResourceBrowserController } from './modules/resource-browser.js';
+import { createUiShellController } from './modules/ui-shell.js';
+import { createVaultBootstrapController } from './modules/vault-bootstrap.js';
+import { createWorkspaceGraphController } from './modules/workspace-graph.js';
+import { createWorkspaceTreeController } from './modules/workspace-tree.js';
+import { createWorkspaceCoreController } from './modules/workspace-core.js';
+
 const shellMode = new URLSearchParams(window.location.search).get('shell');
-const isDesktopShell = shellMode === 'desktop' || Boolean(window.marikaDesktop);
+const isDesktopShell = shellMode === 'desktop' || Boolean(window.orionDesktop);
 const startupView = isDesktopShell ? 'workspace' : 'setup';
 const startupVaultRoot = isDesktopShell ? (new URLSearchParams(window.location.search).get('vaultRoot') ?? '').trim() : '';
 
@@ -32,6 +48,7 @@ const state = {
 
 let desktopBootstrapPromise = null;
 let desktopBootstrapComplete = false;
+let setupStateRequestId = 0;
 let inputDialogSession = null;
 let linkPickerSelection = { start: 0, end: 0, text: '' };
 let noteTitleRenamePromise = null;
@@ -92,58 +109,28 @@ const editorSaveState = {
   lastSavedValue: ''
 };
 
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function loadDesktopBootstrap() {
-  const attempts = isDesktopShell ? 20 : 1;
-  let lastError = null;
-
-  for (let index = 0; index < attempts; index += 1) {
-    try {
-      const bootstrap = await api('/api/bootstrap');
-      const vaultRoot = String(bootstrap.vaultRoot ?? '').trim();
-      if (vaultRoot) return bootstrap;
-      lastError = new Error('Vault padrão não configurado');
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Falha ao carregar bootstrap');
-    }
-
-    if (index < attempts - 1) {
-      await delay(150);
-    }
-  }
-
-  throw lastError ?? new Error('Falha ao carregar bootstrap');
+  return vaultBootstrap.loadDesktopBootstrap();
 }
 
 async function getDesktopBootstrapVaultRoot() {
-  if (!isDesktopShell) return '';
-
-  try {
-    const bootstrap = await api('/api/bootstrap');
-    return String(bootstrap.vaultRoot ?? '').trim();
-  } catch {
-    return '';
-  }
+  return vaultBootstrap.getDesktopBootstrapVaultRoot();
 }
 
 async function syncDesktopActiveVaultRoot(vaultRoot) {
-  const bridge = window.marikaDesktop;
-  if (!isDesktopShell || !bridge || typeof bridge.setActiveVaultRoot !== 'function') return;
-
-  await bridge.setActiveVaultRoot(vaultRoot);
+  await vaultBootstrap.syncDesktopActiveVaultRoot(vaultRoot);
 }
 
 const setupHints = {
   valid: 'A fronteira do vault está pronta para inspeção e organização.',
-  invalid: 'O caminho informado não é seguro ou está fora da fronteira do vault.'
+  invalid: 'O caminho informado não é seguro ou está fora da fronteira do vault.',
+  missing: 'Esse caminho ainda não existe. O app pode criar o vault local para você.',
+  existing: 'Esse vault já existe e pode ser aberto com segurança.'
 };
 
 const uiStorageKeys = {
-  railCollapsed: 'marika-rail-collapsed',
-  editorDraftPrefix: 'marika-editor-draft:'
+  railCollapsed: 'orion-vault-rail-collapsed',
+  editorDraftPrefix: 'orion-vault-editor-draft:'
 };
 
 const els = {
@@ -228,6 +215,8 @@ const els = {
   editorAssistList: document.getElementById('editorAssistList'),
   editorStatus: document.getElementById('editorStatus'),
   workspaceEmpty: document.getElementById('workspaceEmpty'),
+  workspaceEmptyTitle: document.getElementById('workspaceEmptyTitle'),
+  workspaceEmptyBody: document.getElementById('workspaceEmptyBody'),
   emptyStartVaultButton: document.getElementById('emptyStartVaultButton'),
   quickMenu: document.getElementById('quickMenu'),
   folderContextMenu: document.getElementById('folderContextMenu'),
@@ -316,6 +305,7 @@ const els = {
   aiDialogCommandsGroups: document.getElementById('aiDialogCommandsGroups'),
   aiDialogCommandsClose: document.getElementById('aiDialogCommandsClose'),
   aiDialogCommand: document.getElementById('aiDialogCommand'),
+  aiDialogVaultContext: document.getElementById('aiDialogVaultContext'),
   aiDialogStatus: document.getElementById('aiDialogStatus'),
   pinnedList: document.getElementById('pinnedList'),
   backlinksList: document.getElementById('backlinksList'),
@@ -330,56 +320,6 @@ const els = {
   desktopNotificationTime: document.getElementById('desktopNotificationTime'),
   desktopNotificationAction: document.getElementById('desktopNotificationAction')
 };
-
-const desktopCommands = [
-  {
-    group: 'Bridge IA',
-    items: [
-      ['/start', 'Abre a orientacao inicial da IA para este app', '/start'],
-      ['/guide', 'Abre o guia completo de comandos do app', '/guide'],
-      ['/context', 'Lê o contexto estruturado do vault ativo', '/context --vault <path> [--path <note>]'],
-      ['/search', 'Amplia o contexto com busca local estruturada', '/search --vault <path> --query <text>'],
-      ['/plan', 'Gera plano estruturado sem escrever', '/plan --vault <path>'],
-      ['/preview', 'Gera preview determinístico antes da escrita', '/preview --vault <path>'],
-      ['/apply', 'Aplica somente um preview confirmado', '/apply --vault <path> --preview-id <id>']
-    ]
-  },
-  {
-    group: 'Observação',
-    items: [
-      ['inspect', 'Inspeciona o vault ativo', 'inspect --vault <path>'],
-      ['validate', 'Valida a fronteira e a estrutura', 'validate --vault <path>'],
-      ['scan', 'Escaneia entradas e pastas', 'scan --vault <path>'],
-      ['context', 'Mostra o contexto do vault', 'context --vault <path>'],
-      ['doctor', 'Checa saúde e configuração', 'doctor --vault <path>']
-    ]
-  },
-  {
-    group: 'Planejamento',
-    items: [
-      ['organize', 'Gera plano de organização', 'organize --vault <path> --dry-run'],
-      ['plan', 'Mostra plano de ações', 'plan --vault <path>'],
-      ['diff', 'Exibe diferenças planejadas', 'diff --vault <path>']
-    ]
-  },
-  {
-    group: 'Workspace',
-    items: [
-      ['mkdir', 'Cria pasta no vault', 'mkdir --vault <path> --path <folder>'],
-      ['touch', 'Cria nota markdown', 'touch --vault <path> --path <file.md>'],
-      ['edit', 'Edita nota existente', 'edit --vault <path> --path <file.md>'],
-      ['rename', 'Renomeia arquivo ou pasta', 'rename --vault <path> --source <path> --destination <path>'],
-      ['move', 'Move arquivo ou pasta', 'move --vault <path> --source <path> --destination <path>']
-    ]
-  },
-  {
-    group: 'Utilidades',
-    items: [
-      ['search', 'Busca por texto e tags', 'search --vault <path> --query <text>'],
-      ['sync', 'Sincroniza configurações locais', 'sync']
-    ]
-  }
-];
 
 const projectSlides = [
   { tag: 'announcement', title: 'Local AI Improvements & New Plugin API', body: 'Version 2.4 introduces faster local embeddings for semantic search and a stable API for community plugins. No internet required.' },
@@ -532,100 +472,6 @@ function setEditorTitleValue(value, { enabled = true } = {}) {
 
 function currentEditorTitleValue() {
   return String(els.noteTitle.value ?? '').trim();
-}
-
-function renderInlineMarkdownPreview(text) {
-  return escapeHtml(String(text ?? ''))
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '<span class="editor-preview-link" data-path="$1">@$2</span>')
-    .replace(/\[\[([^\]]+)\]\]/g, '<span class="editor-preview-link" data-path="$1">@$1</span>');
-}
-
-function renderEditorSurface() {
-  if (!els.noteEditorSurface) return;
-
-  const html = buildEditorPresentationMarkup();
-  els.noteEditorSurface.innerHTML = html || '<div class="editor-surface-line is-empty" data-line-index="0"><br></div>';
-  syncEditorLinkFocus();
-  updateEditorCurrentLine();
-}
-
-function buildEditorPresentationMarkup() {
-  const rawContent = String(els.noteEditor.value ?? '');
-  const lines = rawContent.split(/\r?\n/);
-  return lines.map((line, index) => renderEditorSurfaceLine(line, index)).join('');
-}
-
-function renderEditorSurfaceLine(line, index) {
-  const source = String(line ?? '');
-  if (!source) {
-    return `<div class="editor-surface-line is-empty" data-line-index="${index}"><br></div>`;
-  }
-
-  if (/^```/.test(source.trim())) {
-    const fenceLabel = source.trim().slice(3).trim() || 'codigo';
-    return `<div class="editor-surface-line code-fence" data-line-index="${index}"><span class="editor-surface-token hidden-token">\`\`\`</span><span class="editor-surface-badge code">{ }</span><span class="editor-surface-content code">Bloco de ${renderInlineMarkdownPreview(fenceLabel)}</span></div>`;
-  }
-
-  if (/^---+$/.test(source.trim())) {
-    return `<div class="editor-surface-line divider" data-line-index="${index}"><span class="editor-surface-token hidden-token">---</span><span class="editor-surface-divider"></span></div>`;
-  }
-
-  const headingMatch = source.match(/^(#{1,6})\s+(.+)$/);
-  if (headingMatch) {
-    const level = headingMatch[1].length;
-    return `<div class="editor-surface-line heading level-${level}" data-line-index="${index}"><span class="editor-surface-token hidden-token" aria-hidden="true">${escapeHtml(headingMatch[1])}</span><span class="editor-surface-token hidden-space" aria-hidden="true"> </span><span class="editor-surface-content heading-content">${renderInlineMarkdownPreview(headingMatch[2])}</span></div>`;
-  }
-
-  const checklistMatch = source.match(/^(\s*)([-*+])\s+\[( |x|X)\]\s*(.*)$/);
-  if (checklistMatch) {
-    const checked = String(checklistMatch[3] ?? ' ').toLowerCase() === 'x';
-    return `<div class="editor-surface-line checklist" data-line-index="${index}"><span class="editor-surface-indent">${escapeHtml(checklistMatch[1] ?? '')}</span><span class="editor-surface-token hidden-token" aria-hidden="true">${escapeHtml(checklistMatch[2] ?? '-')} [${escapeHtml(checklistMatch[3] ?? ' ')}]</span><span class="editor-surface-badge">${checked ? '☑' : '☐'}</span><span class="editor-surface-content">${renderInlineMarkdownPreview(checklistMatch[4] ?? '') || '&nbsp;'}</span></div>`;
-  }
-
-  const unorderedMatch = source.match(/^(\s*)([-*+])\s+(.*)$/);
-  if (unorderedMatch) {
-    return `<div class="editor-surface-line list" data-line-index="${index}"><span class="editor-surface-indent">${escapeHtml(unorderedMatch[1] ?? '')}</span><span class="editor-surface-token hidden-token" aria-hidden="true">${escapeHtml(unorderedMatch[2] ?? '-')}</span><span class="editor-surface-badge">•</span><span class="editor-surface-content">${renderInlineMarkdownPreview(unorderedMatch[3] ?? '') || '&nbsp;'}</span></div>`;
-  }
-
-  const orderedMatch = source.match(/^(\s*)(\d+)\.\s+(.*)$/);
-  if (orderedMatch) {
-    return `<div class="editor-surface-line list ordered" data-line-index="${index}"><span class="editor-surface-indent">${escapeHtml(orderedMatch[1] ?? '')}</span><span class="editor-surface-token hidden-token" aria-hidden="true">${escapeHtml(orderedMatch[2] ?? '1')}.</span><span class="editor-surface-badge ordered">${escapeHtml(orderedMatch[2] ?? '1')}.</span><span class="editor-surface-content">${renderInlineMarkdownPreview(orderedMatch[3] ?? '') || '&nbsp;'}</span></div>`;
-  }
-
-  const quoteMatch = source.match(/^(\s*)>\s+(.*)$/);
-  if (quoteMatch) {
-    return `<div class="editor-surface-line quote" data-line-index="${index}"><span class="editor-surface-indent">${escapeHtml(quoteMatch[1] ?? '')}</span><span class="editor-surface-token hidden-token" aria-hidden="true">&gt;</span><span class="editor-surface-badge quote">|</span><span class="editor-surface-content">${renderInlineMarkdownPreview(quoteMatch[2] ?? '') || '&nbsp;'}</span></div>`;
-  }
-
-  return `<div class="editor-surface-line paragraph" data-line-index="${index}"><span class="editor-surface-content">${renderInlineMarkdownPreview(source) || '&nbsp;'}</span></div>`;
-}
-
-function renderEditorPresentation() {
-  renderEditorPreview();
-  renderEditorSurface();
-}
-
-function renderEditorPreview() {
-  if (!els.editorPreview) return;
-
-  const rawContent = String(els.noteEditor.value ?? '').trimEnd();
-  if (!rawContent.trim()) {
-    els.editorPreview.innerHTML = '<p class="editor-preview-empty">Comece a escrever para ver titulos, negrito, listas e links com mais contraste.</p>';
-    return;
-  }
-
-  els.editorPreview.innerHTML = `<div class="editor-preview-surface" aria-hidden="true">${buildEditorPresentationMarkup()}</div>`;
-}
-
-function setEditorPreviewExpanded(expanded) {
-  editorPreviewState.expanded = expanded;
-  if (!els.editorPreview || !els.editorPreviewToggle) return;
-  els.editorPreview.classList.toggle('hidden', !expanded);
-  els.editorPreviewToggle.textContent = expanded ? 'Ocultar' : 'Mostrar';
-  els.editorPreviewToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
 }
 
 async function openLinkedNoteFromPath(pathValue) {
@@ -803,126 +649,8 @@ function collectLinkCandidates(entry, items = []) {
   return items;
 }
 
-function closeEditorAssistMenu() {
-  editorAssistState.kind = '';
-  editorAssistState.query = '';
-  editorAssistState.tokenStart = 0;
-  editorAssistState.tokenEnd = 0;
-  editorAssistState.activeIndex = 0;
-  editorAssistState.items = [];
-  els.editorAssistMenu?.classList.add('hidden');
-  if (els.editorAssistList) {
-    els.editorAssistList.innerHTML = '';
-  }
-}
-
-function renderEditorAssistMenu() {
-  if (!els.editorAssistMenu || !els.editorAssistList || editorAssistState.items.length === 0) {
-    closeEditorAssistMenu();
-    return;
-  }
-
-  els.editorAssistLabel.textContent = editorAssistState.kind === 'mention' ? 'Mencoes' : 'Comandos';
-  els.editorAssistMeta.textContent = editorAssistState.kind === 'mention' ? 'Enter para mencionar' : 'Enter para aplicar';
-  els.editorAssistList.innerHTML = editorAssistState.items.map((item, index) => `
-    <button class="editor-assist-item ${index === editorAssistState.activeIndex ? 'active' : ''}" type="button" data-index="${index}">
-      <strong>${escapeHtml(item.label)}</strong>
-      <small>${escapeHtml(item.description)}</small>
-    </button>
-  `).join('');
-  els.editorAssistMenu.classList.remove('hidden');
-}
-
-function updateEditorAssistItems(kind, query, items, tokenStart, tokenEnd) {
-  if (items.length === 0) {
-    closeEditorAssistMenu();
-    return;
-  }
-
-  if (editorAssistState.kind !== kind || editorAssistState.query !== query) {
-    editorAssistState.activeIndex = 0;
-  }
-
-  editorAssistState.kind = kind;
-  editorAssistState.query = query;
-  editorAssistState.tokenStart = tokenStart;
-  editorAssistState.tokenEnd = tokenEnd;
-  editorAssistState.activeIndex = Math.min(editorAssistState.activeIndex, items.length - 1);
-  editorAssistState.items = items;
-  renderEditorAssistMenu();
-}
-
 function normalizeEditorText(value) {
   return String(value ?? '').replace(/\r\n/g, '\n').replace(/\u00a0/g, '');
-}
-
-function editorDraftStorageKey(pathValue) {
-  const normalizedPath = normalizeRelativePath(String(pathValue ?? '')).replace(/\/+$/g, '');
-  return `${uiStorageKeys.editorDraftPrefix}${normalizedPath}`;
-}
-
-function readEditorDraft(pathValue) {
-  const normalizedPath = normalizeRelativePath(String(pathValue ?? '')).replace(/\/+$/g, '');
-  if (!normalizedPath) return '';
-  try {
-    return String(localStorage.getItem(editorDraftStorageKey(normalizedPath)) ?? '');
-  } catch {
-    return '';
-  }
-}
-
-function writeEditorDraft(pathValue, content) {
-  const normalizedPath = normalizeRelativePath(String(pathValue ?? '')).replace(/\/+$/g, '');
-  if (!normalizedPath) return;
-  try {
-    const value = normalizeEditorText(content);
-    if (!value.trim()) {
-      localStorage.removeItem(editorDraftStorageKey(normalizedPath));
-      return;
-    }
-    localStorage.setItem(editorDraftStorageKey(normalizedPath), value);
-  } catch {
-    // Draft persistence is best-effort only.
-  }
-}
-
-function clearEditorDraft(pathValue) {
-  const normalizedPath = normalizeRelativePath(String(pathValue ?? '')).replace(/\/+$/g, '');
-  if (!normalizedPath) return;
-  try {
-    localStorage.removeItem(editorDraftStorageKey(normalizedPath));
-  } catch {
-    // Draft cleanup is best-effort only.
-  }
-}
-
-function updateEditorDraftIndicator(label = '', mode = '') {
-  if (!els.editorDraftIndicator) return;
-  const text = label || 'Sincronizado';
-  els.editorDraftIndicator.textContent = text;
-  els.editorDraftIndicator.classList.remove('is-dirty', 'is-saving', 'is-saved');
-  if (mode) {
-    els.editorDraftIndicator.classList.add(`is-${mode}`);
-  }
-}
-
-function clearEditorAutoSaveTimer() {
-  if (!editorSaveState.autoSaveTimer) return;
-  clearTimeout(editorSaveState.autoSaveTimer);
-  editorSaveState.autoSaveTimer = null;
-}
-
-function markEditorDirty() {
-  editorSaveState.dirty = true;
-  updateEditorDraftIndicator('Rascunho local', 'dirty');
-}
-
-function resetEditorSaveState(value = '') {
-  clearEditorAutoSaveTimer();
-  editorSaveState.dirty = false;
-  editorSaveState.saving = false;
-  editorSaveState.lastSavedValue = normalizeEditorText(value);
-  updateEditorDraftIndicator('Sincronizado', 'saved');
 }
 
 function getEditorSurfaceSelectionOffsets() {
@@ -1016,73 +744,10 @@ function getEditorSelection() {
   };
 }
 
-function snapshotEditorState() {
-  const selection = getEditorSelection();
-  return {
-    value: String(els.noteEditor.value ?? ''),
-    selectionStart: selection.start,
-    selectionEnd: selection.end
-  };
-}
-
-function pushEditorUndoState(snapshot) {
-  const previous = editorHistoryState.undoStack.at(-1);
-  if (previous && previous.value === snapshot.value && previous.selectionStart === snapshot.selectionStart && previous.selectionEnd === snapshot.selectionEnd) {
-    return;
-  }
-  editorHistoryState.undoStack.push(snapshot);
-  if (editorHistoryState.undoStack.length > editorHistoryState.limit) {
-    editorHistoryState.undoStack.shift();
-  }
-}
-
-function resetEditorHistory(initialSnapshot = null) {
-  editorHistoryState.undoStack = initialSnapshot ? [initialSnapshot] : [];
-  editorHistoryState.redoStack = [];
-}
-
-function applyEditorSnapshot(snapshot) {
-  if (!snapshot) return;
-  editorHistoryState.applying = true;
-  try {
-    els.noteEditor.value = String(snapshot.value ?? '');
-    renderEditorPresentation();
-    editorPendingSelection.start = Number(snapshot.selectionStart ?? 0);
-    editorPendingSelection.end = Number(snapshot.selectionEnd ?? editorPendingSelection.start);
-    setEditorSurfaceSelection(editorPendingSelection.start, editorPendingSelection.end);
-    els.noteEditorSurface?.focus();
-    editorPendingSelection.start = null;
-    editorPendingSelection.end = null;
-  } finally {
-    editorHistoryState.applying = false;
-  }
-}
-
-function undoEditorChange() {
-  if (editorHistoryState.undoStack.length <= 1) return false;
-  const currentSnapshot = snapshotEditorState();
-  editorHistoryState.redoStack.push(currentSnapshot);
-  editorHistoryState.undoStack.pop();
-  applyEditorSnapshot(editorHistoryState.undoStack.at(-1));
-  els.editorStatus.textContent = 'Desfeito.';
-  return true;
-}
-
-function redoEditorChange() {
-  const nextSnapshot = editorHistoryState.redoStack.pop();
-  if (!nextSnapshot) return false;
-  pushEditorUndoState(snapshotEditorState());
-  applyEditorSnapshot(nextSnapshot);
-  els.editorStatus.textContent = 'Refeito.';
-  return true;
-}
 
 function replaceEditorRange(start, end, text, { selectionStart = null, selectionEnd = null } = {}) {
   const value = String(els.noteEditor.value ?? '');
-  if (!editorHistoryState.applying) {
-    pushEditorUndoState(snapshotEditorState());
-    editorHistoryState.redoStack = [];
-  }
+  editorHistory.beginTrackedEditorChange();
   els.noteEditor.value = `${value.slice(0, start)}${text}${value.slice(end)}`;
   const nextSelectionStart = selectionStart === null ? start + text.length : selectionStart;
   const nextSelectionEnd = selectionEnd === null ? nextSelectionStart : selectionEnd;
@@ -1117,313 +782,6 @@ function getEditorSelectedLineRange() {
   };
 }
 
-function transformSelectedLines(transformLine) {
-  const selection = getEditorSelectedLineRange();
-  const lines = selection.block.split('\n');
-  const nextLines = lines.map((line, index) => transformLine(line, index, lines));
-  const nextBlock = nextLines.join('\n');
-  replaceEditorRange(selection.rangeStart, selection.rangeEnd, nextBlock, {
-    selectionStart: selection.rangeStart,
-    selectionEnd: selection.rangeStart + nextBlock.length
-  });
-}
-
-function splitLineIndent(line) {
-  const match = String(line ?? '').match(/^(\s*)(.*)$/);
-  return {
-    indent: match?.[1] ?? '',
-    content: match?.[2] ?? ''
-  };
-}
-
-function toggleHeadingOnSelectedLines(prefix) {
-  transformSelectedLines((line) => {
-    if (!line.trim()) return line;
-    const { indent, content } = splitLineIndent(line);
-    const withoutHeading = content.replace(/^#{1,6}\s+/, '');
-    if (content.startsWith(prefix)) {
-      return `${indent}${withoutHeading}`;
-    }
-    return `${indent}${prefix}${withoutHeading}`;
-  });
-}
-
-function togglePrefixOnSelectedLines(prefix) {
-  const selection = getEditorSelectedLineRange();
-  const lines = selection.block.split('\n').filter((line) => line.trim());
-  const allHavePrefix = lines.length > 0 && lines.every((line) => splitLineIndent(line).content.startsWith(prefix));
-  transformSelectedLines((line) => {
-    if (!line.trim()) return line;
-    const { indent, content } = splitLineIndent(line);
-    return allHavePrefix && content.startsWith(prefix) ? `${indent}${content.slice(prefix.length)}` : `${indent}${prefix}${content}`;
-  });
-}
-
-function toggleChecklistOnSelectedLines() {
-  const selection = getEditorSelectedLineRange();
-  const lines = selection.block.split('\n').filter((line) => line.trim());
-  const allChecklist = lines.length > 0 && lines.every((line) => /^[-*+]\s+\[( |x|X)\]\s+/.test(line));
-  transformSelectedLines((line) => {
-    if (!line.trim()) return line;
-    if (allChecklist && /^[-*+]\s+\[( |x|X)\]\s+/.test(line)) {
-      return line.replace(/^([-*+])\s+\[( |x|X)\]\s+/, '');
-    }
-    if (/^[-*+]\s+/.test(line)) {
-      return line.replace(/^([-*+])\s+/, '- [ ] ');
-    }
-    return `- [ ] ${line}`;
-  });
-}
-
-function toggleListOnSelectedLines() {
-  const selection = getEditorSelectedLineRange();
-  const lines = selection.block.split('\n').filter((line) => line.trim());
-  const allListed = lines.length > 0 && lines.every((line) => /^[-*+]\s+/.test(line) && !/^[-*+]\s+\[( |x|X)\]\s+/.test(line));
-  transformSelectedLines((line) => {
-    if (!line.trim()) return line;
-    if (allListed && /^[-*+]\s+/.test(line)) {
-      return line.replace(/^[-*+]\s+/, '');
-    }
-    if (/^[-*+]\s+\[( |x|X)\]\s+/.test(line)) {
-      return line.replace(/^[-*+]\s+\[( |x|X)\]\s+/, '- ');
-    }
-    return /^[-*+]\s+/.test(line) ? line : `- ${line}`;
-  });
-}
-
-function toggleCodeFenceOnSelection() {
-  const { value, start, end } = getEditorSelection();
-  const selectedText = value.slice(start, end);
-  const lineSelection = getEditorSelectedLineRange();
-  const selectedBlock = lineSelection.block;
-  if (selectedBlock.startsWith('```\n') && selectedBlock.endsWith('\n```')) {
-    replaceEditorRange(lineSelection.rangeStart, lineSelection.rangeEnd, selectedBlock.slice(4, -4), {
-      selectionStart: lineSelection.rangeStart,
-      selectionEnd: lineSelection.rangeStart + selectedBlock.length - 8
-    });
-    return;
-  }
-
-  if (selectedText.includes('\n') || selectedText.length === 0) {
-    const content = selectedBlock || selectedText || '';
-    replaceEditorRange(lineSelection.rangeStart, lineSelection.rangeEnd, `\`\`\`\n${content}\n\`\`\``, {
-      selectionStart: lineSelection.rangeStart + 4,
-      selectionEnd: lineSelection.rangeStart + 4 + content.length
-    });
-    return;
-  }
-
-  replaceEditorRange(start, end, `\`\`${selectedText}\`\``, {
-    selectionStart: start + 2,
-    selectionEnd: start + 2 + selectedText.length
-  });
-}
-
-function getMentionCandidates(query) {
-  return collectLinkCandidates(state.tree)
-    .filter((item) => item.path && item.path !== state.selectedFile)
-    .filter((item) => {
-      if (!query) return true;
-      return `${item.label} ${item.path}`.toLowerCase().includes(query.toLowerCase());
-    })
-    .sort((left, right) => `${left.label} ${left.path}`.localeCompare(`${right.label} ${right.path}`, 'pt-BR'))
-    .slice(0, 7)
-    .map((item) => ({
-      type: 'mention',
-      label: item.label,
-      description: item.path,
-      path: item.path
-    }));
-}
-
-function getSlashCommandCandidates(query) {
-  return editorSlashCommands
-    .filter((item) => {
-      if (!query) return true;
-      return `${item.id} ${item.label} ${item.description}`.toLowerCase().includes(query.toLowerCase());
-    })
-    .slice(0, 7)
-    .map((item) => ({
-      type: 'command',
-      label: `/${item.id}`,
-      description: item.description,
-      command: item
-    }));
-}
-
-function updateEditorAssistMenu() {
-  if (!state.selectedFile || document.activeElement !== els.noteEditorSurface) {
-    closeEditorAssistMenu();
-    return;
-  }
-
-  const { start, end, lineStart, beforeCursor, value } = getCurrentEditorLine();
-  if (start !== end) {
-    closeEditorAssistMenu();
-    return;
-  }
-
-  const slashMatch = beforeCursor.match(/^(\s*)\/([a-z0-9-]*)$/i);
-  if (slashMatch) {
-    const indent = slashMatch[1] ?? '';
-    const query = slashMatch[2] ?? '';
-    const tokenStart = lineStart + indent.length;
-    updateEditorAssistItems('command', query, getSlashCommandCandidates(query), tokenStart, start);
-    return;
-  }
-
-  const mentionMatch = value.slice(0, start).match(/(^|[\s([{])@([^\s@]*)$/i);
-  if (mentionMatch) {
-    const query = mentionMatch[2] ?? '';
-    const tokenStart = start - query.length - 1;
-    updateEditorAssistItems('mention', query, getMentionCandidates(query), tokenStart, start);
-    return;
-  }
-
-  closeEditorAssistMenu();
-}
-
-function applyMarkdownWrap(prefix, suffix = prefix) {
-  const { value, start, end } = getEditorSelection();
-  const selectedText = value.slice(start, end);
-  const content = selectedText || '';
-  const nextText = `${prefix}${content}${suffix}`;
-  const nextSelectionStart = start + prefix.length;
-  const nextSelectionEnd = selectedText ? end + prefix.length : start + prefix.length;
-  replaceEditorRange(start, end, nextText, { selectionStart: nextSelectionStart, selectionEnd: nextSelectionEnd });
-}
-
-function applyEditorMention(item) {
-  const mentionText = `[[${item.path}|${item.label}]]\n`;
-  const insertionStart = editorAssistState.tokenStart;
-  replaceEditorRange(insertionStart, editorAssistState.tokenEnd, mentionText, {
-    selectionStart: insertionStart + mentionText.length,
-    selectionEnd: insertionStart + mentionText.length
-  });
-  closeEditorAssistMenu();
-}
-
-function applySlashCommand(item) {
-  const command = item.command;
-  const output = typeof command.insertText === 'function' ? command.insertText() : command.insertText;
-  const insertionStart = editorAssistState.tokenStart;
-  const cursorOffset = Number.isFinite(command.cursorOffset) ? command.cursorOffset : output.length;
-  replaceEditorRange(insertionStart, editorAssistState.tokenEnd, output, {
-    selectionStart: insertionStart + cursorOffset,
-    selectionEnd: insertionStart + cursorOffset
-  });
-  closeEditorAssistMenu();
-}
-
-function applyActiveEditorAssistItem() {
-  const item = editorAssistState.items[editorAssistState.activeIndex];
-  if (!item) return false;
-  if (item.type === 'mention') {
-    applyEditorMention(item);
-    return true;
-  }
-  if (item.type === 'command') {
-    applySlashCommand(item);
-    return true;
-  }
-  return false;
-}
-
-function moveEditorAssistSelection(step) {
-  if (editorAssistState.items.length === 0) return;
-  const size = editorAssistState.items.length;
-  editorAssistState.activeIndex = (editorAssistState.activeIndex + step + size) % size;
-  renderEditorAssistMenu();
-}
-
-function continueMarkdownList(event) {
-  const line = getCurrentEditorLine();
-  if (line.start !== line.end || line.start !== line.lineEnd) return false;
-
-  const checklistMatch = line.lineText.match(/^(\s*)([-*+])\s+\[(?: |x|X)\]\s*(.*)$/);
-  if (checklistMatch) {
-    event.preventDefault();
-    const indent = checklistMatch[1] ?? '';
-    const marker = checklistMatch[2] ?? '-';
-    const content = String(checklistMatch[3] ?? '').trim();
-    if (!content) {
-      replaceEditorRange(line.lineStart, line.lineEnd, '', { selectionStart: line.lineStart, selectionEnd: line.lineStart });
-      return true;
-    }
-    const nextPrefix = `\n${indent}${marker} [ ] `;
-    replaceEditorRange(line.start, line.end, nextPrefix);
-    return true;
-  }
-
-  const unorderedMatch = line.lineText.match(/^(\s*)([-*+])\s+(.*)$/);
-  if (unorderedMatch) {
-    event.preventDefault();
-    const indent = unorderedMatch[1] ?? '';
-    const marker = unorderedMatch[2] ?? '-';
-    const content = String(unorderedMatch[3] ?? '').trim();
-    if (!content) {
-      replaceEditorRange(line.lineStart, line.lineEnd, '', { selectionStart: line.lineStart, selectionEnd: line.lineStart });
-      return true;
-    }
-    replaceEditorRange(line.start, line.end, `\n${indent}${marker} `);
-    return true;
-  }
-
-  const orderedMatch = line.lineText.match(/^(\s*)(\d+)\.\s+(.*)$/);
-  if (orderedMatch) {
-    event.preventDefault();
-    const indent = orderedMatch[1] ?? '';
-    const order = Number(orderedMatch[2] ?? '1');
-    const content = String(orderedMatch[3] ?? '').trim();
-    if (!content) {
-      replaceEditorRange(line.lineStart, line.lineEnd, '', { selectionStart: line.lineStart, selectionEnd: line.lineStart });
-      return true;
-    }
-    replaceEditorRange(line.start, line.end, `\n${indent}${order + 1}. `);
-    return true;
-  }
-
-  return false;
-}
-
-function indentSelectedListLines(direction) {
-  const selection = getEditorSelectedLineRange();
-  const lines = selection.block.split('\n');
-  const singleLine = !selection.block.includes('\n');
-  const hasNonListLine = lines.some((line) => line.trim() && !/^(\s*)([-*+]\s+(?:\[(?: |x|X)\]\s+)?|\d+\.\s+|>\s+)/.test(line));
-
-  if (singleLine && hasNonListLine && selection.start === selection.end) {
-    if (direction > 0) {
-      replaceEditorRange(selection.start, selection.end, '  ', {
-        selectionStart: selection.start + 2,
-        selectionEnd: selection.start + 2
-      });
-      return;
-    }
-
-    const removalStart = Math.max(selection.start - 2, selection.rangeStart);
-    const removable = selection.value.slice(removalStart, selection.start);
-    if (removable === '  ') {
-      replaceEditorRange(removalStart, selection.start, '', {
-        selectionStart: removalStart,
-        selectionEnd: removalStart
-      });
-    }
-    return;
-  }
-
-  const nextLines = lines.map((line) => {
-    if (!line.trim()) return line;
-    if (direction > 0) return `  ${line}`;
-    return line.startsWith('  ') ? line.slice(2) : line.replace(/^\s{1,2}/, '');
-  });
-  const nextBlock = nextLines.join('\n');
-  replaceEditorRange(selection.rangeStart, selection.rangeEnd, nextBlock, {
-    selectionStart: selection.rangeStart,
-    selectionEnd: selection.rangeStart + nextBlock.length
-  });
-}
-
 function handleEditorKeydown(event) {
   const shortcutKey = event.ctrlKey || event.metaKey;
 
@@ -1443,7 +801,7 @@ function handleEditorKeydown(event) {
     return;
   }
 
-  if (editorAssistState.items.length > 0) {
+  if (hasEditorAssistItems()) {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       moveEditorAssistSelection(1);
@@ -1627,73 +985,19 @@ function makeUniqueVaultPathForTarget(targetPath) {
 }
 
 function closeLinkPickerDialog() {
-  if (els.linkPickerDialog?.open) {
-    els.linkPickerDialog.close();
-  }
+  resourceBrowser.closeLinkPickerDialog();
 }
 
 function renderLinkPickerDialog() {
-  if (!els.linkPickerDialogList) return;
-
-  const query = String(els.linkPickerDialogQuery?.value ?? '').trim().toLowerCase();
-  const candidates = collectLinkCandidates(state.tree)
-    .filter((item) => item.path && item.path !== state.selectedFile)
-    .filter((item) => {
-      if (!query) return true;
-      return `${item.label} ${item.path}`.toLowerCase().includes(query);
-    })
-    .sort((left, right) => `${left.label} ${left.path}`.localeCompare(`${right.label} ${right.path}`, 'pt-BR'));
-
-  els.linkPickerDialogList.innerHTML = candidates.length === 0
-    ? '<div class="empty-inline">Nenhuma nota encontrada.</div>'
-    : candidates.map((item) => `
-      <button class="template-item" type="button" data-path="${escapeHtml(item.path)}" data-label="${escapeHtml(item.label)}">
-        <strong>${escapeHtml(item.label)}</strong>
-        <small>${escapeHtml(item.path)}</small>
-      </button>
-    `).join('');
+  resourceBrowser.renderLinkPickerDialog();
 }
 
 async function insertLinkToCurrentNote(targetPath, targetLabel) {
-  if (!state.selectedFile) {
-    showError('Abra uma nota antes de linkar outra.');
-    return;
-  }
-
-  const selectedText = String(linkPickerSelection.text ?? '').trim();
-  const label = selectedText || String(targetLabel ?? '').trim() || fileLabel(targetPath);
-  const linkText = `[[${targetPath}|${label}]]`;
-  const selection = getEditorSelection();
-  const start = Number.isFinite(linkPickerSelection.start) ? linkPickerSelection.start : selection.start;
-  const end = Number.isFinite(linkPickerSelection.end) ? linkPickerSelection.end : selection.end;
-
-  replaceEditorRange(start, end, linkText);
-  await saveNote();
-  els.noteEditorSurface?.focus();
+  await resourceBrowser.insertLinkToCurrentNote(targetPath, targetLabel);
 }
 
 async function openLinkPickerDialog() {
-  if (!getConfiguredVaultRoot()) {
-    await ensureActiveVaultReady('linkar notas');
-  }
-
-  if (!state.tree) {
-    await refreshWorkspace(state.selectedFile || '', false);
-  }
-
-  linkPickerSelection = {
-    start: getEditorSelection().start,
-    end: getEditorSelection().end,
-    text: String(els.noteEditor.value ?? '').slice(getEditorSelection().start, getEditorSelection().end)
-  };
-
-  if (els.linkPickerDialogQuery) {
-    els.linkPickerDialogQuery.value = '';
-  }
-
-  renderLinkPickerDialog();
-  els.linkPickerDialog.showModal();
-  els.linkPickerDialogQuery?.focus();
+  await resourceBrowser.openLinkPickerDialog();
 }
 
 function containerForSelection() {
@@ -1714,16 +1018,6 @@ function isWithinRelativePath(parentPath, candidatePath) {
 
 function isProtectedAgendaFolderPath(relativePath) {
   return normalizeRelativePath(relativePath).replace(/\/+$/g, '') === 'Agenda';
-}
-
-function formatAgendaInputValue(date = new Date()) {
-  const pad = (value) => String(value).padStart(2, '0');
-  const year = date.getFullYear();
-  const month = pad(date.getMonth() + 1);
-  const day = pad(date.getDate());
-  const hours = pad(date.getHours());
-  const minutes = pad(date.getMinutes());
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
 function parseAgendaDate(value) {
@@ -1837,7 +1131,7 @@ function agendaNotificationKey(item, windowKey) {
 
 function loadAgendaReminderKeys() {
   try {
-    const raw = localStorage.getItem('marika-agenda-reminders');
+    const raw = localStorage.getItem('orion-vault-agenda-reminders');
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
     return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
@@ -1847,7 +1141,7 @@ function loadAgendaReminderKeys() {
 }
 
 function persistAgendaReminderKeys() {
-  localStorage.setItem('marika-agenda-reminders', JSON.stringify([...state.agendaReminderKeys]));
+  localStorage.setItem('orion-vault-agenda-reminders', JSON.stringify([...state.agendaReminderKeys]));
 }
 
 function agendaShouldNotify(item, now = Date.now()) {
@@ -1864,185 +1158,11 @@ function agendaShouldNotify(item, now = Date.now()) {
   return windows;
 }
 
-function agendaStoredStatus(item) {
-  return item.status === 'overdue' ? 'overdue' : item.status;
-}
-
-function loadRecentActivity() {
-  try {
-    const raw = localStorage.getItem('marika-overview-activity');
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .filter((item) => item && typeof item === 'object')
-      .map((item) => {
-        const at = Number(item.at);
-        return {
-          kind: String(item.kind ?? 'other'),
-          title: String(item.title ?? ''),
-          path: normalizeRelativePath(String(item.path ?? '')),
-          at: Number.isFinite(at) ? at : Date.now(),
-          meta: item.meta && typeof item.meta === 'object' ? item.meta : {}
-        };
-      })
-      .filter((item) => Boolean(item.title || item.path));
-  } catch {
-    return [];
+function suppressImmediateAgendaReminders(item, now = Date.now()) {
+  for (const reminder of agendaShouldNotify(item, now)) {
+    state.agendaReminderKeys.add(agendaNotificationKey(item, reminder.key));
   }
-}
-
-function persistRecentActivity() {
-  localStorage.setItem('marika-overview-activity', JSON.stringify(state.recentActivity));
-}
-
-function formatRelativeTime(timestamp) {
-  const safeTimestamp = Number(timestamp);
-  if (!Number.isFinite(safeTimestamp)) return 'agora';
-
-  const delta = Date.now() - safeTimestamp;
-  const minutes = Math.floor(delta / 60000);
-  if (minutes < 1) return 'agora';
-  if (minutes < 60) return `há ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `há ${hours} h`;
-  const days = Math.floor(hours / 24);
-  return `há ${days} d`;
-}
-
-function activityIcon(kind) {
-  if (kind === 'save') return 'S';
-  if (kind === 'create') return 'N';
-  if (kind === 'rename') return 'R';
-  if (kind === 'move') return 'M';
-  if (kind === 'agenda') return 'A';
-  if (kind === 'daily') return 'D';
-  return 'O';
-}
-
-function recordActivity(kind, title, path, meta = {}) {
-  const entry = {
-    kind,
-    title,
-    path: normalizeRelativePath(path || ''),
-    at: Date.now(),
-    meta
-  };
-
-  state.recentActivity = [entry, ...state.recentActivity].slice(0, 8);
-  persistRecentActivity();
-  renderOverviewDashboard();
-}
-
-function buildAgendaStatusData() {
-  const counts = state.agendaItems.reduce((acc, item) => {
-    if (item.status === 'done') acc.done += 1;
-    else if (item.status === 'overdue') acc.overdue += 1;
-    else acc.pending += 1;
-    return acc;
-  }, { pending: 0, done: 0, overdue: 0 });
-
-  const total = counts.pending + counts.done + counts.overdue;
-  return { ...counts, total };
-}
-
-function renderOverviewDashboard() {
-  const summary = state.overviewSummary ?? { fileCount: 0, folderCount: 0, markdownFileCount: 0, totalBytes: 0, issues: [] };
-  const agenda = [...state.agendaItems]
-    .filter((item) => item.status !== 'done')
-    .sort((left, right) => new Date(left.due).getTime() - new Date(right.due).getTime())
-    .slice(0, 3);
-  const recent = state.recentActivity
-    .filter((item) => Number.isFinite(Number(item.at)))
-    .slice(0, 4);
-  const activityByDay = Array.from({ length: 7 }, (_, index) => {
-    const dayStart = new Date();
-    dayStart.setHours(0, 0, 0, 0);
-    dayStart.setDate(dayStart.getDate() - (6 - index));
-    const nextDay = new Date(dayStart);
-    nextDay.setDate(nextDay.getDate() + 1);
-    const count = state.recentActivity.filter((item) => {
-      const at = Number(item.at);
-      return Number.isFinite(at) && at >= dayStart.getTime() && at < nextDay.getTime();
-    }).length;
-    return count;
-  });
-  const peak = Math.max(1, ...activityByDay.map((value) => (Number.isFinite(value) ? value : 0)));
-  const agendaData = buildAgendaStatusData();
-
-  if (els.metricAgenda) els.metricAgenda.textContent = String(agendaData.total);
-  if (els.metricOverdue) els.metricOverdue.textContent = String(agendaData.overdue);
-  if (els.overviewDueCount) els.overviewDueCount.textContent = String(agenda.length);
-  if (els.overviewActivityCount) els.overviewActivityCount.textContent = String(recent.length);
-  if (els.overviewActivityPeak) els.overviewActivityPeak.textContent = `${peak} ação${peak === 1 ? '' : 'es'}`;
-  if (els.overviewAgendaRingLabel) els.overviewAgendaRingLabel.textContent = `${agendaData.total} itens`;
-
-  if (els.overviewDueList) {
-    els.overviewDueList.innerHTML = agenda.length === 0
-      ? ''
-      : agenda.map((item) => `
-        <button class="overview-list-item" type="button" data-path="${escapeHtml(item.path)}">
-          <div>
-            <strong>${escapeHtml(item.title)}</strong>
-            <p>${escapeHtml(prettyPath(item.path))}</p>
-          </div>
-          <span class="pill ${item.status === 'overdue' ? '' : 'subtle'}">${escapeHtml(agendaDateLabel(item.due))}</span>
-        </button>
-      `).join('');
-  }
-
-  if (els.overviewDueEmpty) {
-    els.overviewDueEmpty.classList.toggle('hidden', agenda.length > 0);
-  }
-
-  if (els.overviewRecentList) {
-    els.overviewRecentList.innerHTML = recent.length === 0
-      ? ''
-      : recent.map((item) => `
-        <button class="recent-item" type="button" data-path="${escapeHtml(item.path)}">
-          <span class="recent-icon">${escapeHtml(activityIcon(item.kind))}</span>
-          <div>
-            <strong>${escapeHtml(item.title)}</strong>
-            <p>${escapeHtml(formatRelativeTime(item.at))}</p>
-          </div>
-        </button>
-      `).join('');
-  }
-
-  if (els.overviewRecentEmpty) {
-    els.overviewRecentEmpty.classList.toggle('hidden', recent.length > 0);
-  }
-
-  if (els.overviewActivityBars) {
-    const bars = [...els.overviewActivityBars.querySelectorAll('span')];
-    bars.forEach((bar, index) => {
-      const ratio = Math.max(0, Number(activityByDay[index] ?? 0) / peak);
-      const height = 18 + (Number.isFinite(ratio) ? ratio : 0) * 82;
-      bar.style.setProperty('--bar-height', `${height}%`);
-    });
-  }
-
-  if (els.overviewAgendaRing) {
-    const pending = agendaData.pending / Math.max(1, agendaData.total) * 360;
-    const overdue = agendaData.overdue / Math.max(1, agendaData.total) * 360;
-    const done = agendaData.done / Math.max(1, agendaData.total) * 360;
-    els.overviewAgendaRing.style.background = `conic-gradient(#c8b7ff 0deg ${pending}deg, #ff9ca6 ${pending}deg ${pending + overdue}deg, #7ee1b5 ${pending + overdue}deg ${pending + overdue + done}deg, rgba(255,255,255,0.06) ${pending + overdue + done}deg 360deg)`;
-  }
-
-  if (els.overviewAgendaLegend) {
-    els.overviewAgendaLegend.innerHTML = [
-      ['Pendente', agendaData.pending, 'pending'],
-      ['Concluída', agendaData.done, 'done'],
-      ['Em atraso', agendaData.overdue, 'overdue']
-    ].map(([label, value, key]) => `
-      <div class="overview-legend-item">
-        <span class="overview-legend-dot ${key}"></span>
-        <strong>${label}</strong>
-        <small>${value}</small>
-      </div>
-    `).join('');
-  }
+  persistAgendaReminderKeys();
 }
 
 function joinRelativePath(base, name) {
@@ -2104,16 +1224,19 @@ function setDesktopReady(isReady) {
 }
 
 async function refreshAfterVaultChange(payload) {
-  const nextPath = String(payload?.path ?? '');
+  const nextPath = normalizeRelativePath(String(payload?.path ?? ''));
   const bootstrapVaultRoot = isDesktopShell ? await getDesktopBootstrapVaultRoot() : '';
   const nextVaultRoot = String(payload?.vaultRoot ?? bootstrapVaultRoot ?? getConfiguredVaultRoot()).trim();
   const isAgendaNote = nextPath.startsWith('Agenda/') || payload?.kind === 'agenda';
+  const shouldOpenChangedNote = payload?.kind === 'external'
+    && /\.(md|markdown)$/i.test(nextPath)
+    && nextPath !== normalizeRelativePath(state.selectedFile || '');
 
   if (isAgendaNote) {
     await loadAgenda(nextVaultRoot);
   }
 
-  await refreshWorkspace(state.selectedFile || '', Boolean(state.selectedFile));
+  await refreshWorkspace(shouldOpenChangedNote ? nextPath : (state.selectedFile || ''), Boolean(state.selectedFile || shouldOpenChangedNote));
   if (state.view === 'relations' || state.selectedFile) {
     await refreshRelationsSurface().catch(() => null);
   }
@@ -2123,15 +1246,74 @@ function updateVault(value) {
   const draftValue = String(value ?? '').trim();
   const activeVault = getConfiguredVaultRoot() || getDefaultVaultPath();
   const activeValid = isValidVaultPath(activeVault);
+  const draftValid = draftValue ? isValidVaultPath(draftValue) : activeValid;
 
   document.body.dataset.activeVaultRoot = activeVault;
 
   els.vaultName.textContent = vaultNameFromPath(activeVault);
   els.vaultRootDisplay.textContent = activeVault || 'Não selecionado';
-  els.vaultStateText.textContent = activeValid ? 'válido' : 'inválido';
+  if (draftValue && !draftValid) {
+    els.vaultStateText.textContent = 'invalido';
+    els.vaultHealthPill.textContent = 'review';
+  } else if (!getConfiguredVaultRoot() && (draftValue || getDefaultVaultPath())) {
+    els.vaultStateText.textContent = 'pendente';
+    els.vaultHealthPill.textContent = 'idle';
+  } else {
+    els.vaultStateText.textContent = activeValid ? 'ativo' : 'invalido';
+  }
   els.setupHint.textContent = draftValue
     ? (isValidVaultPath(draftValue) ? setupHints.valid : setupHints.invalid)
     : `O vault padrão deste app é ${activeVault || 'não selecionado'}.`;
+
+  void refreshSetupState(draftValue || activeVault);
+}
+
+async function refreshSetupState(candidateVaultRoot = '') {
+  const requestedVaultRoot = String(candidateVaultRoot ?? '').trim();
+  const requestId = ++setupStateRequestId;
+
+  const applyButtonState = (label) => {
+    if (els.startVaultButton) {
+      els.startVaultButton.textContent = label;
+    }
+    if (els.emptyStartVaultButton) {
+      els.emptyStartVaultButton.textContent = label;
+    }
+  };
+
+  if (!requestedVaultRoot) {
+    applyButtonState('Iniciar');
+    els.openWorkspaceButton.textContent = 'Abrir workspace';
+    return;
+  }
+
+  if (!isValidVaultPath(requestedVaultRoot)) {
+    applyButtonState('Corrigir caminho');
+    els.openWorkspaceButton.textContent = 'Abrir workspace';
+    return;
+  }
+
+  try {
+    const workspace = await api(`/api/workspace?vaultRoot=${encodeURIComponent(requestedVaultRoot)}`);
+    if (requestId !== setupStateRequestId) {
+      return;
+    }
+
+    const exists = workspace?.exists !== false;
+    applyButtonState(exists ? 'Abrir vault' : 'Criar vault');
+    els.openWorkspaceButton.textContent = getConfiguredVaultRoot() ? 'Abrir workspace' : (exists ? 'Abrir workspace' : 'Criar workspace');
+
+    if (!String(els.vaultPathInput.value ?? '').trim() || String(els.vaultPathInput.value ?? '').trim() === requestedVaultRoot) {
+      els.setupHint.textContent = exists ? setupHints.existing : setupHints.missing;
+    }
+  } catch {
+    if (requestId !== setupStateRequestId) {
+      return;
+    }
+
+    applyButtonState('Iniciar');
+    els.openWorkspaceButton.textContent = 'Abrir workspace';
+  }
 }
 
 function getDefaultVaultPath() {
@@ -2149,119 +1331,400 @@ function showError(message) {
   }
 }
 
-function setAgendaStatus(message) {
-  if (els.agendaStatusMessage) {
-    els.agendaStatusMessage.textContent = message;
-  }
-}
-
 function hideDesktopNotification() {
-  if (state.desktopNotificationTimer) {
-    clearTimeout(state.desktopNotificationTimer);
-    state.desktopNotificationTimer = null;
-  }
-
-  if (!els.desktopNotification) return;
-  els.desktopNotification.classList.remove('visible');
-  els.desktopNotification.setAttribute('aria-hidden', 'true');
+  uiShell.hideDesktopNotification();
 }
 
 function showDesktopNotification({ title, body, timeLabel = 'agora', actionLabel = 'Abrir agenda' }) {
-  if (!isDesktopShell || !els.desktopNotification) return;
-
-  els.desktopNotificationTitle.textContent = String(title ?? 'Marika');
-  els.desktopNotificationText.textContent = String(body ?? '');
-  els.desktopNotificationTime.textContent = String(timeLabel ?? 'agora');
-  els.desktopNotificationAction.textContent = String(actionLabel ?? 'Ver agenda');
-  els.desktopNotification.classList.add('visible');
-  els.desktopNotification.setAttribute('aria-hidden', 'false');
-
-  if (state.desktopNotificationTimer) {
-    clearTimeout(state.desktopNotificationTimer);
-  }
-
-  state.desktopNotificationTimer = setTimeout(() => {
-    hideDesktopNotification();
-  }, 6500);
-}
-
-function closeAiDialog() {
-  els.aiDialog.classList.add('hidden');
-  els.aiDialog.setAttribute('aria-hidden', 'true');
-  els.aiDialogCommandsPanel.classList.add('hidden');
-  document.body.classList.remove('ai-dialog-open');
+  uiShell.showDesktopNotification({ title, body, timeLabel, actionLabel });
 }
 
 function closeGuideDialog() {
-  els.guideDialog.close();
+  uiShell.closeGuideDialog();
 }
 
 async function openGuideDialog() {
-  els.guideDialogStatus.textContent = 'Carregando guia local...';
-  els.guideDialogContent.textContent = '';
-  els.guideDialog.showModal();
-
-  try {
-    const data = await api('/api/guide');
-    els.guideDialogStatus.textContent = `Arquivo: ${data.path ?? 'comandos.md'}`;
-    els.guideDialogContent.textContent = String(data.content ?? '');
-  } catch (error) {
-    els.guideDialogStatus.textContent = 'Não foi possível carregar comandos.md.';
-    els.guideDialogContent.textContent = error instanceof Error ? error.message : 'Falha ao carregar guia';
-  }
-}
-
-function openAiDialog() {
-  const vault = getActiveVaultPath();
-  if (!vault) {
-    els.aiDialogStatus.textContent = 'Abra ou crie um vault antes de usar a IA.';
-    els.aiDialog.classList.remove('hidden');
-    els.aiDialog.setAttribute('aria-hidden', 'false');
-    document.body.classList.add('ai-dialog-open');
-    return;
-  }
-
-  localStorage.setItem('marika-ai-popup-seen', 'true');
-  closeAiDialog();
-  els.aiDialogCommand.textContent = [
-    'marika /start',
-    'marika /guide',
-    'marika /context',
-    'marika /search --query "arquitetura local"',
-    'marika /plan',
-    'marika /preview',
-    'marika /apply --preview-id <id>'
-  ].join('\n');
-  els.aiDialogStatus.textContent = 'Comece por marika /start, depois marika /guide, e confirme o previewId antes de usar marika /apply.';
-  els.aiDialog.classList.remove('hidden');
-  els.aiDialog.setAttribute('aria-hidden', 'false');
-  document.body.classList.add('ai-dialog-open');
+  await uiShell.openGuideDialog();
 }
 
 function getActiveVaultPath() {
-  return state.vaultPath || state.defaultVaultPath || '';
+  return state.vaultPath || '';
 }
 
 function getConfiguredVaultRoot() {
-  return state.vaultPath || state.defaultVaultPath || '';
+  return state.vaultPath || '';
 }
 
-async function openAiTerminal() {
-  const vaultRoot = getActiveVaultPath();
-  if (!vaultRoot) {
-    throw new Error('Abra ou crie um vault antes de iniciar o terminal da IA');
-  }
+const aiDevMode = createAiDevModeController({
+  api,
+  els,
+  getActiveVaultPath,
+  showError,
+  updateSetupHint: (text) => {
+    els.setupHint.textContent = text;
+  },
+  bridgeProvider: () => window.orionDesktop,
+  body: document.body,
+  storage: window.localStorage
+});
 
-  const bridge = window.marikaDesktop;
-  if (!bridge || typeof bridge.openAiTerminal !== 'function') {
-    throw new Error('Bridge do desktop indisponível');
-  }
+let overviewDashboard = null;
+let agendaController = null;
 
-  els.aiDialogStatus.textContent = `Abrindo terminal da IA no vault ${vaultRoot}...`;
-  await bridge.openAiTerminal(vaultRoot);
-  els.aiDialogStatus.textContent = `Terminal aberto no vault ativo ${vaultRoot}.`;
-  els.setupHint.textContent = `Terminal da IA aberto no vault ativo ${vaultRoot}. Comece por marika /start, depois marika /guide, marika /context, marika /search, marika /plan, marika /preview e marika /apply --preview-id <id>.`;
-}
+overviewDashboard = createOverviewDashboardController({
+  state,
+  els,
+  storage: window.localStorage,
+  normalizeRelativePath,
+  escapeHtml,
+  prettyPath,
+  buildAgendaStatusData: () => agendaController.buildAgendaStatusData()
+});
+
+agendaController = createAgendaController({
+  state,
+  els,
+  api,
+  isDesktopShell,
+  getDesktopBootstrapVaultRoot,
+  getConfiguredVaultRoot,
+  showError,
+  renderOverviewDashboard: () => overviewDashboard.renderOverviewDashboard(),
+  syncDesktopActiveVaultRoot,
+  ensureActiveVaultReady,
+  makeUniqueVaultPathForTarget,
+  sendDebugState,
+  recordActivity: (...args) => overviewDashboard.recordActivity(...args),
+  loadAgendaReminderKeys,
+  persistAgendaReminderKeys,
+  suppressImmediateAgendaReminders,
+  openNote: async (pathValue) => loadNote(pathValue, { recordActivity: true, kind: 'open' }),
+  setView,
+  checkAgendaReminders,
+  bridgeProvider: () => window.orionDesktop,
+  prettyPath
+});
+
+const relationsSurface = createRelationsSurfaceController({
+  state,
+  els,
+  api,
+  getConfiguredVaultRoot,
+  renderBacklinksList,
+  refreshGlobalGraph: async () => refreshGlobalGraph(),
+  refreshAfterVaultChange,
+  escapeHtml,
+  fileLabel,
+  prettyPath
+});
+
+let workspaceCore = null;
+let workspaceGraph = null;
+let globalGraph = null;
+let resourceBrowser = null;
+let uiShell = null;
+let vaultBootstrap = null;
+
+const workspaceTree = createWorkspaceTreeController({
+  state,
+  els,
+  normalizeRelativePath,
+  prettyPath,
+  sortEntries,
+  refreshGraph: async () => refreshGraph(),
+  syncWorkspaceState,
+  renderPinnedList,
+  updatePinButton,
+  linkedNoteState,
+  loadNote: async (pathValue, options) => workspaceCore.loadNote(pathValue, options),
+  showFolderContextMenu,
+  showNoteContextMenu: (...args) => uiShell.showNoteContextMenu(...args)
+});
+
+workspaceCore = createWorkspaceCoreController({
+  state,
+  els,
+  api,
+  getConfiguredVaultRoot,
+  applyActiveVaultRoot,
+  reconcileVaultScopedState,
+  renderTree: workspaceTree.renderTree,
+  loadPinnedPaths,
+  setEditorTitleValue,
+  resetEditorHistory: (...args) => editorHistory.resetEditorHistory(...args),
+  resetEditorSaveState: (...args) => editorHistory.resetEditorSaveState(...args),
+  renderEditorPresentation: () => editorPresentation.renderEditorPresentation(),
+  closeEditorAssistMenu: () => editorAssist.closeEditorAssistMenu(),
+  syncWorkspaceState,
+  updateVaultSummary,
+  updatePinButton,
+  refreshBacklinks,
+  refreshGraph,
+  loadRelatedData: relationsSurface.loadRelatedData,
+  loadLinkSuggestions: relationsSurface.loadLinkSuggestions,
+  renderLinkPreview: relationsSurface.renderLinkPreview,
+  refreshGlobalGraph,
+  recordActivity: (...args) => overviewDashboard.recordActivity(...args),
+  fileLabel,
+  prettyPath,
+  pathDirectory,
+  readEditorDraft: (...args) => editorHistory.readEditorDraft(...args),
+  markEditorDirty: () => editorHistory.markEditorDirty(),
+  ensureActiveVaultReady,
+  containerForSelection,
+  openInputDialog,
+  makeUniqueVaultPath,
+  normalizeRelativePath,
+  makeUniqueVaultPathForTarget,
+  setView,
+  updatePinButtonAndPinnedList: () => {
+    renderPinnedList();
+    updatePinButton();
+  },
+  refreshOverviewAfterSave: () => overviewDashboard.renderOverviewDashboard(),
+  sendDebugState
+});
+
+workspaceGraph = createWorkspaceGraphController({
+  state,
+  els,
+  graphViewport,
+  escapeHtml,
+  api,
+  getConfiguredVaultRoot,
+  normalizeRelativePath,
+  setView,
+  syncWorkspaceState,
+  selectFolder: workspaceTree.selectFolder,
+  loadNote: async (pathValue, options) => workspaceCore.loadNote(pathValue, options)
+});
+
+globalGraph = createGlobalGraphController({
+  state,
+  els,
+  graphGlobalScene,
+  graphGlobalViewport,
+  normalizeRelativePath,
+  fileLabel,
+  prettyPath,
+  escapeHtml,
+  api,
+  getConfiguredVaultRoot,
+  refreshRelationsSurface: async () => refreshRelationsSurface(),
+  isDesktopShell,
+  startVault,
+  setView,
+  showError,
+  refreshWorkspace: async (...args) => workspaceCore.refreshWorkspace(...args),
+  refreshGraph: async () => workspaceGraph.refreshGraph(),
+  loadNote: async (pathValue, options) => workspaceCore.loadNote(pathValue, options),
+  syncWorkspaceState,
+  closeRelationsDetailsMenu: () => workspaceGraph.closeRelationsDetailsMenu()
+});
+
+resourceBrowser = createResourceBrowserController({
+  state,
+  els,
+  searchState,
+  linkPickerSelectionRef: linkPickerSelection,
+  api,
+  getConfiguredVaultRoot,
+  ensureActiveVaultReady,
+  refreshWorkspace: async (...args) => workspaceCore.refreshWorkspace(...args),
+  getEditorSelection,
+  getEditorValue: () => els.noteEditor.value,
+  replaceEditorRange,
+  saveNote: async (options) => saveNote(options),
+  focusEditorSurface: () => els.noteEditorSurface?.focus(),
+  collectLinkCandidates,
+  escapeHtml,
+  fileLabel,
+  prettyPath,
+  formatSearchSnippet,
+  setSelectedTemplate,
+  loadNote: async (pathValue, options) => workspaceCore.loadNote(pathValue, options),
+  showError
+});
+
+uiShell = createUiShellController({
+  state,
+  els,
+  isDesktopShell,
+  sessionRef: {
+    get current() {
+      return inputDialogSession;
+    },
+    set current(value) {
+      inputDialogSession = value;
+    }
+  },
+  api,
+  normalizeRelativePath,
+  selectFolder: workspaceTree.selectFolder,
+  closeAgendaOptionsMenu: () => agendaController.closeAgendaOptionsMenu(),
+  closeOverviewOptionsMenu: () => overviewDashboard.closeOverviewOptionsMenu(),
+  closeRelationsDetailsMenu: () => workspaceGraph.closeRelationsDetailsMenu(),
+  createNote: async () => workspaceCore.createNote(),
+  createFolder: async () => workspaceCore.createFolder(),
+  renameNote: async () => workspaceCore.renameNote(),
+  moveNote: async () => workspaceCore.moveNote()
+});
+
+vaultBootstrap = createVaultBootstrapController({
+  state,
+  els,
+  bootstrapState: {
+    get promise() {
+      return desktopBootstrapPromise;
+    },
+    set promise(value) {
+      desktopBootstrapPromise = value;
+    },
+    get complete() {
+      return desktopBootstrapComplete;
+    },
+    set complete(value) {
+      desktopBootstrapComplete = value;
+    }
+  },
+  isDesktopShell,
+  startupVaultRoot,
+  api,
+  sendDebugState,
+  showError,
+  updateVault,
+  setDesktopReady,
+  setView,
+  syncWorkspaceState,
+  refreshWorkspace: async (...args) => workspaceCore.refreshWorkspace(...args),
+  loadPinnedPaths,
+  loadTemplates,
+  loadAgenda: async (...args) => agendaController.loadAgenda(...args),
+  ensureAgendaReminderPolling,
+  getConfiguredVaultRoot: () => state.vaultPath || '',
+  getDefaultVaultPath: () => state.defaultVaultPath || '',
+  getActiveVaultPath: () => state.vaultPath || '',
+  getDesktopBridge: () => window.orionDesktop,
+  markDesktopReady: () => {
+    if (window.orionDesktop && typeof window.orionDesktop.markDesktopReady === 'function') {
+      window.orionDesktop.markDesktopReady();
+    }
+  },
+  onBootstrapFinished: () => {
+    syncWorkspaceState();
+  }
+});
+
+const loadRecentActivity = overviewDashboard.loadRecentActivity;
+const persistRecentActivity = overviewDashboard.persistRecentActivity;
+const recordActivity = overviewDashboard.recordActivity;
+const renderOverviewDashboard = overviewDashboard.renderOverviewDashboard;
+const closeOverviewOptionsMenu = overviewDashboard.closeOverviewOptionsMenu;
+const toggleOverviewOptionsMenu = overviewDashboard.toggleOverviewOptionsMenu;
+const editorPresentation = createEditorPresentationController({
+  els,
+  editorPreviewState,
+  escapeHtml,
+  getEditorValue: () => els.noteEditor.value,
+  syncEditorLinkFocus,
+  updateEditorCurrentLine
+});
+const editorAssist = createEditorAssistController({
+  state,
+  els,
+  editorAssistState,
+  editorSlashCommands,
+  escapeHtml,
+  collectLinkCandidates,
+  getCurrentEditorLine,
+  replaceEditorRange,
+  isEditorFocused: () => document.activeElement === els.noteEditorSurface
+});
+const editorFormatting = createEditorFormattingController({
+  getEditorSelection,
+  getCurrentEditorLine,
+  getEditorSelectedLineRange,
+  replaceEditorRange
+});
+const closeEditorAssistMenu = editorAssist.closeEditorAssistMenu;
+const updateEditorAssistMenu = editorAssist.updateEditorAssistMenu;
+const moveEditorAssistSelection = editorAssist.moveEditorAssistSelection;
+const applyActiveEditorAssistItem = editorAssist.applyActiveEditorAssistItem;
+const hasEditorAssistItems = editorAssist.hasEditorAssistItems;
+const applyMarkdownWrap = editorFormatting.applyMarkdownWrap;
+const continueMarkdownList = editorFormatting.continueMarkdownList;
+const indentSelectedListLines = editorFormatting.indentSelectedListLines;
+const toggleHeadingOnSelectedLines = editorFormatting.toggleHeadingOnSelectedLines;
+const renderEditorPresentation = editorPresentation.renderEditorPresentation;
+const setEditorPreviewExpanded = editorPresentation.setEditorPreviewExpanded;
+const editorHistory = createEditorHistoryController({
+  state,
+  els,
+  storage: window.localStorage,
+  uiStorageKeys,
+  editorHistoryState,
+  editorSaveState,
+  normalizeRelativePath,
+  normalizeEditorText,
+  getEditorSelection,
+  getEditorValue: () => els.noteEditor.value,
+  renderEditorPresentation,
+  setEditorSurfaceSelection,
+  focusEditorSurface: () => els.noteEditorSurface?.focus(),
+  getPendingSelection: () => ({
+    start: editorPendingSelection.start ?? 0,
+    end: editorPendingSelection.end ?? editorPendingSelection.start ?? 0
+  }),
+  setPendingSelection: (start, end) => {
+    editorPendingSelection.start = start;
+    editorPendingSelection.end = end;
+  },
+  clearPendingSelection: () => {
+    editorPendingSelection.start = null;
+    editorPendingSelection.end = null;
+  },
+  hasEditorAssistItems,
+  saveNote: (options) => saveNote(options),
+  showError
+});
+const readEditorDraft = editorHistory.readEditorDraft;
+const writeEditorDraft = editorHistory.writeEditorDraft;
+const clearEditorDraft = editorHistory.clearEditorDraft;
+const markEditorDirty = editorHistory.markEditorDirty;
+const resetEditorHistory = editorHistory.resetEditorHistory;
+const resetEditorSaveState = editorHistory.resetEditorSaveState;
+const undoEditorChange = editorHistory.undoEditorChange;
+const redoEditorChange = editorHistory.redoEditorChange;
+const updateEditorDraftIndicator = editorHistory.updateEditorDraftIndicator;
+const scheduleEditorAutoSave = editorHistory.scheduleEditorAutoSave;
+const isApplyingEditorHistory = editorHistory.isApplyingEditorHistory;
+const formatAgendaInputValue = agendaController.formatAgendaInputValue;
+const buildAgendaStatusData = agendaController.buildAgendaStatusData;
+const renderAgendaList = agendaController.renderAgendaList;
+const loadAgenda = agendaController.loadAgenda;
+const closeAgendaOptionsMenu = agendaController.closeAgendaOptionsMenu;
+const createAgendaNote = agendaController.createAgendaNote;
+const toggleAgendaItemStatus = agendaController.toggleAgendaItemStatus;
+const openAgendaItem = agendaController.openAgendaItem;
+const renderRelatedPanels = relationsSurface.renderRelatedPanels;
+const renderLinkSuggestions = relationsSurface.renderLinkSuggestions;
+const renderLinkPreview = relationsSurface.renderLinkPreview;
+const loadRelatedData = relationsSurface.loadRelatedData;
+const loadLinkSuggestions = relationsSurface.loadLinkSuggestions;
+const loadLinkPreview = relationsSurface.loadLinkPreview;
+const applyPreviewLink = relationsSurface.applyPreviewLink;
+const refreshRelationsSurface = relationsSurface.refreshRelationsSurface;
+const selectFolder = workspaceTree.selectFolder;
+const clearFolderSelection = workspaceTree.clearFolderSelection;
+const handleFolderSelectionBackgroundClick = workspaceTree.handleFolderSelectionBackgroundClick;
+const renderTree = workspaceTree.renderTree;
+const refreshWorkspace = workspaceCore.refreshWorkspace;
+const loadNote = workspaceCore.loadNote;
+const createFolder = workspaceCore.createFolder;
+const createNote = workspaceCore.createNote;
+const renameCurrentNoteToPath = workspaceCore.renameCurrentNoteToPath;
+const renameNote = workspaceCore.renameNote;
+const moveNote = workspaceCore.moveNote;
 
 function applyAiLauncherPosition(left, top) {
   if (!els.aiLauncher) return;
@@ -2277,7 +1740,7 @@ function applyAiLauncherPosition(left, top) {
 
 function restoreAiLauncherPosition() {
   if (!els.aiLauncher) return;
-  const saved = localStorage.getItem('marika-ai-launcher-position');
+  const saved = localStorage.getItem('orion-vault-ai-launcher-position');
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
@@ -2299,11 +1762,11 @@ function onAiLauncherActivate() {
     return;
   }
 
-  openAiDialog();
+  aiDevMode.openDialog();
 }
 
 function persistAiLauncherPosition() {
-  localStorage.setItem('marika-ai-launcher-position', JSON.stringify({ left: aiLauncherState.offsetX, top: aiLauncherState.offsetY }));
+  localStorage.setItem('orion-vault-ai-launcher-position', JSON.stringify({ left: aiLauncherState.offsetX, top: aiLauncherState.offsetY }));
 }
 
 function getNoteNameFromPath(relativePath) {
@@ -2343,7 +1806,7 @@ function renderPinnedList() {
 
 function renderBacklinksList() {
   els.backlinksList.innerHTML = state.backlinks.length === 0
-    ? '<div class="empty-inline">Sem backlinks.</div>'
+    ? `<div class="empty-inline">${state.selectedFile ? 'Sem backlinks.' : 'Selecione uma nota para ver backlinks.'}</div>`
     : state.backlinks.map((item) => `
       <button class="backlink-item" type="button" data-path="${escapeHtml(item.path)}">
         <span>${escapeHtml(item.title || getNoteNameFromPath(item.path))}</span>
@@ -2352,149 +1815,8 @@ function renderBacklinksList() {
     `).join('');
 }
 
-function renderLinkList(container, items, emptyLabel, kind = 'note-link-item') {
-  if (!container) return;
-  container.innerHTML = items.length === 0
-    ? `<div class="empty-inline">${escapeHtml(emptyLabel)}</div>`
-    : items.map((item) => `
-      <button class="${kind}" type="button" data-path="${escapeHtml(item.path)}"${item.targetPath ? ` data-target-path="${escapeHtml(item.targetPath)}"` : ''}${item.applicationMode ? ` data-application-mode="${escapeHtml(item.applicationMode)}"` : ''}>
-        <strong>${escapeHtml(item.title || fileLabel(item.path || item.targetPath || ''))}</strong>
-        <small>${escapeHtml(item.path || item.targetPath || '')}</small>
-        ${item.score !== undefined ? `<small>${escapeHtml(`${Number(item.score).toFixed(3)}${item.intensity ? ` · ${item.intensity}` : ''}`)}</small>` : ''}
-      </button>
-    `).join('');
-}
-
-function renderRelatedPanels() {
-  renderLinkList(els.manualLinksList, (state.related.manualLinks ?? []).map((item) => ({
-    path: item.targetPath || '',
-    title: item.label,
-    targetPath: item.targetPath
-  })).filter((item) => item.path), 'Sem links manuais.');
-
-  renderLinkList(els.relatedList, (state.related.related ?? []).map((item) => ({
-    path: item.path,
-    title: item.title,
-    score: item.score,
-    intensity: item.intensity
-  })), 'Sem relações inferidas.');
-
-  renderLinkList(els.relationsManualLinksList, (state.related.manualLinks ?? []).map((item) => ({
-    path: item.targetPath || '',
-    title: item.label,
-    targetPath: item.targetPath
-  })).filter((item) => item.path), 'Sem links manuais.', 'note-link-item');
-
-  renderLinkList(els.relationsRelatedList, (state.related.related ?? []).map((item) => ({
-    path: item.path,
-    title: item.title,
-    score: item.score,
-    intensity: item.intensity
-  })), 'Sem relações inferidas.', 'relation-item');
-
-  if (els.relationsNoteTitle) {
-    els.relationsNoteTitle.textContent = state.selectedFile ? fileLabel(state.selectedFile) : 'Nenhuma nota';
-  }
-  if (els.relationsNoteSummary) {
-    const current = state.related.related?.[0] ?? null;
-    els.relationsNoteSummary.textContent = state.selectedFile
-      ? (current ? current.reasons.join(' · ') : 'Sem relações inferidas acima do limiar.')
-      : 'Selecione uma nota para ver os relacionamentos.';
-  }
-  if (els.relationsNoteScore) {
-    els.relationsNoteScore.textContent = state.related.related?.[0] ? state.related.related[0].score.toFixed(3) : '0.000';
-  }
-}
-
-function renderLinkSuggestions() {
-  if (!els.linkSuggestionsList) return;
-  els.linkSuggestionsList.innerHTML = (state.linkSuggestions ?? []).length === 0
-    ? '<div class="empty-inline">Nenhuma sugestão disponível.</div>'
-    : state.linkSuggestions.map((item) => `
-      <article class="suggestion-item" data-path="${escapeHtml(item.targetPath)}" data-application-mode="${escapeHtml(item.applicationMode)}">
-        <strong>${escapeHtml(item.title)}</strong>
-        <small>${escapeHtml(item.targetPath)} · ${escapeHtml(item.score.toFixed(3))} · ${escapeHtml(item.intensity)}</small>
-        <small>${escapeHtml(item.reasons.join(' · '))}</small>
-        <div class="link-preview-actions">
-          <button class="action" type="button" data-action="preview-link" data-target-path="${escapeHtml(item.targetPath)}" data-application-mode="${escapeHtml(item.applicationMode)}">Preview</button>
-          <button class="action primary" type="button" data-action="apply-link" data-target-path="${escapeHtml(item.targetPath)}" data-application-mode="${escapeHtml(item.applicationMode)}">Aplicar</button>
-        </div>
-      </article>
-    `).join('');
-}
-
-function renderLinkPreview() {
-  if (!els.linkPreviewPanel) return;
-  const preview = state.linkPreview;
-  if (!preview) {
-    els.linkPreviewPanel.innerHTML = '<div class="empty-inline">Escolha uma sugestão para ver o preview.</div>';
-    return;
-  }
-
-  els.linkPreviewPanel.innerHTML = `
-    <div class="empty-inline">
-      <strong>${escapeHtml(preview.title)}</strong><br />
-      <small>${escapeHtml(preview.reason)}</small>
-    </div>
-    <div class="link-preview-actions">
-      <span class="pill subtle">${escapeHtml(preview.applicationMode)}</span>
-      <span class="pill subtle">${escapeHtml(preview.targetPath)}</span>
-    </div>
-    <pre><strong>Antes</strong>\n${escapeHtml(preview.diff.before.join('\n'))}\n\n<strong>Depois</strong>\n${escapeHtml(preview.diff.after.join('\n'))}</pre>
-    <div class="link-preview-actions">
-      <button class="action primary" type="button" data-action="apply-preview-link" data-target-path="${escapeHtml(preview.targetPath)}" data-application-mode="${escapeHtml(preview.applicationMode)}">Aplicar preview</button>
-    </div>
-  `;
-}
-
-function renderAgendaList() {
-  els.agendaOptionsLabel.textContent = agendaFilterLabel(state.agendaFilter);
-  const items = state.agendaItems.filter((item) => {
-    if (state.agendaFilter === 'all') return true;
-    if (state.agendaFilter === 'overdue') return item.status === 'overdue';
-    return agendaStoredStatus(item) === state.agendaFilter;
-  });
-
-  const counts = state.agendaItems.reduce((acc, item) => {
-    acc.total += 1;
-    if (item.status === 'done') acc.done += 1;
-    else if (item.status === 'overdue') acc.overdue += 1;
-    else acc.pending += 1;
-    return acc;
-  }, { total: 0, pending: 0, done: 0, overdue: 0 });
-
-  els.agendaCount.textContent = `${counts.total} itens`;
-  els.agendaPendingCount.textContent = `${counts.pending} pendentes`;
-  els.agendaDoneCount.textContent = `${counts.done} concluídas`;
-  els.agendaOverdueCount.textContent = `${counts.overdue} em atraso`;
-
-  els.agendaEmpty.classList.toggle('hidden', items.length > 0);
-  els.agendaList.innerHTML = items.length === 0
-    ? ''
-    : items.map((item) => `
-      <article class="agenda-item" data-path="${escapeHtml(item.path)}">
-        <div class="agenda-item-head">
-          <div>
-            <h4>${escapeHtml(item.title)}</h4>
-            <p>${escapeHtml(prettyPath(item.path))}</p>
-          </div>
-          <span class="pill agenda-status ${agendaStatusClass(item.status)}">${agendaStatusLabel(item.status)}</span>
-        </div>
-        <div class="agenda-item-meta">
-          <span class="pill subtle">${escapeHtml(agendaDateLabel(item.due))}</span>
-          <span class="pill subtle">${item.isAgendaFolder ? 'Agenda/' : 'meta'}</span>
-        </div>
-        ${item.excerpt ? `<p>${escapeHtml(item.excerpt)}</p>` : ''}
-        <div class="agenda-item-actions">
-          <button class="action" type="button" data-action="open">Abrir</button>
-          <button class="action" type="button" data-action="toggle">${item.status === 'done' ? 'Reabrir' : 'Concluir'}</button>
-        </div>
-      </article>
-    `).join('');
-}
-
 async function notifyAgendaItem(item, windowKey, title, body) {
-  const bridge = window.marikaDesktop;
+  const bridge = window.orionDesktop;
   if (!bridge || typeof bridge.notifyAgendaReminder !== 'function') return;
 
   const reminderKey = agendaNotificationKey(item, windowKey);
@@ -2516,26 +1838,6 @@ async function checkAgendaReminders(items = state.agendaItems) {
   }
 }
 
-async function loadAgenda(vaultRoot = '') {
-  const fallbackVaultRoot = isDesktopShell ? await getDesktopBootstrapVaultRoot() : getConfiguredVaultRoot();
-  const resolvedVaultRoot = String(vaultRoot ?? '').trim();
-  const vaultRootValue = resolvedVaultRoot || fallbackVaultRoot || getConfiguredVaultRoot();
-  if (!vaultRootValue) {
-    state.agendaItems = [];
-    renderAgendaList();
-    renderOverviewDashboard();
-    return;
-  }
-
-  const data = await api(`/api/agenda?vaultRoot=${encodeURIComponent(vaultRootValue)}`);
-  state.agendaItems = data.items ?? [];
-  renderAgendaList();
-  renderOverviewDashboard();
-  if (!isDesktopShell) {
-    await checkAgendaReminders(state.agendaItems);
-  }
-}
-
 function ensureAgendaReminderPolling() {
   if (isDesktopShell || state.agendaReminderTimer) return;
 
@@ -2545,301 +1847,48 @@ function ensureAgendaReminderPolling() {
   }, 60_000);
 }
 
-function closeAgendaOptionsMenu() {
-  els.agendaOptionsButton?.setAttribute('aria-expanded', 'false');
-  els.agendaOptionsPanel?.classList.add('is-closed');
-  els.agendaOptionsPanel?.setAttribute('aria-hidden', 'true');
-}
-
-function closeOverviewOptionsMenu() {
-  els.overviewOptionsButton?.setAttribute('aria-expanded', 'false');
-  els.overviewOptionsPanel?.classList.add('is-closed');
-  els.overviewOptionsPanel?.setAttribute('aria-hidden', 'true');
-}
-
 function closeRelationsDetailsMenu() {
-  els.relationsDetailsButton?.setAttribute('aria-expanded', 'false');
-  els.relationsDetailsPanel?.classList.add('is-closed');
-  els.relationsDetailsPanel?.setAttribute('aria-hidden', 'true');
-}
-
-function openAgendaOptionsMenu() {
-  els.agendaOptionsButton?.setAttribute('aria-expanded', 'true');
-  els.agendaOptionsPanel?.classList.remove('is-closed');
-  els.agendaOptionsPanel?.setAttribute('aria-hidden', 'false');
-}
-
-function openOverviewOptionsMenu() {
-  els.overviewOptionsButton?.setAttribute('aria-expanded', 'true');
-  els.overviewOptionsPanel?.classList.remove('is-closed');
-  els.overviewOptionsPanel?.setAttribute('aria-hidden', 'false');
+  workspaceGraph.closeRelationsDetailsMenu();
 }
 
 function openRelationsDetailsMenu() {
-  els.relationsDetailsButton?.setAttribute('aria-expanded', 'true');
-  els.relationsDetailsPanel?.classList.remove('is-closed');
-  els.relationsDetailsPanel?.setAttribute('aria-hidden', 'false');
-}
-
-function toggleAgendaOptionsMenu() {
-  if (els.agendaOptionsPanel?.classList.contains('is-closed')) {
-    openAgendaOptionsMenu();
-  } else {
-    closeAgendaOptionsMenu();
-  }
-}
-
-function toggleOverviewOptionsMenu() {
-  if (els.overviewOptionsPanel?.classList.contains('is-closed')) {
-    openOverviewOptionsMenu();
-  } else {
-    closeOverviewOptionsMenu();
-  }
+  workspaceGraph.openRelationsDetailsMenu();
 }
 
 function toggleRelationsDetailsMenu() {
-  if (els.relationsDetailsPanel?.classList.contains('is-closed')) {
-    openRelationsDetailsMenu();
-  } else {
-    closeRelationsDetailsMenu();
-  }
-}
-
-async function createAgendaNote() {
-  const title = els.agendaTitleInput.value.trim() || 'Nova nota';
-  const dueValue = els.agendaDueInput.value.trim();
-  const status = els.agendaStatusInput.value === 'done' ? 'done' : 'pending';
-  const body = els.agendaBodyInput.value.trim();
-
-  if (!dueValue) {
-    showError('Informe o prazo para criar a nota da agenda.');
-    return;
-  }
-
-  const vaultRoot = (await getDesktopBootstrapVaultRoot()) || await ensureActiveVaultReady('criar notas com prazo');
-  await syncDesktopActiveVaultRoot(vaultRoot);
-
-  setAgendaStatus('Salvando nota com data...');
-  const filePath = makeUniqueVaultPathForTarget(buildAgendaFilePath(title, dueValue));
-  const content = buildAgendaMarkdown({ vaultRoot, title, dueValue, status, body });
-
-  sendDebugState('createAgenda.before', { vaultRoot, path: filePath });
-
-  state.agendaReminderKeys = new Set([...state.agendaReminderKeys].filter((key) => !key.startsWith(`${filePath}|`)));
-  persistAgendaReminderKeys();
-
-  const bridge = window.marikaDesktop;
-  if (bridge && typeof bridge.createAgendaNote === 'function') {
-    await bridge.createAgendaNote({ vaultRoot, path: filePath, content });
-  } else {
-    await api('/api/file', {
-      method: 'POST',
-      body: JSON.stringify({ vaultRoot, path: filePath, content, operation: 'create' })
-    });
-  }
-
-  sendDebugState('createAgenda.after', { vaultRoot, path: filePath });
-
-  recordActivity('agenda', `Criada ${fileLabel(filePath)}`, filePath);
-
-  els.agendaTitleInput.value = '';
-  els.agendaBodyInput.value = '';
-  els.agendaStatusInput.value = 'pending';
-  els.agendaDueInput.value = formatAgendaInputValue(new Date(Date.now() + (60 * 60 * 1000)));
-
-  setView('agenda');
-  try {
-    await refreshAfterVaultChange({ path: filePath, kind: 'agenda' });
-    setAgendaStatus(`Salvo em ${filePath}`);
-  } catch (error) {
-    showError(error instanceof Error ? error.message : 'Falha ao atualizar agenda');
-  }
-}
-
-async function toggleAgendaItemStatus(pathValue, currentStatus) {
-  const vaultRoot = (await getDesktopBootstrapVaultRoot()) || getConfiguredVaultRoot();
-  if (!vaultRoot) return;
-
-  await syncDesktopActiveVaultRoot(vaultRoot);
-
-  const data = await api(`/api/file?vaultRoot=${encodeURIComponent(vaultRoot)}&path=${encodeURIComponent(pathValue)}`);
-  const nextStatus = currentStatus === 'done' ? 'pending' : 'done';
-  const content = updateAgendaMarkdownStatus(String(data.content ?? ''), nextStatus);
-
-  await api('/api/file', {
-    method: 'POST',
-    body: JSON.stringify({ vaultRoot, path: pathValue, content, operation: 'edit' })
-  });
-
-  if (nextStatus === 'pending') {
-    state.agendaReminderKeys = new Set([...state.agendaReminderKeys].filter((key) => !key.startsWith(`${pathValue}|`)));
-    persistAgendaReminderKeys();
-  }
-
-  if (state.view === 'workspace' && state.selectedFile === pathValue) {
-    await loadNote(pathValue);
-  }
-  recordActivity('agenda', `${nextStatus === 'done' ? 'Concluída' : 'Reaberta'} ${fileLabel(pathValue)}`, pathValue);
-  await loadAgenda(vaultRoot);
-}
-
-async function openAgendaItem(pathValue) {
-  setView('workspace');
-  await loadNote(pathValue, { recordActivity: true, kind: 'agenda' });
+  workspaceGraph.toggleRelationsDetailsMenu();
 }
 
 function setSummaryMode(mode) {
-  state.summaryMode = mode;
-  els.summaryOverviewButton.classList.toggle('active', mode === 'overview');
-  els.summaryGraphButton.classList.toggle('active', mode === 'graph');
-  els.summaryOverview.classList.toggle('hidden', mode !== 'overview');
-  els.graphPanel.classList.toggle('hidden', mode !== 'graph');
-  if (mode === 'graph') {
-    resetGraphViewport();
-    renderGraph(state.graph);
-  }
+  workspaceGraph.setSummaryMode(mode);
 }
 
 function renderGraph(graph) {
-  const nodes = graph?.nodes ?? [];
-  const edges = graph?.edges ?? [];
-  els.graphCount.textContent = `${nodes.length} nós`;
-
-  if (nodes.length === 0) {
-    els.graphSvg.innerHTML = '<text x="180" y="180" text-anchor="middle" class="graph-node-label">Sem conexões</text>';
-    return;
-  }
-
-  const center = { x: 180, y: 180 };
-  const current = nodes.find((node) => node.kind === 'current') ?? nodes[0];
-  const positions = new Map([[current.id, center]]);
-
-  const sortNodes = (items) => [...items].sort((left, right) => {
-    if (left.kind === right.kind) {
-      return left.label.localeCompare(right.label, 'pt-BR');
-    }
-
-    if (left.kind === 'folder') return -1;
-    if (right.kind === 'folder') return 1;
-    if (left.kind === 'current') return -1;
-    if (right.kind === 'current') return 1;
-    return left.label.localeCompare(right.label, 'pt-BR');
-  });
-
-  const placeRing = (items, radius, offset = 0) => {
-    const arranged = sortNodes(items);
-    arranged.forEach((node, index) => {
-      const angle = (index / Math.max(1, arranged.length)) * Math.PI * 2 - Math.PI / 2 + offset;
-      positions.set(node.id, {
-        x: center.x + Math.cos(angle) * radius,
-        y: center.y + Math.sin(angle) * radius
-      });
-    });
-  };
-
-  const folders = nodes.filter((node) => node.id !== current.id && node.kind === 'folder');
-  const linkedNotes = nodes.filter((node) => node.id !== current.id && node.kind !== 'folder');
-
-  if (graph.scope === 'folder') {
-    placeRing(folders, 92, 0.15);
-    placeRing(linkedNotes, 150, -0.1);
-  } else {
-    const folderChain = folders.filter((node) => String(node.path ?? '').includes('/'));
-    const siblingFolders = folders.filter((node) => !String(node.path ?? '').includes('/'));
-    placeRing(folderChain.length > 0 ? folderChain : siblingFolders, 92, 0.12);
-    placeRing(linkedNotes, 150, -0.12);
-  }
-
-  const lines = edges.map((edge) => {
-    const from = positions.get(edge.from);
-    const to = positions.get(edge.to);
-    if (!from || !to) return '';
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const midX = from.x + dx / 2;
-    const midY = from.y + dy / 2;
-    const curve = 0.22;
-    const c1x = from.x + dx * curve;
-    const c1y = from.y + dy * curve - 18;
-    const c2x = from.x + dx * (1 - curve);
-    const c2y = from.y + dy * (1 - curve) + 18;
-    return `<path d="M ${from.x} ${from.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${to.x} ${to.y}" class="graph-edge" />`;
-  }).join('');
-
-  const nodesMarkup = nodes.map((node) => {
-    const position = positions.get(node.id) ?? center;
-    const isCurrent = node.kind === 'current';
-    const kind = node.kind === 'folder' || (graph.scope === 'folder' && node.kind === 'current') ? 'folder' : 'note';
-    return `
-      <g class="graph-node" data-path="${escapeHtml(node.path)}" data-kind="${kind}" data-current="${isCurrent ? 'true' : 'false'}" transform="translate(${position.x}, ${position.y})">
-        <circle r="${isCurrent ? 28 : 18}" class="${isCurrent ? 'graph-node-current' : 'graph-node-linked'}" />
-        <text y="${isCurrent ? 42 : 30}" text-anchor="middle" class="graph-node-label">${escapeHtml(node.label)}</text>
-      </g>
-    `;
-  }).join('');
-
-  els.graphSvg.innerHTML = `
-    <defs>
-      <filter id="graphGlow" x="-40%" y="-40%" width="180%" height="180%">
-        <feGaussianBlur stdDeviation="4" result="blur" />
-        <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-      </filter>
-    </defs>
-    <g class="graph-stage" transform="translate(${graphViewport.x} ${graphViewport.y}) scale(${graphViewport.scale})">
-      <g>${lines}</g>
-      <g>${nodesMarkup}</g>
-    </g>
-  `;
+  workspaceGraph.renderGraph(graph);
 }
 
 function resetGraphViewport() {
-  graphViewport.scale = 1;
-  graphViewport.x = 0;
-  graphViewport.y = 0;
+  workspaceGraph.resetGraphViewport();
 }
 
 function zoomGraph(delta, originX = 180, originY = 180) {
-  const nextScale = Math.min(2.4, Math.max(0.6, graphViewport.scale + delta));
-  const ratio = nextScale / graphViewport.scale;
-  graphViewport.x = originX - ((originX - graphViewport.x) * ratio);
-  graphViewport.y = originY - ((originY - graphViewport.y) * ratio);
-  graphViewport.scale = nextScale;
+  workspaceGraph.zoomGraph(delta, originX, originY);
 }
 
 function startGraphDrag(clientX, clientY) {
-  graphViewport.dragging = true;
-  graphViewport.lastX = clientX;
-  graphViewport.lastY = clientY;
+  workspaceGraph.startGraphDrag(clientX, clientY);
 }
 
 function moveGraphDrag(clientX, clientY) {
-  if (!graphViewport.dragging) return;
-  graphViewport.x += clientX - graphViewport.lastX;
-  graphViewport.y += clientY - graphViewport.lastY;
-  graphViewport.lastX = clientX;
-  graphViewport.lastY = clientY;
-  renderGraph(state.graph);
+  workspaceGraph.moveGraphDrag(clientX, clientY);
 }
 
 function stopGraphDrag() {
-  graphViewport.dragging = false;
+  workspaceGraph.stopGraphDrag();
 }
 
 async function openGraphNode(relativePath, kind) {
-  if (!relativePath) return;
-
-  if (kind === 'folder') {
-    state.graphContext = { kind: 'folder', path: normalizeRelativePath(relativePath) };
-    state.selectedFolder = normalizeRelativePath(relativePath);
-    state.selectedFile = '';
-    setView('workspace');
-    syncWorkspaceState();
-    selectFolder(relativePath, 'folder');
-    await refreshGraph();
-    return;
-  }
-
-  await loadNote(relativePath, { recordActivity: true, kind: 'open' });
+  await workspaceGraph.openGraphNode(relativePath, kind);
 }
 
 async function loadPinnedPaths() {
@@ -2867,1048 +1916,111 @@ async function refreshBacklinks() {
   renderBacklinksList();
 }
 
-async function loadRelatedData() {
-  const vaultRoot = getConfiguredVaultRoot();
-  if (!vaultRoot || !state.selectedFile) {
-    state.related = { manualLinks: [], backlinks: [], related: [] };
-    state.backlinks = [];
-    state.linkPreview = null;
-    renderBacklinksList();
-    renderRelatedPanels();
-    return;
-  }
-
-  const params = new URLSearchParams({ vaultRoot, path: state.selectedFile, limit: '10' });
-  const data = await api(`/api/related?${params.toString()}`);
-  state.related = {
-    manualLinks: data.manualLinks ?? [],
-    backlinks: data.backlinks ?? [],
-    related: data.related ?? []
-  };
-  state.backlinks = (data.backlinks ?? []).map((item) => ({
-    path: item.targetPath || item.path || '',
-    title: item.label || item.title || item.targetPath || item.path || ''
-  })).filter((item) => Boolean(item.path));
-  renderBacklinksList();
-  renderRelatedPanels();
-}
-
-async function loadLinkSuggestions() {
-  const vaultRoot = getConfiguredVaultRoot();
-  if (!vaultRoot || !state.selectedFile) {
-    state.linkSuggestions = [];
-    state.linkPreview = null;
-    renderLinkSuggestions();
-    renderLinkPreview();
-    return;
-  }
-
-  const params = new URLSearchParams({ vaultRoot, path: state.selectedFile, limit: '8' });
-  const data = await api(`/api/link-suggestions?${params.toString()}`);
-  state.linkSuggestions = data.suggestions ?? [];
-  renderLinkSuggestions();
-}
-
-async function loadLinkPreview(targetPath, applicationMode = 'section') {
-  const vaultRoot = getConfiguredVaultRoot();
-  if (!vaultRoot || !state.selectedFile || !targetPath) return;
-
-  const data = await api('/api/link-preview', {
-    method: 'POST',
-    body: JSON.stringify({ vaultRoot, path: state.selectedFile, targetPath, mode: applicationMode })
-  });
-
-  state.linkPreview = data;
-  renderLinkPreview();
-}
-
-async function applyPreviewLink(targetPath, applicationMode = 'section') {
-  const vaultRoot = getConfiguredVaultRoot();
-  if (!vaultRoot || !state.selectedFile || !targetPath) return;
-
-  await api('/api/link-apply', {
-    method: 'POST',
-    body: JSON.stringify({ vaultRoot, path: state.selectedFile, targetPath, mode: applicationMode })
-  });
-
-  state.linkPreview = null;
-  await refreshAfterVaultChange({ path: state.selectedFile });
-  await loadRelatedData();
-  await loadLinkSuggestions();
-}
-
 async function refreshGraph() {
-  const vaultRoot = getConfiguredVaultRoot();
-  if (!vaultRoot) {
-    state.graph = { scope: 'note', nodes: [], edges: [] };
-    renderGraph(state.graph);
-    return;
-  }
-
-  const params = new URLSearchParams({ vaultRoot });
-  if (state.graphContext.kind === 'folder') {
-    params.set('folderPath', state.graphContext.path);
-  } else if (state.selectedFile) {
-    params.set('path', state.selectedFile);
-  } else if (state.selectedFolder) {
-    params.set('folderPath', state.selectedFolder);
-  }
-
-  if (!params.has('path') && !params.has('folderPath')) {
-    state.graph = { scope: 'note', nodes: [], edges: [] };
-    renderGraph(state.graph);
-    return;
-  }
-
-  const data = await api(`/api/graph?${params.toString()}`);
-  state.graph = data;
-  renderGraph(state.graph);
-}
-
-function normalizeGraphGlobalNodes(graph) {
-  const nodes = [...(graph?.nodes ?? [])];
-  return nodes.sort((left, right) => {
-    if (left.kind !== right.kind) {
-      if (left.kind === 'folder') return -1;
-      if (right.kind === 'folder') return 1;
-      return left.label.localeCompare(right.label, 'pt-BR');
-    }
-
-    if (left.kind === 'note') {
-      return right.score - left.score || left.label.localeCompare(right.label, 'pt-BR');
-    }
-
-    return left.label.localeCompare(right.label, 'pt-BR');
-  });
-}
-
-function graphGlobalClusterKeyForNode(node) {
-  const source = node.kind === 'folder' ? node.path : (node.folderPath || node.path);
-  const normalized = normalizeRelativePath(source);
-  const [first = ''] = normalized.split('/').filter(Boolean);
-  return first;
-}
-
-function hashGraphPath(value) {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = ((hash << 5) - hash) + value.charCodeAt(index);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-function graphGlobalClusterLabel(key) {
-  return key ? fileLabel(key) : 'Raiz';
-}
-
-function graphGlobalPalette(index) {
-  const palettes = [
-    {
-      blob: 'rgba(109, 40, 217, 0.14)',
-      stroke: 'rgba(167, 139, 250, 0.28)',
-      glow: 'rgba(167, 139, 250, 0.38)',
-      node: 'rgba(216, 180, 254, 0.96)',
-      nodeStrong: 'rgba(250, 245, 255, 0.98)',
-      folder: 'rgba(196, 181, 253, 0.74)'
-    },
-    {
-      blob: 'rgba(30, 64, 175, 0.14)',
-      stroke: 'rgba(96, 165, 250, 0.26)',
-      glow: 'rgba(96, 165, 250, 0.34)',
-      node: 'rgba(147, 197, 253, 0.95)',
-      nodeStrong: 'rgba(239, 246, 255, 0.98)',
-      folder: 'rgba(148, 163, 184, 0.76)'
-    },
-    {
-      blob: 'rgba(88, 28, 135, 0.16)',
-      stroke: 'rgba(232, 121, 249, 0.22)',
-      glow: 'rgba(216, 180, 254, 0.32)',
-      node: 'rgba(233, 213, 255, 0.94)',
-      nodeStrong: 'rgba(250, 245, 255, 0.98)',
-      folder: 'rgba(192, 132, 252, 0.72)'
-    },
-    {
-      blob: 'rgba(14, 116, 144, 0.14)',
-      stroke: 'rgba(103, 232, 249, 0.22)',
-      glow: 'rgba(125, 211, 252, 0.28)',
-      node: 'rgba(165, 243, 252, 0.92)',
-      nodeStrong: 'rgba(236, 254, 255, 0.98)',
-      folder: 'rgba(148, 163, 184, 0.7)'
-    },
-    {
-      blob: 'rgba(91, 33, 182, 0.16)',
-      stroke: 'rgba(196, 181, 253, 0.26)',
-      glow: 'rgba(192, 132, 252, 0.34)',
-      node: 'rgba(221, 214, 254, 0.96)',
-      nodeStrong: 'rgba(255, 255, 255, 0.98)',
-      folder: 'rgba(196, 181, 253, 0.74)'
-    }
-  ];
-
-  return palettes[index % palettes.length];
-}
-
-function graphGlobalBlobPath(cx, cy, rx, ry, seed) {
-  const points = [];
-  const steps = 18;
-  for (let index = 0; index < steps; index += 1) {
-    const angle = (Math.PI * 2 * index) / steps;
-    const wobble = 1 + (Math.sin((index * 1.7) + seed) * 0.07) + (Math.cos((index * 2.4) + seed) * 0.055);
-    points.push([cx + (Math.cos(angle) * rx * wobble), cy + (Math.sin(angle) * ry * wobble)]);
-  }
-
-  let pathValue = `M ${points[0][0].toFixed(2)} ${points[0][1].toFixed(2)}`;
-  for (let index = 0; index < points.length; index += 1) {
-    const current = points[index];
-    const next = points[(index + 1) % points.length];
-    const middleX = (current[0] + next[0]) / 2;
-    const middleY = (current[1] + next[1]) / 2;
-    pathValue += ` Q ${current[0].toFixed(2)} ${current[1].toFixed(2)} ${middleX.toFixed(2)} ${middleY.toFixed(2)}`;
-  }
-
-  return `${pathValue} Z`;
-}
-
-function buildGlobalGraphSlots(count, width, height) {
-  if (count <= 0) return [];
-  if (count === 1) return [{ x: width / 2, y: height / 2 }];
-
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const radiusX = Math.max(220, width * 0.31);
-  const radiusY = Math.max(170, height * 0.25);
-  const includeCenter = count >= 5 && count % 2 === 1;
-  const ringCount = includeCenter ? count - 1 : count;
-  const slots = [];
-
-  for (let index = 0; index < ringCount; index += 1) {
-    const angle = (-Math.PI / 2) + ((Math.PI * 2 * index) / ringCount);
-    slots.push({
-      x: centerX + (Math.cos(angle) * radiusX),
-      y: centerY + (Math.sin(angle) * radiusY)
-    });
-  }
-
-  if (includeCenter) {
-    slots.splice(Math.floor(slots.length / 2), 0, { x: centerX, y: centerY + (height * 0.12) });
-  }
-
-  return slots;
-}
-
-function buildGlobalGraphStars(width, height) {
-  const stars = [];
-  for (let index = 0; index < 120; index += 1) {
-    const seed = hashGraphPath(`star:${index}`);
-    const x = seed % width;
-    const y = Math.floor(seed / Math.max(1, width)) % height;
-    const radius = 0.55 + ((seed % 100) / 110);
-    const opacity = 0.18 + ((seed % 70) / 120);
-    stars.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${radius.toFixed(2)}" opacity="${opacity.toFixed(2)}"></circle>`);
-  }
-  return stars.join('');
-}
-
-
-function getGlobalNodeColor(node) {
-  if (node.kind === 'folder') return 'rgba(88, 164, 255, 0.92)';
-  const score = Math.max(0, Math.min(1, Number(node.score ?? 0)));
-  const warm = Math.round(255 - (score * 72));
-  const cool = Math.round(150 + (score * 90));
-  return `rgba(${warm}, ${cool}, 255, 0.92)`;
-}
-
-function renderLegacyGlobalGraph(graph) {
-  graphGlobalScene.lastGraph = graph;
-  const stage = els.graphGlobalStage;
-  const sphere = els.graphGlobalSphere;
-  if (!stage || !sphere) return;
-
-  const rect = stage.getBoundingClientRect();
-  const width = Math.max(640, Math.round(rect.width || 920));
-  const height = Math.max(520, Math.round(rect.height || 760));
-
-  const nodes = normalizeGraphGlobalNodes(graph);
-  const edges = [...(graph?.edges ?? [])].sort((left, right) => {
-    const weight = { strong: 3, medium: 2, weak: 1, hidden: 0 };
-    return (weight[right.intensity] ?? 0) - (weight[left.intensity] ?? 0) || Number(right.score ?? 0) - Number(left.score ?? 0);
-  });
-
-  if (els.graphGlobalCount) {
-    els.graphGlobalCount.textContent = `${nodes.length} nós`;
-  }
-
-  sphere.style.transform = `rotateX(${graphGlobalViewport.pitch * 24}deg) rotateY(${graphGlobalViewport.yaw * 24}deg) rotateZ(${graphGlobalViewport.roll * 18}deg)`;
-
-  if (nodes.length === 0) {
-    sphere.innerHTML = '<div class="empty-inline graph-global-empty">Sem relações</div>';
-    if (els.graphGlobalOverlayTitle) els.graphGlobalOverlayTitle.textContent = 'Nenhuma nota';
-    if (els.graphGlobalOverlaySummary) els.graphGlobalOverlaySummary.textContent = 'Abra uma nota ou clique em um nó para ver o resumo.';
-    if (els.graphGlobalOverlayBadge) els.graphGlobalOverlayBadge.textContent = 'Nó selecionado';
-    if (els.graphGlobalOverlayStatus) els.graphGlobalOverlayStatus.textContent = '--';
-    if (els.graphGlobalOverlayLinks) els.graphGlobalOverlayLinks.textContent = '--';
-    if (els.graphGlobalOverlayLayer) els.graphGlobalOverlayLayer.textContent = '--';
-    return;
-  }
-
-  const vectors = nodes.map((node, index) => {
-    if (node.path === graph?.focusPath) {
-      return { node, base: { x: 0, y: 0, z: 1 } };
-    }
-
-    const sphereIndex = index + (graph?.focusPath ? 1 : 0);
-    const total = nodes.length + (graph?.focusPath ? 1 : 0);
-    return { node, base: fibonacciSpherePoint(sphereIndex, Math.max(1, total)) };
-  });
-
-  const projectedNodes = vectors.map(({ node, base }) => {
-    const rotated = rotateGlobalPoint(base);
-    const projected = projectGlobalPoint(rotated, width, height);
-    return { node, rotated, projected };
-  });
-
-  const centerX = width / 2;
-  const centerY = height / 2;
-
-  const activePath = graphGlobalScene.hoverPath || graph?.focusPath || '';
-  const activeNode = activePath
-    ? projectedNodes.find((entry) => entry.node.path === activePath) ?? null
-    : null;
-
-  graphGlobalScene.activePath = activePath;
-  const connectionCounts = new Map();
-  for (const edge of edges) {
-    connectionCounts.set(edge.from, (connectionCounts.get(edge.from) ?? 0) + 1);
-    connectionCounts.set(edge.to, (connectionCounts.get(edge.to) ?? 0) + 1);
-  }
-
-  const connectedPaths = new Set(graphGlobalScene.activePath ? [graphGlobalScene.activePath] : []);
-  const activeEdges = new Set();
-  for (const edge of edges) {
-    if (!graphGlobalScene.activePath) continue;
-    if (edge.from === graphGlobalScene.activePath || edge.to === graphGlobalScene.activePath) {
-      connectedPaths.add(edge.from);
-      connectedPaths.add(edge.to);
-      activeEdges.add(`${edge.from}->${edge.to}:${edge.kind}`);
-    }
-  }
-
-  const projectedByPath = new Map(projectedNodes.map((entry) => [entry.node.path, entry]));
-  const linesMarkup = edges.map((edge) => {
-    const from = projectedByPath.get(edge.from);
-    const to = projectedByPath.get(edge.to);
-    if (!from || !to) return '';
-
-    const isConnected = !graphGlobalScene.activePath || connectedPaths.has(edge.from) || connectedPaths.has(edge.to);
-    const isFeatured = activeEdges.has(`${edge.from}->${edge.to}:${edge.kind}`);
-    const depth = (from.projected.z + to.projected.z) / 2;
-    const opacity = graphGlobalScene.activePath
-      ? (isConnected ? Math.max(0.15, 0.2 + ((depth + 1) / 2) * 0.48) : 0.06)
-      : Math.max(0.12, 0.18 + ((depth + 1) / 2) * 0.48);
-    const width = edge.kind === 'manual' ? 2.1 : edge.kind === 'folder' ? 1.25 : 1.45;
-    return `
-      <line
-        class="graph-global-connection ${escapeHtml(edge.kind)}${isFeatured ? ' featured' : ''}"
-        x1="${(from.projected.x + centerX).toFixed(2)}"
-        y1="${(from.projected.y + centerY).toFixed(2)}"
-        x2="${(to.projected.x + centerX).toFixed(2)}"
-        y2="${(to.projected.y + centerY).toFixed(2)}"
-        style="--opacity:${opacity.toFixed(3)}; stroke-width:${width};"
-      />
-    `;
-  }).join('');
-
-  const nodesMarkup = projectedNodes.map(({ node, projected }) => {
-    const active = node.path === graphGlobalScene.activePath;
-    const connected = !graphGlobalScene.activePath || connectedPaths.has(node.path);
-    const kindClass = node.kind === 'folder' ? 'gray' : 'blue';
-    const pathHash = hashGraphPath(node.path);
-    const floatPhase = (graphGlobalScene.motionTime / 1200) + (pathHash % 360) * 0.0174533;
-    const floatLift = Math.sin(floatPhase) * (node.kind === 'folder' ? 1.4 : 2.2);
-    const floatScale = 1 + (Math.sin(floatPhase * 0.85) * (active ? 0.024 : 0.012));
-    const opacity = active
-      ? 1
-      : connected
-        ? Math.max(0.24, Math.min(1, projected.opacity))
-        : Math.max(0.14, Math.min(0.4, projected.opacity * 0.34));
-    const scale = node.kind === 'folder'
-      ? 0.82 + (projected.depth * 0.16)
-      : Math.max(0.64, Math.min(1.55, projected.scale));
-    const connections = connectionCounts.get(node.path) ?? 0;
-    return `
-      <button
-        type="button"
-        class="graph-global-node ${kindClass}${active ? ' active' : ''}${connected ? '' : ' dimmed'}"
-        data-path="${escapeHtml(node.path)}"
-        data-kind="${escapeHtml(node.kind)}"
-        data-title="${escapeHtml(node.label)}"
-        data-connections="${connections}"
-        data-active="${active ? 'true' : 'false'}"
-        aria-label="Abrir ${escapeHtml(node.label)}"
-        title="${escapeHtml(node.label)} · ${connections} conexões"
-        style="--x:${projected.x.toFixed(2)}px; --y:${projected.y.toFixed(2)}px; --float-y:${floatLift.toFixed(2)}px; --scale:${(scale * floatScale).toFixed(3)}; opacity:${opacity.toFixed(3)}; z-index:${Math.round((projected.z + 1) * 100)};"
-      ></button>
-    `;
-  }).join('');
-
-  sphere.innerHTML = `
-    <svg class="graph-global-connections" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
-      ${linesMarkup}
-    </svg>
-    <div class="graph-global-nodes">${nodesMarkup}</div>
-  `;
-
-  if (els.graphGlobalOverlayTitle) {
-    els.graphGlobalOverlayTitle.textContent = activeNode?.node.label || 'Nenhuma nota selecionada';
-  }
-  if (els.graphGlobalOverlaySummary) {
-    els.graphGlobalOverlaySummary.textContent = activeNode?.node.summary || 'Passe o mouse ou clique em um nó para ver o resumo.';
-  }
-  if (els.graphGlobalOverlayBadge) {
-    els.graphGlobalOverlayBadge.textContent = activeNode?.node.kind === 'folder' ? 'Nó de pasta' : activeNode ? 'Nó de nota' : 'Nó selecionado';
-  }
-  if (els.graphGlobalOverlayStatus) {
-    els.graphGlobalOverlayStatus.textContent = activeNode?.node.kind === 'folder' ? 'Pasta' : activeNode ? 'Core' : '--';
-  }
-  if (els.graphGlobalOverlayLinks) {
-    els.graphGlobalOverlayLinks.textContent = activeNode ? String(connectionCounts.get(activeNode.node.path) ?? 0) : '--';
-  }
-  if (els.graphGlobalOverlayLayer) {
-    els.graphGlobalOverlayLayer.textContent = activeNode ? (activeNode.projected.z > 0 ? 'Frente' : 'Fundo') : '--';
-  }
-}
-
-function resetGlobalGraphViewport() {
-  graphGlobalViewport.scale = 1;
-  graphGlobalViewport.yaw = 0.65;
-  graphGlobalViewport.pitch = -0.22;
-  graphGlobalViewport.roll = 0;
-}
-
-function zoomGlobalGraph(delta) {
-  graphGlobalViewport.scale = Math.min(2.3, Math.max(0.72, graphGlobalViewport.scale + delta));
-}
-
-function startGlobalGraphDrag(clientX, clientY) {
-  graphGlobalViewport.dragging = true;
-  graphGlobalViewport.lastX = clientX;
-  graphGlobalViewport.lastY = clientY;
-}
-
-function moveGlobalGraphDrag(clientX, clientY) {
-  if (!graphGlobalViewport.dragging) return;
-  const dx = clientX - graphGlobalViewport.lastX;
-  const dy = clientY - graphGlobalViewport.lastY;
-  graphGlobalViewport.lastX = clientX;
-  graphGlobalViewport.lastY = clientY;
-  graphGlobalViewport.yaw += dx * 0.006;
-  graphGlobalViewport.pitch += dy * 0.005;
-  graphGlobalViewport.pitch = Math.max(-1.2, Math.min(1.2, graphGlobalViewport.pitch));
-  graphGlobalViewport.roll += dx * 0.0012;
-  renderGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
-}
-
-function stopGlobalGraphDrag() {
-  graphGlobalViewport.dragging = false;
-}
-
-function getGlobalGraphNode(target) {
-  return target instanceof HTMLElement ? target.closest('.graph-global-node') : null;
-}
-
-function openGlobalGraphNode(node) {
-  if (!node) return;
-
-  if (node.kind === 'folder') {
-    state.selectedFolder = node.path;
-    state.selectedFile = '';
-    state.graphContext = { kind: 'folder', path: node.path };
-    setView('workspace');
-    syncWorkspaceState();
-    void refreshWorkspace('', false).then(() => refreshGraph()).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir pasta'));
-    return;
-  }
-
-  setView('workspace');
-  void loadNote(node.path, { recordActivity: true, kind: 'open' }).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir nota do graph'));
-}
-
-function renderGlobalGraphFrame() {
-  graphGlobalScene.animationFrame = null;
-  if (state.view !== 'relations' && !graphGlobalViewport.dragging) return;
-  graphGlobalScene.motionTime = performance.now();
-  renderGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
-
-  if (state.view === 'relations' || graphGlobalViewport.dragging) {
-    graphGlobalScene.animationFrame = window.requestAnimationFrame(renderGlobalGraphFrame);
-  }
-}
-
-function startGlobalGraphAnimation() {
-  if (graphGlobalScene.animationFrame !== null) return;
-  graphGlobalScene.animationFrame = window.requestAnimationFrame(renderGlobalGraphFrame);
-}
-
-function stopGlobalGraphAnimation() {
-  if (graphGlobalScene.animationFrame !== null) {
-    window.cancelAnimationFrame(graphGlobalScene.animationFrame);
-    graphGlobalScene.animationFrame = null;
-  }
-}
-
-function buildGlobalGraphLayout(graph, width, height) {
-  const rawNodes = normalizeGraphGlobalNodes(graph);
-  const sortedEdges = [...(graph?.edges ?? [])].sort((left, right) => {
-    const weight = { strong: 3, medium: 2, weak: 1, hidden: 0 };
-    return (weight[right.intensity] ?? 0) - (weight[left.intensity] ?? 0) || Number(right.score ?? 0) - Number(left.score ?? 0);
-  });
-
-  const connectionCounts = new Map();
-  for (const edge of sortedEdges) {
-    connectionCounts.set(edge.from, (connectionCounts.get(edge.from) ?? 0) + 1);
-    connectionCounts.set(edge.to, (connectionCounts.get(edge.to) ?? 0) + 1);
-  }
-
-  let visibleNodes = rawNodes.filter((node) => {
-    if (node.kind !== 'folder') return true;
-    const clusterKey = graphGlobalClusterKeyForNode(node);
-    return normalizeRelativePath(node.path) !== clusterKey;
-  });
-  if (visibleNodes.length === 0) {
-    visibleNodes = rawNodes;
-  }
-
-  const clusterMap = new Map();
-  for (const node of visibleNodes) {
-    const key = graphGlobalClusterKeyForNode(node);
-    const current = clusterMap.get(key) ?? {
-      key,
-      label: graphGlobalClusterLabel(key),
-      nodes: [],
-      noteCount: 0,
-      folderCount: 0,
-      connectionCount: 0,
-      palette: null,
-      x: 0,
-      y: 0,
-      rx: 0,
-      ry: 0
-    };
-    current.nodes.push(node);
-    if (node.kind === 'folder') current.folderCount += 1;
-    else current.noteCount += 1;
-    clusterMap.set(key, current);
-  }
-
-  const clusters = [...clusterMap.values()].sort((left, right) => right.nodes.length - left.nodes.length || left.label.localeCompare(right.label, 'pt-BR'));
-  const slots = buildGlobalGraphSlots(clusters.length, width, height);
-  const positions = new Map();
-  const nodeOrder = [];
-
-  clusters.forEach((cluster, clusterIndex) => {
-    const slot = slots[clusterIndex] ?? { x: width / 2, y: height / 2 };
-    cluster.palette = graphGlobalPalette(clusterIndex);
-    cluster.x = slot.x;
-    cluster.y = slot.y;
-    cluster.rx = Math.min(width * 0.19, 150 + (cluster.nodes.length * 10));
-    cluster.ry = Math.min(height * 0.16, 112 + (cluster.nodes.length * 7));
-
-    const rankedNodes = [...cluster.nodes].sort((left, right) => {
-      if (left.kind !== right.kind) return left.kind === 'folder' ? -1 : 1;
-      return (connectionCounts.get(right.path) ?? 0) - (connectionCounts.get(left.path) ?? 0) || right.score - left.score || left.label.localeCompare(right.label, 'pt-BR');
-    });
-
-    rankedNodes.forEach((node, index) => {
-      const seed = hashGraphPath(node.path);
-      const angle = ((seed % 360) * (Math.PI / 180)) + (index * 2.399963229728653);
-      const radiusRatio = rankedNodes.length <= 1 ? 0 : Math.sqrt((index + 0.65) / (rankedNodes.length + 0.35));
-      const radialX = cluster.rx * (0.16 + (radiusRatio * 0.74));
-      const radialY = cluster.ry * (0.16 + (radiusRatio * 0.72));
-      const baseX = cluster.x + (Math.cos(angle) * radialX * 0.82);
-      const baseY = cluster.y + (Math.sin(angle) * radialY * 0.8);
-      const floatX = Math.sin((graphGlobalScene.motionTime / 1200) + (seed * 0.009)) * (node.kind === 'folder' ? 1.2 : 2.4);
-      const floatY = Math.cos((graphGlobalScene.motionTime / 1380) + (seed * 0.007)) * (node.kind === 'folder' ? 1.2 : 2.8);
-      const isHub = node.kind === 'note' && index < Math.max(1, Math.min(2, Math.ceil(cluster.noteCount * 0.12)));
-      const size = node.kind === 'folder'
-        ? 12 + (Math.min(1, node.score) * 3)
-        : 10 + (Math.min(1, node.score) * 6) + (isHub ? 5 : 0);
-      const entry = {
-        node,
-        cluster,
-        x: baseX + floatX,
-        y: baseY + floatY,
-        size,
-        isHub
-      };
-      positions.set(node.path, entry);
-      nodeOrder.push(entry);
-    });
-  });
-
-  const visiblePaths = new Set(nodeOrder.map((entry) => entry.node.path));
-  const edges = sortedEdges.filter((edge) => visiblePaths.has(edge.from) && visiblePaths.has(edge.to));
-  const clusterByKey = new Map(clusters.map((cluster) => [cluster.key, cluster]));
-
-  for (const edge of edges) {
-    const from = positions.get(edge.from);
-    const to = positions.get(edge.to);
-    if (!from || !to) continue;
-    from.cluster.connectionCount += 1;
-    if (from.cluster.key !== to.cluster.key) {
-      to.cluster.connectionCount += 1;
-    }
-  }
-
-  return { clusters, clusterByKey, positions, nodeOrder, edges, connectionCounts };
-}
-
-function ensureGlobalGraphSelection(layout, graph) {
-  if (graphGlobalScene.activePath && layout.positions.has(graphGlobalScene.activePath)) {
-    graphGlobalScene.activeCluster = layout.positions.get(graphGlobalScene.activePath)?.cluster.key ?? graphGlobalScene.activeCluster;
-    return;
-  }
-
-  if (graphGlobalScene.activeCluster && layout.clusterByKey.has(graphGlobalScene.activeCluster)) {
-    graphGlobalScene.activePath = '';
-    return;
-  }
-
-  graphGlobalScene.activePath = '';
-  graphGlobalScene.activeCluster = '';
-}
-
-function buildGlobalGraphHighlights(layout) {
-  const displayPath = graphGlobalScene.hoverPath || graphGlobalScene.activePath;
-  const fallbackCluster = graphGlobalScene.hoverCluster || graphGlobalScene.activeCluster;
-  const displayCluster = displayPath
-    ? layout.positions.get(displayPath)?.cluster.key ?? fallbackCluster
-    : fallbackCluster;
-
-  const highlightedPaths = new Set();
-  const featuredEdges = new Set();
-
-  if (displayPath && layout.positions.has(displayPath)) {
-    highlightedPaths.add(displayPath);
-    for (const edge of layout.edges) {
-      if (edge.from === displayPath || edge.to === displayPath) {
-        highlightedPaths.add(edge.from);
-        highlightedPaths.add(edge.to);
-        featuredEdges.add(`${edge.from}->${edge.to}:${edge.kind}`);
-      }
-    }
-  } else if (displayCluster && layout.clusterByKey.has(displayCluster)) {
-    for (const entry of layout.nodeOrder) {
-      if (entry.cluster.key === displayCluster) {
-        highlightedPaths.add(entry.node.path);
-      }
-    }
-    for (const edge of layout.edges) {
-      const from = layout.positions.get(edge.from);
-      const to = layout.positions.get(edge.to);
-      if (from?.cluster.key === displayCluster && to?.cluster.key === displayCluster) {
-        featuredEdges.add(`${edge.from}->${edge.to}:${edge.kind}`);
-      }
-    }
-  }
-
-  return { displayPath, displayCluster, highlightedPaths, featuredEdges };
-}
-
-function updateGlobalGraphOverlay(layout, displayPath, displayCluster) {
-  const setOverlayVisible = (visible) => {
-    if (!els.graphGlobalOverlay) return;
-    els.graphGlobalOverlay.classList.toggle('hidden', !visible);
-    els.graphGlobalOverlay.setAttribute('aria-hidden', visible ? 'false' : 'true');
-    if (!visible) {
-      els.graphGlobalOverlay.dataset.path = '';
-      els.graphGlobalOverlay.dataset.kind = '';
-    }
-  };
-
-  if (displayPath && layout.positions.has(displayPath)) {
-    const current = layout.positions.get(displayPath);
-    const node = current?.node;
-    if (!node) return;
-    const isFolder = node.kind === 'folder';
-    const clusterLabel = current.cluster.label;
-    const summary = node.summary || (isFolder
-      ? `Pasta de navegação dentro do assunto ${clusterLabel}. Use este nó para refocar a malha e abrir esse contexto no workspace.`
-      : `Nota dentro do assunto ${clusterLabel}. Use este ponto para inspecionar o contexto e abrir a nota direto no workspace.`);
-
-    setOverlayVisible(true);
-    if (els.graphGlobalOverlay) {
-      els.graphGlobalOverlay.dataset.path = node.path;
-      els.graphGlobalOverlay.dataset.kind = node.kind;
-    }
-    if (els.graphGlobalOverlayTitle) els.graphGlobalOverlayTitle.textContent = node.label;
-    if (els.graphGlobalOverlaySummary) els.graphGlobalOverlaySummary.textContent = summary;
-    if (els.graphGlobalOverlayBadge) els.graphGlobalOverlayBadge.textContent = isFolder ? 'Pasta focada' : 'Nota focada';
-    if (els.graphGlobalOverlayKicker) els.graphGlobalOverlayKicker.textContent = `Assunto ${clusterLabel}`;
-    if (els.graphGlobalOverlayPath) {
-      const pathLabel = prettyPath(node.path);
-      els.graphGlobalOverlayPath.textContent = pathLabel;
-      els.graphGlobalOverlayPath.setAttribute('title', pathLabel);
-    }
-    if (els.graphGlobalOverlayStatus) els.graphGlobalOverlayStatus.textContent = isFolder ? 'Pasta' : 'Nota';
-    if (els.graphGlobalOverlayLinks) els.graphGlobalOverlayLinks.textContent = String(layout.connectionCounts.get(node.path) ?? 0);
-    if (els.graphGlobalOverlayLayer) els.graphGlobalOverlayLayer.textContent = clusterLabel;
-    if (els.graphGlobalOverlayHint) {
-      els.graphGlobalOverlayHint.textContent = isFolder
-        ? 'Clique para manter o contexto visual. Duplo clique abre a pasta no workspace.'
-        : 'Clique para manter o foco visual. Duplo clique abre a nota no workspace.';
-    }
-    if (els.graphGlobalOverlayOpenButton) {
-      els.graphGlobalOverlayOpenButton.textContent = isFolder ? 'Abrir pasta' : 'Abrir nota';
-    }
-    if (els.graphGlobalOverlayFocusButton) {
-      els.graphGlobalOverlayFocusButton.textContent = isFolder ? 'Manter contexto' : 'Manter foco';
-    }
-    return;
-  }
-
-  if (displayCluster && layout.clusterByKey.has(displayCluster)) {
-    setOverlayVisible(false);
-    return;
-  }
-
-  setOverlayVisible(false);
+  await workspaceGraph.refreshGraph();
 }
 
 function renderIslandGlobalGraph(graph) {
-  graphGlobalScene.lastGraph = graph;
-  const stage = els.graphGlobalStage;
-  const sphere = els.graphGlobalSphere;
-  if (!stage || !sphere) return;
-
-  const rect = stage.getBoundingClientRect();
-  const width = Math.max(700, Math.round(rect.width || 920));
-  const height = Math.max(560, Math.round(rect.height || 760));
-  const layout = buildGlobalGraphLayout(graph, width, height);
-
-  if (els.graphGlobalCount) {
-    els.graphGlobalCount.textContent = `${layout.nodeOrder.length} nós · ${layout.clusters.length} ilhas`;
-  }
-
-  if (layout.nodeOrder.length === 0) {
-    sphere.innerHTML = '<div class="empty-inline graph-global-empty">Sem relações</div>';
-    updateGlobalGraphOverlay(layout, '', '');
-    return;
-  }
-
-  ensureGlobalGraphSelection(layout, graph);
-  const { displayPath, displayCluster, highlightedPaths, featuredEdges } = buildGlobalGraphHighlights(layout);
-  const starsMarkup = buildGlobalGraphStars(width, height);
-  const blobMarkup = layout.clusters.map((cluster, index) => `<path class="graph-global-blob${!displayCluster || displayCluster === cluster.key ? ' active' : ''}${displayCluster && displayCluster !== cluster.key ? ' dimmed' : ''}" d="${graphGlobalBlobPath(cluster.x, cluster.y, cluster.rx, cluster.ry, index * 2.17)}" style="--blob-fill:${cluster.palette.blob}; --blob-stroke:${cluster.palette.stroke}; --blob-glow:${cluster.palette.glow};"></path>`).join('');
-  const clusterLabelMarkup = layout.clusters.map((cluster) => `<g class="graph-global-cluster-meta${!displayCluster || displayCluster === cluster.key ? ' active' : ''}${displayCluster && displayCluster !== cluster.key ? ' dimmed' : ''}"><circle class="graph-global-cluster-beacon" cx="${(cluster.x - (cluster.rx * 0.5)).toFixed(2)}" cy="${(cluster.y - (cluster.ry * 0.58)).toFixed(2)}" r="7"></circle><text class="graph-global-cluster-label" x="${(cluster.x - (cluster.rx * 0.42)).toFixed(2)}" y="${(cluster.y - (cluster.ry * 0.52)).toFixed(2)}">${escapeHtml(cluster.label)}</text></g>`).join('');
-  const edgeMarkup = layout.edges.map((edge) => {
-    const from = layout.positions.get(edge.from);
-    const to = layout.positions.get(edge.to);
-    if (!from || !to) return '';
-
-    const sameCluster = from.cluster.key === to.cluster.key;
-    const featureKey = `${edge.from}->${edge.to}:${edge.kind}`;
-    const isFeatured = featuredEdges.has(featureKey);
-    const clusterVisible = !displayCluster || from.cluster.key === displayCluster || to.cluster.key === displayCluster;
-    const opacity = displayPath
-      ? (isFeatured ? 0.96 : clusterVisible ? (sameCluster ? 0.34 : 0.18) : 0.06)
-      : displayCluster
-        ? (sameCluster && clusterVisible ? 0.48 : clusterVisible ? 0.14 : 0.05)
-        : (sameCluster ? 0.34 : 0.18);
-    const strokeWidth = edge.kind === 'manual' ? 1.8 : edge.kind === 'folder' ? 1.1 : 1.35;
-    return `<line class="graph-global-connection ${escapeHtml(edge.kind)}${isFeatured ? ' featured' : ''}${displayCluster && !clusterVisible ? ' dimmed' : ''}" x1="${from.x.toFixed(2)}" y1="${from.y.toFixed(2)}" x2="${to.x.toFixed(2)}" y2="${to.y.toFixed(2)}" style="--opacity:${opacity.toFixed(3)}; stroke-width:${strokeWidth};"></line>`;
-  }).join('');
-  const haloMarkup = layout.nodeOrder.map((entry) => entry.node.path === displayPath ? `<circle class="graph-global-halo active" cx="${entry.x.toFixed(2)}" cy="${entry.y.toFixed(2)}" r="${(entry.size + 8).toFixed(2)}"></circle>` : '').join('');
-  const clusterHitsMarkup = layout.clusters.map((cluster) => `<button type="button" class="graph-global-cluster-hit${!displayCluster || displayCluster === cluster.key ? ' active' : ''}${displayCluster && displayCluster !== cluster.key ? ' dimmed' : ''}" data-cluster="${escapeHtml(cluster.key)}" aria-label="Focar assunto ${escapeHtml(cluster.label)}" title="${escapeHtml(cluster.label)}" style="left:${(cluster.x - cluster.rx).toFixed(2)}px; top:${(cluster.y - cluster.ry).toFixed(2)}px; width:${(cluster.rx * 2).toFixed(2)}px; height:${(cluster.ry * 2).toFixed(2)}px;"></button>`).join('');
-  const nodeMarkup = layout.nodeOrder.map((entry) => {
-    const active = entry.node.path === displayPath;
-    const dimmed = displayCluster ? entry.cluster.key !== displayCluster : false;
-    const fill = entry.node.kind === 'folder' ? entry.cluster.palette.folder : entry.isHub ? entry.cluster.palette.nodeStrong : entry.cluster.palette.node;
-    const glow = entry.isHub ? entry.cluster.palette.glow : 'rgba(255,255,255,0.16)';
-    return `<button type="button" class="graph-global-node ${escapeHtml(entry.node.kind)}${entry.isHub ? ' hub' : ''}${active ? ' active' : ''}${dimmed ? ' dimmed' : ''}" data-path="${escapeHtml(entry.node.path)}" data-kind="${escapeHtml(entry.node.kind)}" data-cluster="${escapeHtml(entry.cluster.key)}" data-title="${escapeHtml(entry.node.label)}" title="${escapeHtml(entry.node.label)}" style="left:${entry.x.toFixed(2)}px; top:${entry.y.toFixed(2)}px; --size:${entry.size.toFixed(2)}px; --node-fill:${fill}; --node-glow:${glow};"></button>`;
-  }).join('');
-
-  sphere.innerHTML = `<div class="graph-global-canvas" style="transform: translate(${graphGlobalViewport.x.toFixed(2)}px, ${graphGlobalViewport.y.toFixed(2)}px) scale(${graphGlobalViewport.scale.toFixed(3)}); width:${width}px; height:${height}px;"><svg class="graph-global-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><defs><filter id="globalBlobGlow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="16" result="blur"></feGaussianBlur><feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge></filter></defs><g class="graph-global-stars">${starsMarkup}</g><g class="graph-global-blobs">${blobMarkup}</g><g class="graph-global-links">${edgeMarkup}</g><g class="graph-global-halos">${haloMarkup}</g><g class="graph-global-labels">${clusterLabelMarkup}</g></svg><div class="graph-global-hitlayer">${clusterHitsMarkup}${nodeMarkup}</div></div>`;
-
-  updateGlobalGraphOverlay(layout, displayPath, displayCluster);
+  globalGraph.renderIslandGlobalGraph(graph);
 }
 
 function resetIslandGlobalGraphViewport() {
-  graphGlobalViewport.scale = 1;
-  graphGlobalViewport.x = 0;
-  graphGlobalViewport.y = 0;
+  globalGraph.resetIslandGlobalGraphViewport();
 }
 
 function zoomIslandGlobalGraph(delta) {
-  graphGlobalViewport.scale = Math.min(1.95, Math.max(0.76, graphGlobalViewport.scale + delta));
+  globalGraph.zoomIslandGlobalGraph(delta);
 }
 
 function startIslandGlobalGraphDrag(clientX, clientY) {
-  graphGlobalViewport.dragging = true;
-  graphGlobalViewport.lastX = clientX;
-  graphGlobalViewport.lastY = clientY;
+  globalGraph.startIslandGlobalGraphDrag(clientX, clientY);
 }
 
 function moveIslandGlobalGraphDrag(clientX, clientY) {
-  if (!graphGlobalViewport.dragging) return;
-  const dx = clientX - graphGlobalViewport.lastX;
-  const dy = clientY - graphGlobalViewport.lastY;
-  graphGlobalViewport.lastX = clientX;
-  graphGlobalViewport.lastY = clientY;
-  graphGlobalViewport.x += dx;
-  graphGlobalViewport.y += dy;
-  renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+  globalGraph.moveIslandGlobalGraphDrag(clientX, clientY);
 }
 
 function stopIslandGlobalGraphDrag() {
-  graphGlobalViewport.dragging = false;
+  globalGraph.stopIslandGlobalGraphDrag();
 }
 
 function getIslandGlobalGraphNode(target) {
-  return target instanceof HTMLElement ? target.closest('.graph-global-node') : null;
+  return globalGraph.getIslandGlobalGraphNode(target);
 }
 
 function getIslandGlobalGraphCluster(target) {
-  return target instanceof HTMLElement ? target.closest('.graph-global-cluster-hit') : null;
+  return globalGraph.getIslandGlobalGraphCluster(target);
 }
 
 function getGraphGlobalOverlayNode() {
-  const overlay = els.graphGlobalOverlay;
-  if (!overlay) return null;
-
-  const pathValue = String(overlay.dataset.path ?? '').trim();
-  if (!pathValue) return null;
-  return (graphGlobalScene.lastGraph?.nodes ?? []).find((entry) => entry.path === pathValue) ?? null;
+  return globalGraph.getGraphGlobalOverlayNode();
 }
 
 function focusIslandGlobalGraphNode(pathValue) {
-  const normalizedPath = normalizeRelativePath(pathValue);
-  graphGlobalScene.activePath = normalizedPath;
-  const node = graphGlobalScene.lastGraph?.nodes?.find((entry) => normalizeRelativePath(entry.path) === normalizedPath);
-  graphGlobalScene.activeCluster = node ? graphGlobalClusterKeyForNode(node) : graphGlobalScene.activeCluster;
-  renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+  globalGraph.focusIslandGlobalGraphNode(pathValue);
 }
 
 function focusIslandGlobalGraphCluster(clusterKey) {
-  graphGlobalScene.activePath = '';
-  graphGlobalScene.activeCluster = clusterKey;
-  renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+  globalGraph.focusIslandGlobalGraphCluster(clusterKey);
 }
 
 function renderIslandGlobalGraphFrame() {
-  graphGlobalScene.animationFrame = null;
-  if (state.view !== 'relations' && !graphGlobalViewport.dragging) return;
-  graphGlobalScene.motionTime = performance.now();
-  renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
-
-  if (state.view === 'relations' || graphGlobalViewport.dragging) {
-    graphGlobalScene.animationFrame = window.requestAnimationFrame(renderIslandGlobalGraphFrame);
-  }
+  globalGraph.renderIslandGlobalGraphFrame();
 }
 
 function startIslandGlobalGraphAnimation() {
-  if (graphGlobalScene.animationFrame !== null) return;
-  graphGlobalScene.animationFrame = window.requestAnimationFrame(renderIslandGlobalGraphFrame);
+  globalGraph.startIslandGlobalGraphAnimation();
 }
 
 function stopIslandGlobalGraphAnimation() {
-  if (graphGlobalScene.animationFrame !== null) {
-    window.cancelAnimationFrame(graphGlobalScene.animationFrame);
-    graphGlobalScene.animationFrame = null;
-  }
+  globalGraph.stopIslandGlobalGraphAnimation();
 }
 
 async function refreshGlobalGraph() {
-  const vaultRoot = getConfiguredVaultRoot();
-  if (!vaultRoot) {
-    state.graphGlobal = { vaultRoot: '', nodes: [], edges: [] };
-    renderIslandGlobalGraph(state.graphGlobal);
-    return;
-  }
-
-  const params = new URLSearchParams({ vaultRoot });
-  if (state.selectedFile) params.set('focusPath', state.selectedFile);
-  else if (state.selectedFolder) params.set('focusPath', state.selectedFolder);
-  const data = await api(`/api/graph-global?${params.toString()}`);
-  state.graphGlobal = data;
-  renderIslandGlobalGraph(state.graphGlobal);
-}
-
-async function refreshRelationsSurface() {
-  await loadRelatedData();
-  await loadLinkSuggestions();
-  await refreshGlobalGraph();
+  await globalGraph.refreshGlobalGraph();
 }
 
 async function openRelationsView() {
-  if (!getConfiguredVaultRoot()) {
-    if (isDesktopShell) {
-      await startVault().catch(() => null);
-    }
-
-    if (!getConfiguredVaultRoot()) {
-      setView('setup');
-      showError('Abra ou crie um vault antes de ver relações.');
-      return;
-    }
-  }
-
-  setView('relations');
-  closeRelationsDetailsMenu();
-  resetIslandGlobalGraphViewport();
-  graphGlobalScene.activePath = '';
-  graphGlobalScene.activeCluster = '';
-  graphGlobalScene.hoverPath = '';
-  graphGlobalScene.hoverCluster = '';
-  await refreshRelationsSurface();
-  startIslandGlobalGraphAnimation();
+  await globalGraph.openRelationsView();
 }
 
 async function loadTemplates() {
-  const vaultRoot = getConfiguredVaultRoot();
-  if (!vaultRoot) {
-    state.templates = [];
-    return;
-  }
-
-  const params = new URLSearchParams({ vaultRoot });
-  const data = await api(`/api/templates?${params.toString()}`);
-  state.templates = data.templates ?? [];
+  await resourceBrowser.loadTemplates();
 }
 
 function renderTemplatesDialog() {
-  els.templatesDialogList.innerHTML = state.templates.length === 0
-    ? '<div class="empty-inline">Nenhum modelo encontrado em <code>Templates/</code>.</div>'
-    : state.templates.map((template, index) => `
-      <button class="template-item ${state.selectedTemplate?.path === template.path ? 'active' : ''}" type="button" data-index="${index}">
-        <strong>${escapeHtml(template.title)}</strong>
-        <small>${escapeHtml(template.path)}</small>
-      </button>
-    `).join('');
+  resourceBrowser.renderTemplatesDialog();
 }
 
 async function openTemplatesDialog() {
-  await loadTemplates();
-  renderTemplatesDialog();
-  els.templatesDialog.showModal();
+  await resourceBrowser.openTemplatesDialog();
 }
 
 async function openTemplatePickerDialog() {
-  await loadTemplates();
-  els.templatePickerSelect.innerHTML = ['<option value="">Base vazia</option>', ...state.templates.map((template, index) => `<option value="${index}">${escapeHtml(template.title)}</option>`)].join('');
-  els.templatePickerInput.value = state.selectedFile ? fileLabel(state.selectedFile) : 'novo-modelo';
-  els.templatePickerContent.value = els.noteEditor.value || '';
-  els.templatePickerDialog.showModal();
+  await resourceBrowser.openTemplatePickerDialog();
 }
 
 function applyTemplateSelection(index) {
-  const template = state.templates[index] ?? null;
-  setSelectedTemplate(template);
-  els.templatesDialog.close();
+  resourceBrowser.applyTemplateSelection(index);
 }
 
 function closeSearchDialog() {
-  if (els.searchDialog.open) {
-    els.searchDialog.close();
-  }
+  resourceBrowser.closeSearchDialog();
 }
 
 function renderSearchResults(matches) {
-  els.searchResultsCount.textContent = String(matches.length);
-  els.searchResultsList.innerHTML = matches.length === 0
-    ? '<div class="search-empty">Nenhum resultado encontrado.</div>'
-    : matches.map((match) => `
-      <button class="search-result" type="button" data-path="${escapeHtml(match.path)}">
-        <div class="search-result-main">
-          <div class="search-result-head">
-            <strong>${escapeHtml(match.title || fileLabel(match.path))}</strong>
-            <span>${escapeHtml(match.score)}</span>
-          </div>
-          <p>${escapeHtml(prettyPath(match.path))}</p>
-          ${match.snippet ? `<div class="search-snippet">${formatSearchSnippet(escapeHtml(match.snippet))}</div>` : ''}
-        </div>
-        <div class="search-result-tags">${(match.tags ?? []).map((tag) => `<span>#${escapeHtml(tag)}</span>`).join('')}</div>
-      </button>
-    `).join('');
+  resourceBrowser.renderSearchResults(matches);
 }
 
 async function runSearch() {
-  const vaultRoot = getConfiguredVaultRoot();
-  if (!vaultRoot) {
-    showError('Abra ou crie um vault antes de buscar.');
-    return;
-  }
-
-  const query = els.searchQueryInput.value.trim();
-  const phrase = els.searchPhraseInput.value.trim();
-  const tags = els.searchTagsInput.value.trim();
-
-  searchState.query = query;
-  searchState.phrase = phrase;
-  searchState.tags = tags;
-
-  const searchParams = new URLSearchParams({ vaultRoot });
-  if (query) searchParams.set('query', query);
-  if (phrase) searchParams.set('phrase', phrase);
-  if (tags) searchParams.set('tags', tags);
-
-  const data = await api(`/api/search?${searchParams.toString()}`);
-  renderSearchResults(data.matches ?? []);
+  await resourceBrowser.runSearch();
 }
 
 function openSearchDialog() {
-  els.searchQueryInput.value = searchState.query;
-  els.searchPhraseInput.value = searchState.phrase;
-  els.searchTagsInput.value = searchState.tags;
-  els.searchDialog.showModal();
-  void runSearch().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao buscar'));
+  resourceBrowser.openSearchDialog();
 }
 
-function closeCommandsDialog() {
-  els.aiDialogCommandsPanel.classList.add('hidden');
-}
-
-function renderCommandsDialog() {
-  const host = els.aiDialogCommandsGroups ?? els.commandsDialogGroups;
-  host.innerHTML = desktopCommands.map((group) => {
-    const items = group.items.map(([name, description, usage]) => `
-      <article class="command-row">
-        <div>
-          <strong>${name}</strong>
-          <p>${description}</p>
-        </div>
-        <code>${usage}</code>
-      </article>
-    `).join('');
-
-    return `
-      <section class="command-group">
-        <div class="command-group-head">
-          <span class="eyebrow">${group.group}</span>
-        </div>
-        <div class="command-group-list">${items}</div>
-      </section>
-    `;
-  }).join('');
-}
-
-function openCommandsDialog() {
-  renderCommandsDialog();
-  els.aiDialogCommandsPanel.classList.remove('hidden');
-}
-
-window.marikaAiActions = {
-  openTerminal: () => {
-    closeAiDialog();
-    setTimeout(() => {
-      void openAiTerminal().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir terminal da IA'));
-    }, 50);
-  },
-  showCommands: () => openCommandsDialog(),
-  closeCommands: () => closeCommandsDialog(),
-  openDialog: () => openAiDialog(),
-  closeDialog: () => closeAiDialog()
-};
+window.orionAiActions = aiDevMode.buildWindowActions();
 
 function bytesToCompactLabel(bytes) {
   if (!bytes) return '0 KB';
@@ -3958,186 +2070,27 @@ function startProjectSlide() {
 }
 
 function closeInputDialog() {
-  if (els.inputDialog.open) {
-    els.inputDialog.close();
-  }
+  uiShell.closeInputDialog();
 }
 
 function openInputDialog({ eyebrow, title, message, label, value = '', multiline = false }) {
-  return new Promise((resolve) => {
-    if (inputDialogSession) {
-      inputDialogSession.finish(null);
-    }
-
-    els.inputDialogEyebrow.textContent = eyebrow;
-    els.inputDialogTitle.textContent = title;
-    els.inputDialogMessage.textContent = message;
-    els.inputDialogFieldWrap.hidden = false;
-    els.inputDialogFieldLabel.textContent = label;
-    els.inputDialogInput.value = value;
-    els.inputDialogTextarea.value = value;
-    els.inputDialogInput.hidden = multiline;
-    els.inputDialogTextarea.hidden = !multiline;
-    els.inputDialogCancel.textContent = 'Cancelar';
-    els.inputDialogConfirm.textContent = 'Confirmar';
-
-    const cleanup = () => {
-      if (inputDialogSession?.cleanup === cleanup) {
-        inputDialogSession = null;
-      }
-
-      els.inputDialog.oncancel = null;
-      els.inputDialogConfirm.onclick = null;
-      els.inputDialogCancel.onclick = null;
-    };
-
-    const finish = (result) => {
-      cleanup();
-      closeInputDialog();
-      resolve(result);
-    };
-
-    const onConfirm = () => {
-      const output = multiline ? els.inputDialogTextarea.value : els.inputDialogInput.value;
-      finish(output.trim());
-    };
-
-    const onCancel = (event) => {
-      event.preventDefault();
-      finish(null);
-    };
-
-    const onCancelClick = () => finish(null);
-
-    inputDialogSession = { cleanup, finish };
-
-    els.inputDialog.oncancel = onCancel;
-    els.inputDialogConfirm.onclick = onConfirm;
-    els.inputDialogCancel.onclick = onCancelClick;
-    els.inputDialog.showModal();
-    if (multiline) {
-      els.inputDialogTextarea.focus();
-    } else {
-      els.inputDialogInput.focus();
-    }
-  });
+  return uiShell.openInputDialog({ eyebrow, title, message, label, value, multiline });
 }
 
 function openConfirmDialog({ eyebrow, title, message, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar' }) {
-  return new Promise((resolve) => {
-    if (inputDialogSession) {
-      inputDialogSession.finish(false);
-    }
-
-    els.inputDialogEyebrow.textContent = eyebrow;
-    els.inputDialogTitle.textContent = title;
-    els.inputDialogMessage.textContent = message;
-    els.inputDialogFieldWrap.hidden = true;
-    els.inputDialogInput.hidden = true;
-    els.inputDialogTextarea.hidden = true;
-    els.inputDialogCancel.textContent = cancelLabel;
-    els.inputDialogConfirm.textContent = confirmLabel;
-
-    const cleanup = () => {
-      if (inputDialogSession?.cleanup === cleanup) {
-        inputDialogSession = null;
-      }
-
-      els.inputDialog.oncancel = null;
-      els.inputDialogConfirm.onclick = null;
-      els.inputDialogCancel.onclick = null;
-      els.inputDialogFieldWrap.hidden = false;
-      els.inputDialogCancel.textContent = 'Cancelar';
-      els.inputDialogConfirm.textContent = 'Confirmar';
-    };
-
-    const finish = (result) => {
-      cleanup();
-      closeInputDialog();
-      resolve(result);
-    };
-
-    const onCancel = (event) => {
-      event.preventDefault();
-      finish(false);
-    };
-
-    inputDialogSession = { cleanup, finish };
-
-    els.inputDialog.oncancel = onCancel;
-    els.inputDialogConfirm.onclick = () => finish(true);
-    els.inputDialogCancel.onclick = () => finish(false);
-    els.inputDialog.showModal();
-    els.inputDialogConfirm.focus();
-  });
+  return uiShell.openConfirmDialog({ eyebrow, title, message, confirmLabel, cancelLabel });
 }
 
 function applyActiveVaultRoot(vaultRoot) {
-  const normalizedVaultRoot = String(vaultRoot ?? '').trim();
-  state.defaultVaultPath = normalizedVaultRoot;
-  state.vaultPath = normalizedVaultRoot;
-  els.vaultPathInput.value = normalizedVaultRoot;
-  document.body.dataset.activeVaultRoot = normalizedVaultRoot;
-  updateVault(normalizedVaultRoot);
-  sendDebugState('applyActiveVaultRoot', { appliedVaultRoot: normalizedVaultRoot });
+  vaultBootstrap.applyActiveVaultRoot(vaultRoot);
 }
 
 async function openVaultFromBootstrap(vaultRoot, { autoOpenFirstNote = true } = {}) {
-  applyActiveVaultRoot(vaultRoot);
-  await syncDesktopActiveVaultRoot(vaultRoot);
-  setDesktopReady(false);
-  setView('workspace');
-  syncWorkspaceState();
-
-  try {
-    await refreshWorkspace('', autoOpenFirstNote);
-    await loadPinnedPaths();
-  } catch (error) {
-    showError(error instanceof Error ? error.message : 'Falha ao carregar vault ativo');
-    console.error('Falha ao iniciar vault', error);
-  }
-
-  try {
-    await loadTemplates();
-  } catch (error) {
-    console.error('Falha ao carregar modelos', error);
-  }
-
-  try {
-    await loadAgenda();
-  } catch (error) {
-    console.error('Falha ao carregar agenda', error);
-    showError(error instanceof Error ? error.message : 'Falha ao carregar agenda');
-  } finally {
-    setDesktopReady(true);
-    if (window.marikaDesktop && typeof window.marikaDesktop.markDesktopReady === 'function') {
-      window.marikaDesktop.markDesktopReady();
-    }
-  }
-
-  ensureAgendaReminderPolling();
+  await vaultBootstrap.openVaultFromBootstrap(vaultRoot, { autoOpenFirstNote });
 }
 
 async function openDesktopDefaultVault(autoOpenFirstNote = true) {
-  sendDebugState('desktopBootstrap.start');
-  const bootstrap = await loadDesktopBootstrap();
-  const vaultRoot = String(bootstrap.vaultRoot ?? startupVaultRoot ?? '').trim();
-
-  if (!vaultRoot) {
-    throw new Error('Vault padrão não configurado');
-  }
-
-  const result = await api('/api/setup', {
-    method: 'POST',
-    body: JSON.stringify({ action: 'open', vaultRoot })
-  });
-
-  sendDebugState('desktopBootstrap.open', {
-    bootstrapVaultRoot: vaultRoot,
-    responseVaultRoot: String(result.vaultRoot ?? vaultRoot)
-  });
-
-  await openVaultFromBootstrap(String(result.vaultRoot ?? vaultRoot), { autoOpenFirstNote });
+  await vaultBootstrap.openDesktopDefaultVault(autoOpenFirstNote);
 }
 
 async function openSearchResult(relativePath) {
@@ -4151,117 +2104,50 @@ async function openSearchResult(relativePath) {
 }
 
 function closeMenus() {
-  els.quickMenu.classList.remove('open');
-  els.folderContextMenu.classList.remove('open');
-  els.noteOptionsMenu?.classList.add('hidden');
-  els.noteOptionsButton?.setAttribute('aria-expanded', 'false');
-  closeAgendaOptionsMenu();
-  closeOverviewOptionsMenu();
-  closeRelationsDetailsMenu();
+  uiShell.closeMenus();
 }
 
 function openMenu(menu, x, y) {
-  closeMenus();
-  menu.style.left = `${x}px`;
-  menu.style.top = `${y}px`;
-  menu.classList.add('open');
-}
-
-function selectFolder(relativePath, source = 'folder') {
-  state.selectedFolder = normalizeRelativePath(relativePath);
-  state.graphContext = { kind: source === 'note' ? 'note' : 'folder', path: state.selectedFolder };
-  els.folderBreadcrumb.textContent = state.selectedFolder ? prettyPath(state.selectedFolder) : 'Nenhuma pasta selecionada';
-  document.querySelectorAll('.folder').forEach((node) => {
-    node.classList.toggle('active-folder', node.dataset.path === state.selectedFolder);
-  });
-  if (source === 'folder' && state.summaryMode === 'graph') {
-    void refreshGraph();
-  }
-}
-
-function clearFolderSelection() {
-  if (!state.selectedFolder) return;
-  state.selectedFolder = '';
-  state.graphContext = { kind: 'folder', path: '' };
-  els.folderBreadcrumb.textContent = 'Nenhuma pasta selecionada';
-  document.querySelectorAll('.folder').forEach((node) => {
-    node.classList.remove('active-folder');
-  });
-
-  if (state.tree) {
-    renderTree(state.tree);
-  }
-
-  syncWorkspaceState();
-}
-
-function shouldClearFolderSelection(event) {
-  const target = event.target instanceof HTMLElement ? event.target : null;
-  if (!target) return false;
-
-  if (target.closest('button, input, textarea, select, label, a, summary, dialog, menu, .folder, .file-item, .note-options, .quick-menu')) {
-    return false;
-  }
-
-  return target.matches('#workspaceView, .workspace-layout, .tree-pane, .tree, .editor-pane, .editor-body, .summary-pane, .summary-overview, #graphPanel');
-}
-
-function handleFolderSelectionBackgroundClick(event) {
-  if (state.view !== 'workspace') return;
-  if (!shouldClearFolderSelection(event)) return;
-  clearFolderSelection();
+  uiShell.openMenu(menu, x, y);
 }
 
 function showQuickMenu(button) {
-  const rect = button.getBoundingClientRect();
-  openMenu(els.quickMenu, rect.left, rect.bottom + 8);
+  uiShell.showQuickMenu(button);
 }
 
 function toggleNoteOptionsMenu() {
-  if (!els.noteOptionsMenu || !els.noteOptionsButton) return;
-  const isHidden = els.noteOptionsMenu.classList.contains('hidden');
-  closeMenus();
-  if (!isHidden) return;
-
-  els.noteOptionsMenu.classList.remove('hidden');
-  els.noteOptionsButton.setAttribute('aria-expanded', 'true');
+  uiShell.toggleNoteOptionsMenu();
 }
 
 function showFolderContextMenu(relativePath, x, y) {
-  state.selectedFolder = normalizeRelativePath(relativePath);
-  selectFolder(state.selectedFolder);
-  els.folderContextMenu.innerHTML = '';
-
-  const actions = [
-    ['create-note', 'Nova nota'],
-    ['create-folder', 'Nova pasta'],
-    ['rename', 'Renomear'],
-    ['move', 'Mover']
-  ];
-
-  for (const [action, label] of actions) {
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.dataset.action = action;
-    item.textContent = label;
-    item.addEventListener('click', () => {
-      closeMenus();
-      if (action === 'create-note') void createNote();
-      if (action === 'create-folder') void createFolder();
-      if (action === 'rename') void renameNote();
-      if (action === 'move') void moveNote();
-    });
-    els.folderContextMenu.appendChild(item);
-  }
-
-  openMenu(els.folderContextMenu, x, y);
+  uiShell.showFolderContextMenu(relativePath, x, y);
 }
 
 function syncWorkspaceState() {
   const active = Boolean(getConfiguredVaultRoot());
+  const noteSelected = Boolean(state.selectedFile);
   const bootingDesktopVault = isDesktopShell && !active && !desktopBootstrapComplete;
   els.workspaceEmpty.classList.toggle('active', state.view === 'workspace' && !active);
   els.workspaceView.querySelector('.workspace-layout').classList.toggle('active', state.view === 'workspace' && active);
+
+  if (!active) {
+    if (bootingDesktopVault) {
+      els.workspaceEmptyTitle.textContent = 'Carregando o vault padrao...';
+      els.workspaceEmptyBody.textContent = 'A interface vai liberar a arvore, o editor e o painel auxiliar assim que o vault ativo terminar de abrir.';
+      els.emptyStartVaultButton.textContent = 'Aguarde';
+      els.emptyStartVaultButton.disabled = true;
+    } else if (getDefaultVaultPath()) {
+      els.workspaceEmptyTitle.textContent = 'Abra ou crie este vault para continuar.';
+      els.workspaceEmptyBody.textContent = `O caminho atual e ${getDefaultVaultPath()}. Quando esse vault estiver ativo, o workspace volta a mostrar notas, editor e paineis.`;
+      els.emptyStartVaultButton.textContent = 'Abrir ou criar vault';
+      els.emptyStartVaultButton.disabled = false;
+    } else {
+      els.workspaceEmptyTitle.textContent = 'Inicie o vault padrao para comecar.';
+      els.workspaceEmptyBody.textContent = 'A visualizacao vai permanecer limpa ate o vault padrao ser aberto. Depois disso, a arvore, a nota e o painel auxiliar aparecem aqui.';
+      els.emptyStartVaultButton.textContent = 'Iniciar';
+      els.emptyStartVaultButton.disabled = false;
+    }
+  }
 
   if (state.view === 'workspace' && bootingDesktopVault) {
     els.editorStatus.textContent = 'Carregando vault padrao...';
@@ -4278,213 +2164,25 @@ function syncWorkspaceState() {
     els.agendaDueInput,
     els.agendaStatusInput,
     els.agendaBodyInput,
-    els.saveButton,
     els.templatesButton,
     els.dailyNoteButton,
     els.desktopSearchButton,
     els.summaryOverviewButton,
-    els.summaryGraphButton,
-    els.noteOptionsButton,
     els.agendaOptionsButton,
   ].forEach((button) => {
     if (!button) return;
     button.disabled = disabled;
   });
+  if (els.saveButton) {
+    els.saveButton.disabled = disabled || !noteSelected;
+  }
+  if (els.noteOptionsButton) {
+    els.noteOptionsButton.disabled = disabled || !noteSelected;
+  }
+  if (els.summaryGraphButton) {
+    els.summaryGraphButton.disabled = disabled || !noteSelected;
+  }
   els.desktopCommandsButton.disabled = false;
-}
-
-function firstMarkdown(entry) {
-  if (!entry) return null;
-  if (entry.kind === 'file') {
-    return entry.name.toLowerCase().endsWith('.md') ? entry : null;
-  }
-
-  for (const child of entry.children ?? []) {
-    const found = firstMarkdown(child);
-    if (found) return found;
-  }
-
-  return null;
-}
-
-function renderTree(tree) {
-  const folderTemplate = document.getElementById('folderTemplate');
-  const fileTemplate = document.getElementById('fileTemplate');
-  els.tree.innerHTML = '';
-
-  const renderEntry = (entry, container, level = 0) => {
-    if (entry.kind === 'folder') {
-      const folder = folderTemplate.content.firstElementChild.cloneNode(true);
-      const folderPath = normalizeRelativePath(entry.relativePath);
-      folder.dataset.path = folderPath;
-      folder.style.setProperty('--tree-level', String(level));
-      const nameSpan = folder.querySelector('.folder-name');
-      const countSpan = folder.querySelector('.folder-count');
-      nameSpan.textContent = entry.name;
-      countSpan.textContent = String((entry.children ?? []).length);
-
-      const items = folder.querySelector('.folder-items');
-      folder.querySelector('summary').addEventListener('click', () => selectFolder(folderPath));
-      folder.addEventListener('contextmenu', (event) => {
-        event.preventDefault();
-        showFolderContextMenu(folderPath, event.clientX, event.clientY);
-      });
-      const children = sortEntries(entry.children ?? []);
-      for (const child of children) {
-        renderEntry(child, items, level + 1);
-      }
-
-      container.appendChild(folder);
-      return;
-    }
-
-    if (!entry.name.toLowerCase().endsWith('.md')) return;
-
-    const filePath = normalizeRelativePath(entry.relativePath);
-    const file = fileTemplate.content.firstElementChild.cloneNode(true);
-    file.dataset.path = filePath;
-    file.style.setProperty('--tree-level', String(level));
-    file.querySelector('.file-name').textContent = entry.name;
-    file.classList.toggle('active', filePath === state.selectedFile);
-    file.classList.toggle('linked-open', filePath === linkedNoteState.highlightedPath);
-    file.title = filePath;
-    file.addEventListener('click', () => loadNote(filePath, { recordActivity: true, kind: 'open' }));
-    container.appendChild(file);
-  };
-
-  for (const child of tree?.children ?? []) {
-    renderEntry(child, els.tree);
-  }
-}
-
-async function refreshWorkspace(preferredPath = state.selectedFile, autoOpenFirstNote = true) {
-  const vaultRoot = getConfiguredVaultRoot();
-  if (!vaultRoot) {
-    els.tree.innerHTML = '';
-    state.selectedFile = '';
-    state.selectedFolder = '';
-    closeEditorAssistMenu();
-    setEditorTitleValue('Nenhuma nota', { enabled: false });
-    els.breadcrumbs.textContent = 'Vault / vazio';
-    els.editorMeta.textContent = 'Vault · vazio · markdown';
-    els.noteEditor.value = '';
-    resetEditorHistory({ value: '', selectionStart: 0, selectionEnd: 0 });
-    resetEditorSaveState('');
-    renderEditorPresentation();
-    els.editorStatus.textContent = 'Selecione ou crie um vault primeiro.';
-    els.folderBreadcrumb.textContent = 'Nenhuma pasta selecionada';
-    return;
-  }
-
-  const data = await api(`/api/workspace?vaultRoot=${encodeURIComponent(vaultRoot)}`);
-  if (data?.vaultRoot) {
-    applyActiveVaultRoot(data.vaultRoot);
-  }
-  state.tree = data.tree;
-  renderTree(data.tree);
-  reconcileVaultScopedState(data.tree);
-  sendDebugState('refreshWorkspace.response', {
-    requestedVaultRoot: vaultRoot,
-    responseVaultRoot: data?.vaultRoot ?? '',
-    responseChildCount: data?.tree?.children?.length ?? null,
-    preferredPath
-  });
-
-  if (state.selectedFolder) {
-    selectFolder(state.selectedFolder);
-  } else {
-    els.folderBreadcrumb.textContent = 'Nenhuma pasta selecionada';
-  }
-
-  if (preferredPath) {
-    await loadNote(preferredPath);
-  } else if (autoOpenFirstNote) {
-    const first = firstMarkdown(data.tree)?.relativePath || '';
-    if (first) {
-      await loadNote(first);
-    } else {
-      state.selectedFile = '';
-      setEditorTitleValue('Nenhuma nota', { enabled: false });
-      els.breadcrumbs.textContent = 'Vault / vazio';
-      els.editorMeta.textContent = 'Vault · vazio · markdown';
-      els.noteEditor.value = '';
-      resetEditorHistory({ value: '', selectionStart: 0, selectionEnd: 0 });
-      resetEditorSaveState('');
-      renderEditorPresentation();
-      els.editorStatus.textContent = 'Nenhuma nota Markdown encontrada.';
-    }
-  } else {
-    state.selectedFile = '';
-    setEditorTitleValue('Nenhuma nota', { enabled: false });
-    els.breadcrumbs.textContent = 'Vault / vazio';
-    els.editorMeta.textContent = 'Vault · vazio · markdown';
-    els.noteEditor.value = '';
-    resetEditorHistory({ value: '', selectionStart: 0, selectionEnd: 0 });
-    resetEditorSaveState('');
-    renderEditorPresentation();
-    els.editorStatus.textContent = 'Nenhuma nota Markdown encontrada.';
-  }
-
-  if (data.summary) {
-    els.setupHint.textContent = `${data.summary.fileCount} arquivos, ${data.summary.folderCount} pastas.`;
-    updateVaultSummary(data.summary);
-  }
-}
-
-async function loadNote(relativePath, options = {}) {
-  const normalizedPath = normalizeRelativePath(relativePath);
-  const vaultRoot = getConfiguredVaultRoot();
-  const data = await api(`/api/file?vaultRoot=${encodeURIComponent(vaultRoot)}&path=${encodeURIComponent(normalizedPath)}`);
-  state.selectedFile = normalizeRelativePath(data.path);
-  closeEditorAssistMenu();
-  setEditorTitleValue(fileLabel(state.selectedFile), { enabled: true });
-  els.breadcrumbs.textContent = prettyPath(state.selectedFile);
-  els.editorMeta.textContent = `${pathDirectory(state.selectedFile).replace(/\//g, ' · ')} · markdown`;
-  const persistedContent = String(data.content ?? '');
-  const draftContent = readEditorDraft(state.selectedFile);
-  const nextContent = draftContent || persistedContent;
-  els.noteEditor.value = nextContent;
-  resetEditorHistory({ value: nextContent, selectionStart: 0, selectionEnd: 0 });
-  resetEditorSaveState(persistedContent);
-  renderEditorPresentation();
-  els.editorStatus.textContent = draftContent ? `Editando ${state.selectedFile} com rascunho local.` : `Editando ${state.selectedFile}`;
-  if (draftContent) {
-    markEditorDirty();
-  }
-
-  document.querySelectorAll('.file-item').forEach((node) => {
-    node.classList.toggle('active', node.dataset.path === state.selectedFile);
-  });
-
-  updatePinButton();
-  await refreshBacklinks();
-  await refreshGraph();
-  await loadRelatedData();
-  await loadLinkSuggestions();
-  state.linkPreview = null;
-  renderLinkPreview();
-
-  if (state.view === 'relations') {
-    await refreshGlobalGraph();
-  }
-
-  if (options.recordActivity) {
-    recordActivity(options.kind || 'open', options.title || fileLabel(state.selectedFile), state.selectedFile);
-  }
-}
-
-async function askRelativePath(message, fallback = '') {
-  const value = await openInputDialog({
-    eyebrow: 'Workspace',
-    title: message,
-    message: 'Digite um caminho relativo dentro do vault ativo.',
-    label: 'Caminho',
-    value: fallback,
-    multiline: false
-  });
-
-  if (!value) return null;
-  return String(value).replace(/\\/g, '/');
 }
 
 async function askMultiline(message, fallback = '') {
@@ -4502,115 +2200,15 @@ async function askMultiline(message, fallback = '') {
 }
 
 async function startVault() {
-  const activeVaultRoot = getConfiguredVaultRoot();
-  if (desktopBootstrapPromise && !desktopBootstrapComplete) {
-    await desktopBootstrapPromise.catch(() => null);
-    const resolvedVaultRoot = getConfiguredVaultRoot();
-    if (resolvedVaultRoot) return;
-  }
-
-  if (isDesktopShell) {
-    const requestedVaultRoot = els.vaultPathInput.value.trim() || getConfiguredVaultRoot() || getDefaultVaultPath();
-    const result = await api('/api/setup', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'open', vaultRoot: requestedVaultRoot })
-    });
-    await openVaultFromBootstrap(String(result.vaultRoot ?? requestedVaultRoot), { autoOpenFirstNote: true });
-    els.setupHint.textContent = `Vault padrão aberto em ${getConfiguredVaultRoot()}.`;
-    return;
-  }
-
-  const bootstrap = await loadDesktopBootstrap();
-  const requestedVaultRoot = els.vaultPathInput.value.trim();
-  const currentVaultRoot = activeVaultRoot || String(bootstrap.vaultRoot ?? '').trim() || state.defaultVaultPath || '';
-  const vaultRoot = isDesktopShell
-    ? String(bootstrap.vaultRoot ?? currentVaultRoot).trim()
-    : (activeVaultRoot ? currentVaultRoot : (requestedVaultRoot || currentVaultRoot));
-
-  if (!vaultRoot) {
-    throw new Error('Vault padrão ainda não carregado');
-  }
-
-  const result = await api('/api/setup', {
-    method: 'POST',
-    body: JSON.stringify({ action: 'open', vaultRoot })
-  });
-
-  await openVaultFromBootstrap(String(result.vaultRoot ?? vaultRoot));
-  els.setupHint.textContent = `Vault padrão aberto em ${vaultRoot}.`;
+  await vaultBootstrap.startVault();
 }
 
 async function ensureActiveVaultReady(actionLabel) {
-  const activeVaultRoot = getConfiguredVaultRoot();
-  if (activeVaultRoot) return activeVaultRoot;
-
-  if (isDesktopShell) {
-    await startVault();
-    const resolvedVaultRoot = getConfiguredVaultRoot();
-    if (resolvedVaultRoot) return resolvedVaultRoot;
-  }
-
-  throw new Error(`Aguarde o vault padrao terminar de abrir antes de ${actionLabel}.`);
+  return vaultBootstrap.ensureActiveVaultReady(actionLabel);
 }
 
 function beginDesktopBootstrap() {
-  if (!isDesktopShell || desktopBootstrapPromise) return;
-
-  desktopBootstrapPromise = (async () => {
-    try {
-      await openDesktopDefaultVault(true);
-    } catch (error) {
-      showError(error instanceof Error ? error.message : 'Falha ao iniciar interface');
-      sendDebugState('desktopBootstrap.error', {
-        message: error instanceof Error ? error.message : 'Falha ao iniciar interface'
-      });
-    } finally {
-      desktopBootstrapComplete = true;
-      syncWorkspaceState();
-    }
-  })();
-}
-
-async function createFolder() {
-  const vaultRoot = await ensureActiveVaultReady('criar uma pasta');
-  const base = containerForSelection();
-  const name = await askRelativePath('Nova pasta', 'Nova Pasta');
-  if (!name) return;
-  const value = makeUniqueVaultPath(base, name);
-  sendDebugState('createFolder.before', { vaultRoot, path: value, base });
-
-  await api('/api/folder', {
-    method: 'POST',
-    body: JSON.stringify({ vaultRoot, path: value })
-  });
-
-  state.selectedFolder = normalizeRelativePath(value);
-  await refreshWorkspace('', false);
-}
-
-async function createNote() {
-  const vaultRoot = await ensureActiveVaultReady('criar uma nota');
-  const base = containerForSelection();
-  const name = await askRelativePath('Nova nota', 'nova-nota');
-  if (!name) return;
-  const fileName = name.toLowerCase().endsWith('.md') ? name : `${name}.md`;
-  const pathValue = makeUniqueVaultPath(base, fileName);
-  sendDebugState('createNote.before', { vaultRoot, path: pathValue, base });
-
-  const fallbackContent = state.selectedTemplate?.content ?? '# Nova nota\n\n';
-  const content = await askMultiline(
-    state.selectedTemplate ? `Conteúdo inicial a partir de ${state.selectedTemplate.title}` : 'Conteúdo inicial',
-    fallbackContent
-  );
-  if (content === null) return;
-  await api('/api/file', {
-    method: 'POST',
-    body: JSON.stringify({ vaultRoot, path: pathValue, content, operation: 'create' })
-  });
-
-  state.selectedFolder = pathDirectory(pathValue);
-  recordActivity('create', `Criada ${fileLabel(pathValue)}`, pathValue);
-  await refreshWorkspace(pathValue);
+  vaultBootstrap.beginDesktopBootstrap();
 }
 
 beginDesktopBootstrap();
@@ -4699,13 +2297,18 @@ async function saveNote({ source = 'manual' } = {}) {
       clearEditorDraft(savedPath);
       resetEditorHistory({ value: submittedContent, selectionStart: getEditorSelection().start, selectionEnd: getEditorSelection().end });
       resetEditorSaveState(submittedContent);
+      updateEditorDraftIndicator(source === 'auto' ? 'Autosave concluido' : 'Sincronizado', 'saved');
     } else if (state.selectedFile === savedPath) {
       writeEditorDraft(savedPath, els.noteEditor.value);
       markEditorDirty();
       scheduleEditorAutoSave();
     }
 
-    if (source !== 'auto') {
+    if (source === 'auto') {
+      els.editorStatus.textContent = editorUnchanged
+        ? `Autosave concluido em ${savedPath}.`
+        : `Autosave parcial em ${savedPath}. Alteracoes novas continuam no rascunho.`;
+    } else {
       els.editorStatus.textContent = editorUnchanged ? `Salvo em ${savedPath}` : `Salvo em ${savedPath}. Novas alteracoes continuam no rascunho.`;
     }
     recordActivity('save', `Salva ${fileLabel(savedPath)}`, savedPath);
@@ -4728,40 +2331,6 @@ async function saveNote({ source = 'manual' } = {}) {
   } finally {
     editorSaveState.saving = false;
   }
-}
-
-function scheduleEditorAutoSave() {
-  if (!state.selectedFile) return;
-  clearEditorAutoSaveTimer();
-  const currentValue = normalizeEditorText(els.noteEditor.value);
-  if (!currentValue.trim() || currentValue === editorSaveState.lastSavedValue) {
-    editorSaveState.dirty = false;
-    updateEditorDraftIndicator('Sincronizado', 'saved');
-    return;
-  }
-
-  editorSaveState.autoSaveTimer = setTimeout(() => {
-    if (editorAssistState.items.length > 0) {
-      scheduleEditorAutoSave();
-      return;
-    }
-    void saveNote({ source: 'auto' }).catch((error) => showError(error instanceof Error ? error.message : 'Falha no autosave'));
-  }, 2200);
-}
-
-async function renameCurrentNoteToPath(nextPath) {
-  if (!state.selectedFile) return;
-
-  const vaultRoot = getConfiguredVaultRoot();
-  const destination = normalizeRelativePath(nextPath);
-
-  await api('/api/rename', {
-    method: 'POST',
-    body: JSON.stringify({ vaultRoot, source: state.selectedFile, destination })
-  });
-
-  recordActivity('rename', `Renomeada ${fileLabel(destination)}`, destination);
-  await refreshWorkspace(destination);
 }
 
 async function renameCurrentNoteFromEditor() {
@@ -4799,28 +2368,6 @@ async function commitEditorTitleRename() {
   });
 
   return noteTitleRenamePromise;
-}
-
-async function renameNote() {
-  if (!state.selectedFile) return;
-  const nextPath = await askRelativePath('Renomear', state.selectedFile);
-  if (!nextPath) return;
-  await renameCurrentNoteToPath(nextPath);
-}
-
-async function moveNote() {
-  if (!state.selectedFile) return;
-  const nextPath = await askRelativePath('Mover', state.selectedFile);
-  if (!nextPath) return;
-  const vaultRoot = getConfiguredVaultRoot();
-
-  await api('/api/move', {
-    method: 'POST',
-    body: JSON.stringify({ vaultRoot, source: state.selectedFile, destination: normalizeRelativePath(nextPath) })
-  });
-
-  recordActivity('move', `Movida ${fileLabel(nextPath)}`, nextPath);
-  await refreshWorkspace(normalizeRelativePath(nextPath));
 }
 
 function getWorkspaceDeleteTarget() {
@@ -4922,6 +2469,11 @@ els.viewButtons.forEach((button) => {
       return;
     }
 
+    if (button.dataset.view === 'settings') {
+      setView('setup');
+      return;
+    }
+
     if (button.dataset.view === 'workspace' && !getConfiguredVaultRoot()) {
       void startVault()
         .catch((error) => showError(error instanceof Error ? error.message : 'Falha ao iniciar vault'))
@@ -4942,7 +2494,7 @@ document.getElementById('sidebarNewNoteButton')?.addEventListener('click', () =>
   void createNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota'));
 });
 els.aiModeButton?.addEventListener('click', () => {
-  openAiDialog();
+  aiDevMode.openDialog();
 });
 els.aiLauncher?.addEventListener('click', onAiLauncherActivate);
 els.aiLauncher?.addEventListener('pointerdown', (event) => {
@@ -4973,10 +2525,10 @@ els.aiLauncher?.addEventListener('pointercancel', () => {
   aiLauncherState.moved = false;
   aiLauncherState.suppressClick = false;
 });
-els.desktopCommandsButton.addEventListener('click', openCommandsDialog);
-els.templatesButton.addEventListener('click', () => { openTemplatesDialog().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir modelos')); });
+els.desktopCommandsButton.addEventListener('click', () => {
+  void aiDevMode.openCommandsDialog({ inline: false }).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao carregar catalogo da IA'));
+});
 els.dailyNoteButton.addEventListener('click', () => { openDailyNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir nota diária')); });
-els.desktopSearchButton.addEventListener('click', openSearchDialog);
 els.startVaultButton.addEventListener('click', () => { startVault().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao iniciar vault')); });
 els.openWorkspaceButton.addEventListener('click', () => {
   if (!getConfiguredVaultRoot()) {
@@ -5036,7 +2588,7 @@ document.querySelectorAll('[data-quick-action]').forEach((button) => {
       return;
     }
     if (action === 'commands') {
-      openCommandsDialog();
+      void aiDevMode.openCommandsDialog({ inline: false }).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao carregar catalogo da IA'));
     }
   });
 });
@@ -5070,7 +2622,6 @@ els.noteOptionsMenu?.addEventListener('click', (event) => {
   if (action === 'toggle-pin') void togglePinSelectedNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao fixar nota'));
   if (action === 'save-template') void saveCurrentAsTemplate().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao salvar modelo'));
   if (action === 'rename-note') void renameNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao renomear'));
-  if (action === 'move-note') void moveNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao mover'));
   if (action === 'link-note') void openLinkPickerDialog().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir seletor de links'));
 });
 els.noteTitle.addEventListener('focus', () => {
@@ -5157,17 +2708,7 @@ els.noteEditorSurface?.addEventListener('pointerout', (event) => {
   clearEditorLinkFocus();
 });
 els.noteEditorSurface?.addEventListener('pointerleave', clearEditorLinkFocus);
-els.editorAssistList?.addEventListener('mousedown', (event) => {
-  event.preventDefault();
-});
-els.editorAssistList?.addEventListener('click', (event) => {
-  const target = event.target instanceof HTMLElement ? event.target.closest('[data-index]') : null;
-  if (!(target instanceof HTMLElement)) return;
-  const index = Number(target.dataset.index ?? '-1');
-  if (!Number.isInteger(index) || index < 0) return;
-  editorAssistState.activeIndex = index;
-  applyActiveEditorAssistItem();
-});
+editorAssist.bindEvents();
 els.quickMenu.addEventListener('click', (event) => {
   event.stopPropagation();
   const target = event.target;
@@ -5203,54 +2744,17 @@ els.saveButton.addEventListener('click', () => { saveNote().catch((error) => sho
 els.railCollapseButton?.addEventListener('click', () => {
   applyRailCollapsed(!document.body.classList.contains('rail-collapsed'));
 });
-els.commandsDialogClose.addEventListener('click', closeCommandsDialog);
+els.commandsDialogClose.addEventListener('click', () => aiDevMode.closeCommandsDialog());
 els.commandsDialog.addEventListener('cancel', (event) => {
   event.preventDefault();
-  closeCommandsDialog();
+  aiDevMode.closeCommandsDialog();
 });
 els.guideDialogClose.addEventListener('click', closeGuideDialog);
 els.guideDialog.addEventListener('cancel', (event) => {
   event.preventDefault();
   closeGuideDialog();
 });
-els.searchDialogClose.addEventListener('click', closeSearchDialog);
-els.searchDialog.addEventListener('cancel', (event) => {
-  event.preventDefault();
-  closeSearchDialog();
-});
-els.searchForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  void runSearch().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao buscar'));
-});
-els.searchClearButton.addEventListener('click', () => {
-  els.searchQueryInput.value = '';
-  els.searchPhraseInput.value = '';
-  els.searchTagsInput.value = '';
-  renderSearchResults([]);
-});
-els.searchResultsList.addEventListener('click', (event) => {
-  const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
-  if (!(target instanceof HTMLElement)) return;
-  const path = target.dataset.path;
-  if (path) void openSearchResult(path);
-});
-els.linkPickerDialogClose.addEventListener('click', closeLinkPickerDialog);
-els.linkPickerDialog.addEventListener('cancel', (event) => {
-  event.preventDefault();
-  closeLinkPickerDialog();
-});
-els.linkPickerDialogQuery.addEventListener('input', () => renderLinkPickerDialog());
-els.linkPickerDialogList.addEventListener('click', (event) => {
-  const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
-  if (!(target instanceof HTMLElement)) return;
-
-  const targetPath = target.dataset.path;
-  const targetLabel = target.dataset.label ?? '';
-  if (!targetPath) return;
-
-  closeLinkPickerDialog();
-  void insertLinkToCurrentNote(targetPath, targetLabel).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao linkar nota'));
-});
+resourceBrowser.bindEvents();
 els.summaryOverviewButton.addEventListener('click', () => setSummaryMode('overview')); 
 els.summaryGraphButton.addEventListener('click', () => setSummaryMode('graph'));
 els.graphSvg.addEventListener('click', (event) => {
@@ -5352,200 +2856,13 @@ els.linkSuggestionsList.addEventListener('click', (event) => {
     void applyPreviewLink(targetPath, applicationMode).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao aplicar preview'));
   }
 });
-els.graphGlobalStage.addEventListener('pointerdown', (event) => {
-  const node = getIslandGlobalGraphNode(event.target);
-  const cluster = getIslandGlobalGraphCluster(event.target);
-  if (node || cluster) return;
-
-  graphGlobalScene.hoverPath = '';
-  graphGlobalScene.hoverCluster = '';
-  graphGlobalScene.dragging = true;
-  graphGlobalScene.moved = false;
-  graphGlobalScene.startX = event.clientX;
-  graphGlobalScene.startY = event.clientY;
-  startIslandGlobalGraphDrag(event.clientX, event.clientY);
-  els.graphGlobalStage.setPointerCapture(event.pointerId);
-});
-els.graphGlobalStage.addEventListener('pointermove', (event) => {
-  if (graphGlobalViewport.dragging) {
-    const dx = Math.abs(event.clientX - graphGlobalScene.startX);
-    const dy = Math.abs(event.clientY - graphGlobalScene.startY);
-    if (dx > 2 || dy > 2) {
-      graphGlobalScene.moved = true;
-    }
-    moveIslandGlobalGraphDrag(event.clientX, event.clientY);
-    return;
-  }
-
-  const node = getIslandGlobalGraphNode(event.target);
-  const cluster = getIslandGlobalGraphCluster(event.target);
-  const path = node?.dataset.path || '';
-  const clusterKey = node ? '' : (cluster?.dataset.cluster || '');
-  if (path !== graphGlobalScene.hoverPath || clusterKey !== graphGlobalScene.hoverCluster) {
-    graphGlobalScene.hoverPath = path;
-    graphGlobalScene.hoverCluster = clusterKey;
-    renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
-  }
-});
-els.graphGlobalStage.addEventListener('pointerleave', () => {
-  graphGlobalScene.hoverPath = '';
-  graphGlobalScene.hoverCluster = '';
-  renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
-});
-els.graphGlobalStage.addEventListener('pointerup', () => {
-  graphGlobalScene.dragging = false;
-  graphGlobalScene.moved = false;
-  stopIslandGlobalGraphDrag();
-});
-els.graphGlobalStage.addEventListener('pointercancel', () => {
-  graphGlobalScene.dragging = false;
-  graphGlobalScene.moved = false;
-  stopIslandGlobalGraphDrag();
-});
-els.graphGlobalStage.addEventListener('wheel', (event) => {
-  event.preventDefault();
-  const delta = event.deltaY > 0 ? -0.08 : 0.08;
-  zoomIslandGlobalGraph(delta);
-  renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
-}, { passive: false });
-els.graphGlobalStage.addEventListener('dblclick', (event) => {
-  if (getIslandGlobalGraphNode(event.target) || getIslandGlobalGraphCluster(event.target)) return;
-  resetIslandGlobalGraphViewport();
-  renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
-});
-els.graphGlobalSphere.addEventListener('click', (event) => {
-  const node = getIslandGlobalGraphNode(event.target);
-  const cluster = getIslandGlobalGraphCluster(event.target);
-  if (graphGlobalScene.moved) return;
-
-  if (node?.dataset.path) {
-    focusIslandGlobalGraphNode(node.dataset.path);
-    return;
-  }
-
-  if (cluster?.dataset.cluster !== undefined) {
-    focusIslandGlobalGraphCluster(cluster.dataset.cluster || '');
-  }
-});
-els.graphGlobalSphere.addEventListener('pointerover', (event) => {
-  const node = getIslandGlobalGraphNode(event.target);
-  const cluster = getIslandGlobalGraphCluster(event.target);
-  const path = node?.dataset.path || '';
-  const clusterKey = node ? '' : (cluster?.dataset.cluster || '');
-  if (path !== graphGlobalScene.hoverPath || clusterKey !== graphGlobalScene.hoverCluster) {
-    graphGlobalScene.hoverPath = path;
-    graphGlobalScene.hoverCluster = clusterKey;
-    renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
-  }
-});
-els.graphGlobalSphere.addEventListener('pointerout', (event) => {
-  const related = event.relatedTarget instanceof HTMLElement ? event.relatedTarget.closest('.graph-global-node') : null;
-  const relatedCluster = event.relatedTarget instanceof HTMLElement ? event.relatedTarget.closest('.graph-global-cluster-hit') : null;
-  if (related || relatedCluster) return;
-  if (!graphGlobalViewport.dragging && (graphGlobalScene.hoverPath || graphGlobalScene.hoverCluster)) {
-    graphGlobalScene.hoverPath = '';
-    graphGlobalScene.hoverCluster = '';
-    renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
-  }
-});
-els.graphGlobalSphere.addEventListener('dblclick', (event) => {
-  const node = getIslandGlobalGraphNode(event.target);
-  if (!node || graphGlobalScene.moved) return;
-
-  const selected = (graphGlobalScene.lastGraph?.nodes ?? []).find((entry) => entry.path === node.dataset.path);
-  openGlobalGraphNode(selected ?? null);
-});
-els.graphGlobalSphere.addEventListener('contextmenu', (event) => {
-  const node = getIslandGlobalGraphNode(event.target);
-  const cluster = getIslandGlobalGraphCluster(event.target);
-  if (!node && !cluster) return;
-
-  event.preventDefault();
-  if (node?.dataset.path) {
-    focusIslandGlobalGraphNode(node.dataset.path);
-    return;
-  }
-  if (cluster?.dataset.cluster !== undefined) {
-    focusIslandGlobalGraphCluster(cluster.dataset.cluster || '');
-  }
-});
-els.graphGlobalSphere.addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter' && event.key !== ' ') return;
-  const node = getIslandGlobalGraphNode(event.target);
-  const cluster = getIslandGlobalGraphCluster(event.target);
-  if (!node && !cluster) return;
-
-  event.preventDefault();
-  if (node?.dataset.path) {
-    focusIslandGlobalGraphNode(node.dataset.path);
-    return;
-  }
-
-  if (cluster?.dataset.cluster !== undefined) {
-    focusIslandGlobalGraphCluster(cluster.dataset.cluster || '');
-  }
-});
-els.graphGlobalOverlay?.addEventListener('click', (event) => {
-  event.stopPropagation();
-  if (event.target instanceof HTMLElement && event.target.closest('button')) return;
-  const node = getGraphGlobalOverlayNode();
-  if (!node?.path) return;
-  focusIslandGlobalGraphNode(node.path);
-});
-els.graphGlobalOverlay?.addEventListener('dblclick', (event) => {
-  event.stopPropagation();
-  const node = getGraphGlobalOverlayNode();
-  if (!node) return;
-  openGlobalGraphNode(node);
-});
-els.graphGlobalOverlayOpenButton?.addEventListener('click', (event) => {
-  event.stopPropagation();
-  const node = getGraphGlobalOverlayNode();
-  if (!node) return;
-  openGlobalGraphNode(node);
-});
-els.graphGlobalOverlayFocusButton?.addEventListener('click', (event) => {
-  event.stopPropagation();
-  const node = getGraphGlobalOverlayNode();
-  if (!node?.path) return;
-  focusIslandGlobalGraphNode(node.path);
-});
-els.templatesDialogClose.addEventListener('click', () => els.templatesDialog.close());
-els.templatesDialog.addEventListener('cancel', (event) => {
-  event.preventDefault();
-  els.templatesDialog.close();
-});
-els.templatesDialogList.addEventListener('click', (event) => {
-  const target = event.target instanceof HTMLElement ? event.target.closest('[data-index]') : null;
-  if (!(target instanceof HTMLElement)) return;
-  applyTemplateSelection(Number(target.dataset.index ?? '0'));
-});
+globalGraph.bindEvents();
 els.templateSelectionClear?.addEventListener('click', () => setSelectedTemplate(null));
-els.templatePickerClose.addEventListener('click', () => els.templatePickerDialog.close());
 els.templatePickerConfirm.addEventListener('click', () => { confirmTemplateSave().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao salvar modelo')); });
-els.templatePickerDialog.addEventListener('cancel', (event) => {
-  event.preventDefault();
-  els.templatePickerDialog.close();
-});
-els.templatePickerSelect.addEventListener('change', () => {
-  const index = els.templatePickerSelect.value.trim();
-  const baseTemplate = index === '' ? null : state.templates[Number(index)] ?? null;
-  els.templatePickerContent.value = baseTemplate?.content ?? els.noteEditor.value ?? '';
-});
-els.aiDialogClose.addEventListener('click', closeAiDialog);
+els.aiDialogClose.addEventListener('click', () => aiDevMode.closeDialog());
 els.overviewOptionsButton.addEventListener('click', (event) => {
   event.stopPropagation();
   toggleOverviewOptionsMenu();
-});
-els.agendaForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  event.stopPropagation();
-  sendDebugState('agenda.submit', {
-    title: String(els.agendaTitleInput.value ?? ''),
-    due: String(els.agendaDueInput.value ?? ''),
-    status: String(els.agendaStatusInput.value ?? '')
-  });
-  void createAgendaNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota com data'));
 });
 els.desktopNotificationClose?.addEventListener('click', hideDesktopNotification);
 els.desktopNotificationAction?.addEventListener('click', () => {
@@ -5553,68 +2870,11 @@ els.desktopNotificationAction?.addEventListener('click', () => {
   setView('agenda');
   void loadAgenda().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao carregar agenda'));
 });
-els.agendaCreateButton.addEventListener('click', (event) => {
-  event.preventDefault();
-  event.stopPropagation();
-  sendDebugState('agenda.button.click', {
-    title: String(els.agendaTitleInput.value ?? ''),
-    due: String(els.agendaDueInput.value ?? ''),
-    status: String(els.agendaStatusInput.value ?? '')
-  });
-  void createAgendaNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota com data'));
-});
 document.addEventListener('keydown', (event) => {
   if (!canHandleWorkspaceDeleteShortcut(event)) return;
   if (!getWorkspaceDeleteTarget()) return;
   event.preventDefault();
   void deleteSelectedWorkspaceEntry().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao apagar item'));
-});
-els.agendaResetButton.addEventListener('click', () => {
-  els.agendaTitleInput.value = '';
-  els.agendaBodyInput.value = '';
-  els.agendaStatusInput.value = 'pending';
-  els.agendaDueInput.value = formatAgendaInputValue(new Date(Date.now() + (60 * 60 * 1000)));
-});
-els.agendaOptionsButton.addEventListener('click', (event) => {
-  event.stopPropagation();
-  toggleAgendaOptionsMenu();
-});
-els.agendaOptionsPanel.addEventListener('click', (event) => {
-  event.stopPropagation();
-  const target = event.target instanceof HTMLElement ? event.target.closest('[data-agenda-action], [data-agenda-filter]') : null;
-  if (!(target instanceof HTMLElement)) return;
-
-  const action = target.dataset.agendaAction;
-  const filter = target.dataset.agendaFilter;
-
-  if (action === 'refresh') {
-    closeAgendaOptionsMenu();
-    void loadAgenda().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar agenda'));
-    return;
-  }
-
-  if (action === 'focus-form') {
-    closeAgendaOptionsMenu();
-    els.agendaTitleInput.focus();
-    return;
-  }
-
-  if (filter) {
-    state.agendaFilter = filter;
-    closeAgendaOptionsMenu();
-    renderAgendaList();
-  }
-});
-els.agendaList.addEventListener('click', (event) => {
-  const target = event.target instanceof HTMLElement ? event.target.closest('[data-action]') : null;
-  const item = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
-  if (!(item instanceof HTMLElement) || !(target instanceof HTMLElement)) return;
-  const pathValue = item.dataset.path;
-  const action = target.dataset.action;
-  const agendaItem = state.agendaItems.find((entry) => entry.path === pathValue);
-  if (!pathValue || !agendaItem) return;
-  if (action === 'open') void openAgendaItem(pathValue).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir nota da agenda'));
-  if (action === 'toggle') void toggleAgendaItemStatus(pathValue, agendaItem.status).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar status'));
 });
 els.overviewDueList?.addEventListener('click', (event) => {
   const target = event.target instanceof HTMLElement ? event.target.closest('[data-path]') : null;
@@ -5636,7 +2896,7 @@ els.noteEditor.addEventListener('input', () => {
     editorPendingSelection.start = null;
     editorPendingSelection.end = null;
   }
-  if (state.selectedFile && !editorHistoryState.applying) {
+  if (state.selectedFile && !isApplyingEditorHistory()) {
     writeEditorDraft(state.selectedFile, els.noteEditor.value);
     markEditorDirty();
     scheduleEditorAutoSave();
@@ -5662,7 +2922,8 @@ els.workspaceView.addEventListener('pointerdown', (event) => {
 
 state.recentActivity = loadRecentActivity();
 els.agendaDueInput.value = formatAgendaInputValue(new Date(Date.now() + (60 * 60 * 1000)));
-state.agendaReminderKeys = loadAgendaReminderKeys();
+agendaController.initializeReminderKeys();
+agendaController.bindEvents();
 restoreRailCollapsedPreference();
 setEditorTitleValue('Nenhuma nota', { enabled: false });
 setEditorPreviewExpanded(false);
@@ -5680,43 +2941,43 @@ restoreAiLauncherPosition();
 window.addEventListener('resize', () => {
   applyAiLauncherPosition(aiLauncherState.offsetX, aiLauncherState.offsetY);
   if (state.view === 'relations') {
-    renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+    globalGraph.handleResize();
   }
 });
 
-window.addEventListener('marika:agenda-saved', (event) => {
+window.addEventListener('orion-vault:agenda-saved', (event) => {
   const detail = event instanceof CustomEvent ? event.detail : null;
   if (detail?.path) {
     void refreshAfterVaultChange(detail).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar vault'));
   }
 });
 
-if (window.marikaDesktop && typeof window.marikaDesktop.onAgendaSaved === 'function') {
-  window.marikaDesktop.onAgendaSaved((payload) => {
+if (window.orionDesktop && typeof window.orionDesktop.onAgendaSaved === 'function') {
+  window.orionDesktop.onAgendaSaved((payload) => {
     if (!payload?.path) return;
     void refreshAfterVaultChange(payload).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar vault'));
   });
 }
 
-if (window.marikaDesktop && typeof window.marikaDesktop.onVaultChanged === 'function') {
-  window.marikaDesktop.onVaultChanged((payload) => {
+if (window.orionDesktop && typeof window.orionDesktop.onVaultChanged === 'function') {
+  window.orionDesktop.onVaultChanged((payload) => {
     void refreshAfterVaultChange(payload).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar vault'));
   });
 }
 
-if (window.marikaDesktop && typeof window.marikaDesktop.onOpenAgendaFromNotification === 'function') {
-  window.marikaDesktop.onOpenAgendaFromNotification(() => {
+if (window.orionDesktop && typeof window.orionDesktop.onOpenAgendaFromNotification === 'function') {
+  window.orionDesktop.onOpenAgendaFromNotification(() => {
     setView('agenda');
     void loadAgenda().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao carregar agenda'));
   });
 }
 
 
-if (!localStorage.getItem('marika-ai-popup-seen')) {
+if (!localStorage.getItem('orion-vault-ai-popup-seen')) {
   setTimeout(() => {
     if (state.view === 'setup') {
-      openAiDialog();
-      localStorage.setItem('marika-ai-popup-seen', 'true');
+      aiDevMode.openDialog();
+      localStorage.setItem('orion-vault-ai-popup-seen', 'true');
     }
   }, 400);
 }

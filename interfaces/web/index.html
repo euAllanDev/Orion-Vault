@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Marika Vault</title>
+  <title>Orion Vault</title>
   <script>
     (function () {
       try {
@@ -20,11 +20,11 @@
     <aside class="rail glass">
       <div class="rail-brand">
         <div class="brand-mark">
-          <img class="brand-art" src="./assets/marika-art.png" alt="" aria-hidden="true" />
+          <img class="brand-art" src="/brand/LogoWhite.png" alt="" aria-hidden="true" />
         </div>
         <div class="brand-copy">
-          <div class="brand-title">Marika</div>
-          <div class="brand-subtitle">Local-first notes</div>
+          <div class="brand-title">Orion Vault</div>
+          <div class="brand-subtitle">Notas local-first</div>
         </div>
         <button id="railCollapseButton" class="rail-collapse-toggle" type="button" aria-label="Recolher menu" aria-pressed="false" title="Recolher menu">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5 15 12l-6 5.5"/></svg>
@@ -32,7 +32,7 @@
       </div>
       <button id="sidebarNewNoteButton" class="rail-primary-action" type="button">
         <span>＋</span>
-        <strong>New Note</strong>
+        <strong>Nova nota</strong>
       </button>
       <nav class="rail-nav" aria-label="Navegação global">
         <button class="rail-btn" data-view="setup" title="Home" aria-label="Home">
@@ -77,19 +77,8 @@
           </span>
           <span class="rail-label">Guia</span>
         </button>
-        <button class="rail-btn" data-view="settings" title="Configurações" aria-label="Configurações">
-          <span class="rail-btn-back rail-btn-back-neutral"></span>
-          <span class="rail-btn-front">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 4.7 12 3.8l2.8.9.8 2.9 2.5 1.5-.2 2.9 1.8 2.3-1.7 2.4-.4 2.9-2.7 1.1-2.9-.8-2.9.8-2.7-1.1-.4-2.9-1.7-2.4 1.8-2.3-.2-2.9 2.5-1.5z"/><circle cx="12" cy="12" r="2.5"/></svg>
-          </span>
-          <span class="rail-label">Config</span>
-        </button>
       </nav>
       <div class="rail-footer">
-        <button class="rail-footer-btn" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5h9A1.5 1.5 0 0 1 19.5 7v10A1.5 1.5 0 0 1 18 18.5H9"/><path d="M4.5 7.5h6M4.5 12h6M4.5 16.5h6"/></svg>
-          <span>Settings</span>
-        </button>
         <button id="aiModeButton" class="rail-footer-btn" type="button" aria-label="Modo dev">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 9-3.5 3 3.5 3"/><path d="m16 9 3.5 3-3.5 3"/><path d="m13.5 6-3 12"/></svg>
           <span>Modo dev</span>
@@ -100,7 +89,7 @@
     <main class="main">
       <header class="topbar glass">
         <div class="topbar-title">
-          <span class="eyebrow">Marika Vault</span>
+          <span class="eyebrow">Orion Vault</span>
           <h1 id="pageTitle">Workspace</h1>
           <p id="pageSubtitle">Árvore de notas, editor central e painéis auxiliares.</p>
         </div>
@@ -108,7 +97,7 @@
         <div class="topbar-actions">
           <div class="home-search" aria-hidden="true">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="5.5"/><path d="m15 15 4 4"/></svg>
-            <input type="text" value="Search vault..." readonly />
+            <input type="text" value="Buscar no vault..." readonly />
             <span class="home-search-filter" aria-hidden="true">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
             </span>
@@ -127,17 +116,17 @@
             <div id="overviewOptionsPanel" class="overview-options-panel is-closed" aria-hidden="true">
               <section class="overview-options-card">
                 <span class="overview-options-card-label">Ações</span>
-                <button type="button" data-quick-action="create-note">Create New Note</button>
+                <button type="button" data-quick-action="create-note">Criar nova nota</button>
                 <button type="button" data-quick-action="create-agenda">Nova nota com data</button>
                 <button type="button" data-quick-action="agenda">Abrir agenda</button>
                 <button type="button" data-quick-action="relations">Abrir relações</button>
-                <button type="button" data-quick-action="graph">Open Graph View</button>
+                <button type="button" data-quick-action="graph">Abrir graph</button>
               </section>
             </div>
           </div>
           <label class="path-box" for="vaultPathInput">
             <span>Vault</span>
-            <input id="vaultPathInput" type="text" placeholder="C:\MarikaVault" autocomplete="off" />
+            <input id="vaultPathInput" type="text" placeholder="C:\OrionVault" autocomplete="off" />
           </label>
           <button id="desktopCommandsButton" class="action">Comandos</button>
           <button id="templatesButton" class="action">Modelos</button>
@@ -150,7 +139,7 @@
       <section class="view" id="setupView">
         <div class="setup-layout">
           <section class="setup-hero glass">
-            <img class="setup-art" src="./assets/marika-art.png" alt="" aria-hidden="true" />
+            <img class="setup-art" src="/brand/LogoWhite.png" alt="" aria-hidden="true" />
             <div class="setup-copy">
               <span class="eyebrow">Vault onboarding</span>
               <h2>Inicie pelo root seguro.</h2>
@@ -168,11 +157,11 @@
             <div class="overview-summary-column">
               <section class="card glass vault-summary-card overview-summary-card">
                 <span class="eyebrow">Fronteira local</span>
-                <h3 id="vaultName">MarikaVault</h3>
+                <h3 id="vaultName">OrionVault</h3>
                 <div class="meta-list">
                   <div>
                     <span>Root</span>
-                    <strong id="vaultRootDisplay">C:\MarikaVault</strong>
+                    <strong id="vaultRootDisplay">C:\OrionVault</strong>
                   </div>
                   <div>
                     <span>Status</span>
@@ -552,10 +541,10 @@
       <section class="view active" id="workspaceView">
         <section id="workspaceEmpty" class="workspace-empty glass">
           <div class="workspace-empty-card">
-            <img class="empty-art" src="./assets/marika-art.png" alt="" aria-hidden="true" />
+            <img class="empty-art" src="/brand/LogoWhite.png" alt="" aria-hidden="true" />
             <span class="eyebrow">Workspace vazio</span>
-            <h2>Inicie o vault padrão para começar.</h2>
-            <p>
+            <h2 id="workspaceEmptyTitle">Inicie o vault padrão para começar.</h2>
+            <p id="workspaceEmptyBody">
               A visualização vai permanecer limpa até o vault padrão ser aberto.
               Depois disso, a árvore, a nota e o painel auxiliar aparecem aqui.
             </p>
@@ -625,13 +614,6 @@
                         <span class="note-option-copy">
                           <strong>Renomear</strong>
                           <small>Ajusta o nome do arquivo</small>
-                        </span>
-                      </button>
-                      <button class="note-option-item" type="button" data-action="move-note">
-                        <span class="note-option-badge note-option-badge-gold">↔</span>
-                        <span class="note-option-copy">
-                          <strong>Mover</strong>
-                          <small>Reposiciona dentro do vault</small>
                         </span>
                       </button>
                       <button class="note-option-item" type="button" data-action="link-note">
@@ -776,7 +758,6 @@
     <button data-action="create-note">Nova nota</button>
     <button data-action="create-folder">Nova pasta</button>
     <button data-action="rename">Renomear</button>
-    <button data-action="move">Mover</button>
   </menu>
 
   <menu id="folderContextMenu" class="quick-menu context-menu"></menu>
@@ -939,42 +920,52 @@
   <section id="aiDialog" class="ai-dialog hidden" aria-hidden="true">
     <div class="ai-dialog-panel">
       <div class="ai-dialog-hero">
-        <div>
+        <div class="ai-dialog-hero-copy">
           <span class="eyebrow">IA local</span>
           <h3>Abra a IA no terminal certo</h3>
           <p>
-            A IA local conversa com o vault via CLI. O terminal já abre pronto para usar os comandos do projeto.
+            O terminal abre no vault ativo e ja nasce orientado para usar os comandos do produto.
           </p>
+          <p id="aiDialogVaultContext" class="ai-dialog-vault-context">Vault ativo: aguardando contexto da sessão.</p>
         </div>
-        <button id="aiDialogClose" class="action" type="button" onclick="window.marikaAiActions?.closeDialog()">Fechar</button>
+        <button id="aiDialogClose" class="action" type="button" onclick="window.orionAiActions?.closeDialog()">Fechar</button>
       </div>
 
       <div class="ai-dialog-grid">
-        <section class="ai-dialog-card">
+        <section class="ai-dialog-card ai-dialog-card-primary">
           <span class="eyebrow">Entrada rápida</span>
           <h4>Fluxo recomendado</h4>
-          <pre id="aiDialogCommand">/start
-/context --vault <path>
-/search --vault <path> --query "arquitetura local"
-/plan --vault <path>
-/preview --vault <path>
-/apply --vault <path> --preview-id <id></pre>
+          <pre id="aiDialogCommand">orion /start
+orion /route-intent --query "o que voce quer descobrir?"
+orion /skills
+orion /flows
+orion /product-context
+orion /analyze-note --path Estudos/Clean Architecture.md
+orion /prepare-edit-task --path Estudos/SDD.md --query "revisar resumo"
+orion /prepare-writing-task --path Estudos/SDD.md --query "resumo"</pre>
+          <p class="ai-dialog-card-note">Escolha o fluxo pela intenção: se a pergunta for sobre o produto, use <code>orion /product-context</code>; para notas, siga entender, revisar, escrever ou organizar.</p>
+          <p class="ai-dialog-inline-hint">Pergunta ambigua sobre o app? Use <code>orion /route-intent --query "..."</code> antes de seguir. Quer descobrir capacidades e caminhos? Comece por <code>orion /skills</code> e <code>orion /flows</code>.</p>
         </section>
 
-        <section class="ai-dialog-card subtle">
-          <span class="eyebrow">Como funciona</span>
-          <ul>
-            <li>A IA lê o contexto local.</li>
-            <li>Ela busca notas relacionadas.</li>
-            <li>Ela pede preview antes de escrever.</li>
-              <li>Ela só aplica um preview validado com previewId.</li>
+        <section class="ai-dialog-card subtle ai-dialog-card-side">
+          <span class="eyebrow">Antes de escrever</span>
+          <ul class="ai-dialog-compact-list">
+            <li>Leia contexto.</li>
+            <li>Busque ou recupere trechos relevantes.</li>
+            <li>Revise preview antes de qualquer mutacao.</li>
           </ul>
+          <div class="ai-dialog-mini-flows">
+            <code>orion /analyze-note --path Nota.md</code>
+            <code>orion /prepare-edit-task --path Nota.md --query "revisar"</code>
+            <code>orion /prepare-writing-task --path Nota.md --query "resumo"</code>
+            <code>orion /organize-batch --path Inbox</code>
+          </div>
         </section>
       </div>
 
       <div class="ai-dialog-actions">
-        <button id="aiDialogOpenTerminal" class="action primary" type="button" onclick="window.marikaAiActions?.openTerminal()">Abrir terminal da IA</button>
-        <button id="aiDialogShowCommands" class="action" type="button" onclick="window.marikaAiActions?.showCommands()">Ver comandos</button>
+        <button id="aiDialogOpenTerminal" class="action primary" type="button" onclick="window.orionAiActions?.openTerminal()">Abrir terminal da IA</button>
+        <button id="aiDialogShowCommands" class="action" type="button" onclick="window.orionAiActions?.showCommands()">Ver comandos</button>
       </div>
       <p id="aiDialogStatus" class="ai-dialog-status">Pronto para abrir o terminal local.</p>
 
@@ -984,7 +975,7 @@
             <span class="eyebrow">Comandos</span>
             <h3>Fluxo local</h3>
           </div>
-          <button id="aiDialogCommandsClose" class="action" type="button" onclick="window.marikaAiActions?.closeCommands()">Fechar comandos</button>
+          <button id="aiDialogCommandsClose" class="action" type="button" onclick="window.orionAiActions?.closeCommands()">Fechar comandos</button>
         </div>
         <div id="aiDialogCommandsGroups" class="commands-dialog-groups"></div>
       </section>
@@ -994,9 +985,9 @@
   <aside id="desktopNotification" class="desktop-notification" aria-live="polite" aria-atomic="true" aria-hidden="true">
     <div class="desktop-notification-top">
       <div class="desktop-notification-app">
-        <span class="desktop-notification-icon" aria-hidden="true">M</span>
+          <span class="desktop-notification-icon" aria-hidden="true">O</span>
         <div class="desktop-notification-meta">
-          <span>Marika</span>
+          <span>Orion Vault</span>
           <span id="desktopNotificationTime" class="desktop-notification-time">agora</span>
         </div>
       </div>
