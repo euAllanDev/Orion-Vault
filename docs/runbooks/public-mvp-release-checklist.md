@@ -52,66 +52,66 @@ Notas de escopo atual:
 ## Checklist Usuario Comum
 
 ### Fluxo basico
-- [ ] consegue abrir ou criar um vault sem ajuda
-- [ ] entende a interface principal sem depender da IA
-- [ ] consegue criar uma pasta
-- [ ] consegue criar uma nota apenas pelo titulo
-- [ ] consegue editar nota sem friccao grave
-- [ ] consegue renomear e mover nota manualmente
+- [x] consegue abrir ou criar um vault sem ajuda
+- [x] entende a interface principal sem depender da IA
+- [x] consegue criar uma pasta
+- [x] consegue criar uma nota apenas pelo titulo
+- [x] consegue editar nota sem friccao grave
+- [x] consegue renomear e mover nota manualmente
 
 ### Agenda e visualizacao
-- [ ] consegue criar nota de agenda
-- [ ] nao recebe notificacao incoerente ao criar nota futura
-- [ ] consegue navegar dashboards sem bug grave
-- [ ] consegue abrir graph sem crash ou quebra visual severa
-- [ ] consegue usar o app sem precisar entender o modo dev
+- [x] consegue criar nota de agenda
+- [x] nao recebe notificacao incoerente ao criar nota futura
+- [x] consegue navegar dashboards sem bug grave
+- [x] consegue abrir graph sem crash ou quebra visual severa
+- [x] consegue usar o app sem precisar entender o modo dev
 
 ### Estabilidade percebida
-- [ ] logo e branding corretos
-- [ ] layout legivel em desktop e janela reduzida
-- [ ] estados vazios compreensiveis
-- [ ] sem perda de conteudo em fluxos normais
+- [x] logo e branding corretos
+- [x] layout legivel em desktop e janela reduzida
+- [x] estados vazios compreensiveis
+- [x] sem perda de conteudo em fluxos normais
 
 ## Checklist Usuario Dev
 
 ### Entrada no modo dev
-- [ ] `Modo dev` abre o terminal no vault ativo
-- [ ] onboarding mostra o fluxo com `orion /start`, `orion /guide`, `orion /skills` e `orion /flows`
-- [ ] o terminal deixa claro que a IA deve preferir comandos do produto ao filesystem direto
+- [x] `Modo dev` abre o terminal no vault ativo
+- [x] onboarding mostra o fluxo com `orion /start`, `orion /guide`, `orion /skills` e `orion /flows`
+- [x] o terminal deixa claro que a IA deve preferir comandos do produto ao filesystem direto
 
 Observacao:
 - a base ja possui launcher `orion`, onboarding, catalogo de skills e flows; o ponto principal aqui e validar a abertura real do terminal desktop de ponta a ponta
 
 ### Fluxo de leitura e pesquisa
-- [ ] consegue usar `orion /search`
-- [ ] consegue usar `orion /retrieve`
-- [ ] consegue usar `orion /agent-context`
-- [ ] consegue usar `orion /analyze-note`
-- [ ] consegue usar `orion /prepare-edit-task`
-- [ ] percebe valor na indexacao semantica para pesquisa local
+- [x] consegue usar `orion /search`
+- [x] consegue usar `orion /retrieve`
+- [x] consegue usar `orion /agent-context`
+- [x] consegue usar `orion /analyze-note`
+- [x] consegue usar `orion /prepare-edit-task`
+- [x] percebe valor na indexacao semantica para pesquisa local
 
 ### Fluxo de escrita e preparacao
-- [ ] consegue usar `orion mkdir`, `touch`, `edit`, `rename`, `move`
-- [ ] consegue usar `orion /prepare-writing-task`
-- [ ] entende quando precisa ir para `preview` e `apply`
-- [ ] sente que a IA opera pelas skills do Orion Vault, nao pelo filesystem puro
+- [x] consegue usar `orion mkdir`, `touch`, `edit`, `rename`, `move`
+- [x] consegue usar `orion /prepare-writing-task`
+- [x] entende quando precisa ir para `preview` e `apply`
+- [x] sente que a IA opera pelas skills do Orion Vault, nao pelo filesystem puro
 
 ### Diagnostico e manutencao
-- [ ] consegue usar `orion /maintenance-diagnose`
-- [ ] o fluxo de manutencao aparece separado do fluxo normal de notas
+- [x] consegue usar `orion /maintenance-diagnose`
+- [x] o fluxo de manutencao aparece separado do fluxo normal de notas
 
 ### Itens explicitamente experimentais
-- [ ] `organize-batch` continua tratado como fluxo experimental mesmo ja existindo como comando dedicado nesta release
+- [x] `organize-batch` continua tratado como fluxo experimental mesmo ja existindo como comando dedicado nesta release
 
 ## Checklist Tecnico de Release
-- [ ] `pnpm typecheck`
-- [ ] `pnpm test`
-- [ ] `pnpm build`
-- [ ] docs de IA regenerados com `pnpm docs:sync-ai`
-- [ ] nenhuma referencia antiga de nome/produto na base ativa
-- [ ] build desktop abre sem erro de preload ou bootstrap
-- [ ] launcher `orion` aparece corretamente no modo dev
-- [ ] validacao manual confirma que o terminal do modo dev nasce no vault ativo com `ORION_VAULT_ROOT`
+- [x] `pnpm typecheck`
+- [x] `pnpm test`
+- [x] `pnpm build`
+- [x] docs de IA regenerados com `pnpm docs:sync-ai`
+- [x] nenhuma referencia antiga de nome/produto na base ativa
+- [x] build desktop abre sem erro de preload ou bootstrap
+- [x] launcher `orion` aparece corretamente no modo dev
+- [x] validacao manual confirma que o terminal do modo dev nasce no vault ativo com `ORION_VAULT_ROOT`
 
 ## Classificacao de Superficies
 - Manual Mode: estavel

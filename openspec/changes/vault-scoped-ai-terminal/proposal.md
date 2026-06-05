@@ -58,7 +58,8 @@ Hoje a base já consolidou a maior parte desta mudança:
 - as composed skills `analyze-note`, `prepare-edit-task`, `prepare-writing-task` e `maintenance-diagnose` já existem como comandos reais
 
 Pontos ainda não encerrados nesta mesma linha:
-- a abertura real do terminal desktop dentro do fluxo completo do Electron ainda depende de validação manual end-to-end, embora o script `start-ai-terminal.ps1` já tenha teste automatizado
+- a abertura real do terminal desktop dentro do fluxo completo do Electron ja foi validada manualmente no launcher end-to-end, alinhando o comportamento esperado de sessao no vault ativo com o shell desktop
+- a rodada mais ampla de validacao manual do `Modo dev` continua necessaria para confirmar clareza de launcher, catalogo, onboarding e task real de uso antes da decisao de teste fechado
 
 ## Próximo passo programado
 Após consolidar launcher, onboarding e catálogo operacional do `Orion Vault`, a próxima etapa recomendada passa a ser:

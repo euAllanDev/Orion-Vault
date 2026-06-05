@@ -51,7 +51,7 @@ O shell desktop deve reaproveitar o core local existente e expor a mesma frontei
 43. O editor do workspace deve usar fundo unificado `#131316` em toda a área central de leitura e escrita, sem blocos internos mais claros nem traços residuais na superfície principal.
 44. A sidebar principal do desktop deve permitir modo recolhido com ícones apenas, preservando a navegação principal e o acesso ao botão de recolher.
 45. A Home/Overview desktop deve encaixar métricas, gráficos, atividade e agenda dentro da área útil da janela, evitando vazios laterais ou inferiores desproporcionais em proporções comuns de desktop.
-46. O terminal aberto por `Modo dev` deve iniciar na raiz do app e manter o vault ativo por variável de ambiente ou contrato equivalente.
+46. O terminal aberto por `Modo dev` deve iniciar no vault ativo e manter o contrato do vault da sessão por variável de ambiente ou mecanismo equivalente.
 47. O onboarding da IA no desktop deve orientar o uso de `/start` antes de `/guide` e do restante do fluxo.
 48. Mudanças feitas no vault ativo por terminal local ou automação externa devem refletir no workspace sem exigir reinício manual do app.
 
@@ -77,7 +77,7 @@ O shell desktop deve reaproveitar o core local existente e expor a mesma frontei
 - O recolhimento da sidebar não pode esconder a navegação principal nem remover o acesso ao atalho fixo de `Modo dev`.
 - O rename inline no título da nota continua sujeito às mesmas regras de fronteira do vault; a UI não pode criar caminhos arbitrários fora da pasta da nota atual.
 - A superfície principal de escrita deve permanecer visualmente contínua, sem molduras internas competindo com o fundo base `#131316`.
-- O terminal da IA precisa expor o contexto do app sem esconder o vault ativo; abrir no vault diretamente dificulta a descoberta do guia e dos comandos do produto.
+- O terminal da IA precisa expor o contexto do produto sem esconder o vault ativo; o fluxo padrão não deve depender de abrir na raiz do app para descobrir o guia e os comandos do produto.
 - O refresh do workspace não pode depender apenas de ações internas da UI quando o vault estiver sendo alterado por terminal local.
 - A modularização incremental do renderer não pode alterar os contratos de bootstrap, agenda, relações, workspace, overview, editor, graph, busca local, modelos, seleção de links, diálogos internos ou readiness do shell; ela deve apenas separar responsabilidades de apresentação, assistência, comandos de edição, histórico local, graph local, graph global e orquestração.
 - A composição do renderer não pode usar referências prematuras entre controllers que impeçam o registro dos handlers da interface ou deixem a aplicação presa na tela inicial.
@@ -146,11 +146,12 @@ Then o sistema orienta começar por `/start`
 And depois seguir para `/guide`, `/context`, `/search`, `/plan` ou `/preview`
 And `apply` aparece condicionado a um `previewId` validado
 
-### Cenário 6c: terminal da IA abre na raiz do app
+### Cenário 6c: terminal da IA abre no vault ativo
 Given a aplicação desktop está aberta com um vault ativo
 When o usuário abre o terminal da IA por `Modo dev`
-Then o terminal inicia na raiz do app
-And o vault ativo permanece disponível para os comandos do produto
+Then o terminal inicia no vault ativo
+And o vault ativo permanece disponível como contexto autoritativo da sessão
+And a IA não precisa navegar pela raiz do app para começar o fluxo do produto
 
 ### Cenário 6d: mudanças externas reaparecem no workspace
 Given a aplicação desktop está aberta em um vault ativo

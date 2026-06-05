@@ -56,6 +56,7 @@ Status da primeira leva:
 - Nesta change, `analyze-note`, `prepare-edit-task`, `prepare-writing-task`, `maintenance-diagnose` e `organize-batch` já subiram para comandos reais.
 - Nesta primeira versão, `organize-batch` funciona como entrada dedicada para preview em lote do vault ativo e continua dependendo de `apply` para qualquer mutação.
 - Runbook operacional de validação manual do modo dev: `docs/runbooks/dev-mode-desktop-validation.md`
+- A spec base de `desktop-app` foi alinhada com esta change para refletir o comportamento já consolidado: o terminal do `Modo dev` nasce no vault ativo, não na raiz do app.
 - Validação manual confirmada: launcher visual coerente com o posicionamento do produto, terminal aberto no vault ativo `C:\Users\as409\MarikaVault`, onboarding completo carregado e sem erro residual de `openspec/registry.md`.
 - O gap principal de intenção/escopo foi coberto com `orion /route-intent`; a próxima validação deve confirmar se esse passo fica suficientemente visível para usuários dev no fluxo manual do desktop.
 - A visibilidade de `route-intent` no launcher melhorou: o fluxo recomendado do card principal do `Modo dev` agora começa por `orion /start`, traz `orion /route-intent --query "o que voce quer descobrir?"` logo na sequência e prioriza comandos compostos orientados à task.

@@ -4,10 +4,10 @@
 Registrar o checkpoint atual da preparacao para `teste fechado com usuario` em um formato curto e operacional.
 
 ## Leitura atual
-- Estado geral: pronto para rodada final de validacao manual
+- Estado geral: pronto para teste fechado com usuario
 - Core tecnico: verde
-- Fluxo manual: forte o bastante para teste
-- Modo dev: tecnicamente pronto para validacao manual
+- Fluxo manual: validado manualmente
+- Modo dev: validado manualmente
 - Release publica ampla: ainda nao
 
 ## Validacao tecnica concluida
@@ -69,7 +69,7 @@ Registrar o checkpoint atual da preparacao para `teste fechado com usuario` em u
 - discovery do Vitest nao pega mais artefatos de `release/` e `release-test/`
 - teste do terminal AI estabilizado com timeout mais realista
 
-## Em validacao
+## Validacao manual concluida
 
 ### Bloco 3: Usuario comum
 - responsividade minima em janela reduzida
@@ -91,13 +91,10 @@ Registrar o checkpoint atual da preparacao para `teste fechado com usuario` em u
 ## Falta fazer
 
 ### Validacao manual obrigatoria
-- executar `docs/runbooks/manual-common-user-validation.md`
-- preencher `docs/runbooks/manual-common-user-validation-results.md`
-- executar `docs/runbooks/dev-mode-desktop-validation.md`
-- classificar bugs encontrados em `bloqueador`, `importante` e `pos-teste`
+- consolidar qualquer bug residual futuro em `bloqueador`, `importante` e `pos-teste`
 
 ### Decisao final
-- decidir `Go / No-Go` para teste fechado com usuario
+- `Go`: pronto para teste fechado com usuario
 
 ## Bloqueadores conhecidos agora
 - nenhum bloqueador tecnico evidente na base apos a rodada atual
@@ -105,26 +102,25 @@ Registrar o checkpoint atual da preparacao para `teste fechado com usuario` em u
 ## Riscos importantes ainda abertos
 - ajustes finos de UX podem aparecer na validacao manual
 - graph pode continuar com limitacoes de legibilidade dependendo do vault real
-- o `Modo dev` ainda depende de validacao manual ponta a ponta para ser marcado como pronto
+- o `Modo dev` permanece beta mesmo apos validacao aprovada
 
 ## Proximo passo recomendado
-1. Rodar `manual-common-user-validation.md`
-2. Rodar `dev-mode-desktop-validation.md`
-3. Consolidar bugs e severidade
-4. Decidir se a build entra em `teste fechado com usuario`
+1. Entrar em `teste fechado com usuario`
+2. Consolidar apenas bugs reais encontrados nessa rodada externa
+3. Corrigir primeiro o que for `bloqueador` ou `importante`
+4. Manter `Manual Mode` como estavel, `Dev Mode` como beta e `organize-batch` como experimental
 
 ## Proximo passo explicito
 - o proximo passo real do projeto nao e adicionar mais feature agora
-- o proximo passo real e executar a validacao manual do usuario comum e do `Modo dev`
-- so depois dessa rodada vale decidir se existe algum bloqueador restante para `teste fechado com usuario`
+- o proximo passo real e usar o resultado aprovado da validacao manual para seguir ao `teste fechado com usuario`
+- novas correcoes devem ser guiadas por bugs reais dessa rodada, nao por escopo novo
 
 ## Sugestao da IA
 - minha sugestao e parar a rodada de implementacao aqui e mudar o foco para validacao humana guiada
 - a base tecnica ja esta forte o bastante: `test`, `typecheck`, `build` e `docs:sync-ai` estao verdes
-- neste momento, o maior risco deixou de ser bug estrutural e passou a ser atrito real de uso
+- neste momento, o maior risco deixou de ser bug estrutural e passou a ser atrito real de uso em teste com usuario
 - por isso, a melhor sequencia agora e:
-1. executar `docs/runbooks/manual-common-user-validation.md`
-2. executar `docs/runbooks/dev-mode-desktop-validation.md`
-3. registrar tudo em `docs/runbooks/manual-common-user-validation-results.md`
-4. corrigir apenas o que aparecer como `bloqueador` ou `importante`
-5. so entao decidir `Go / No-Go` para teste fechado
+1. seguir para `teste fechado com usuario`
+2. registrar bugs e atritos reais dessa rodada
+3. corrigir apenas o que aparecer como `bloqueador` ou `importante`
+4. evitar reabrir escopo sem evidencia de uso
