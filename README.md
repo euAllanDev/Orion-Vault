@@ -55,14 +55,20 @@ O projeto trata descoberta como parte do fluxo principal de trabalho.
 Capacidades:
 
 - busca textual por termos, frases e tags
-- recuperacao de notas relevantes
+- recuperacao local de chunks e notas relevantes
 - visao de backlinks
 - descoberta de notas relacionadas por sinais locais
+- montagem de contexto pronto para task
+- roteamento explicito entre produto, vault e codigo do app quando a pergunta e ambigua
 
 Comandos centrais:
 
 - `search`
+- `retrieve`
+- `agent-context`
 - `related`
+- `/route-intent`
+- `/product-context`
 
 ### Organizacao preview-first
 
@@ -137,9 +143,9 @@ Capacidades:
 
 ### Interface local e shell desktop
 
-O projeto esta caminhando para uma experiencia de produto mais completa, sem abandonar a CLI.
+O projeto ja possui uma experiencia desktop funcional e validada manualmente para a rodada atual, sem abandonar a CLI como superficie autoritativa.
 
-Capacidades previstas e ja em consolidacao no repositorio:
+Capacidades ja consolidadas na base atual:
 
 - setup de vault
 - workspace visual
@@ -150,12 +156,15 @@ Capacidades previstas e ja em consolidacao no repositorio:
 - notas fixadas
 - nota diaria
 - onboarding para fluxo com IA local
+- `Modo dev` abrindo no vault ativo
+- launcher `orion` com onboarding, skills e flows
+- terminal seguro com `ORION_VAULT_ROOT`
 
 ## Superficies Do Produto
 
 ### CLI
 
-E a camada mais direta para automacao, inspecao, validacao, busca, planejamento e operacoes seguras.
+E a camada mais direta para automacao, inspecao, validacao, busca, retrieval, planejamento e operacoes seguras.
 
 Entrypoint principal:
 
@@ -164,6 +173,20 @@ Entrypoint principal:
 Guia rapido:
 
 - `comandos.md`
+
+Fluxos de IA e comandos compostos relevantes:
+
+- `/start`
+- `/guide`
+- `/skills`
+- `/flows`
+- `/route-intent`
+- `/product-context`
+- `/analyze-note`
+- `/prepare-edit-task`
+- `/prepare-writing-task`
+- `/maintenance-diagnose`
+- `/organize-batch`
 
 ### Web local
 
@@ -347,7 +370,9 @@ Ele nasce e evolui por meio de artefatos explicitamente versionados.
 - `vault-interface`
 - `desktop-app`
 - `ai-cli-bridge`
+- `vault-scoped-ai-terminal`
 - `semantic-note-links`
+- `semantic-vault-retrieval`
 - `overview-dashboard`
 - `date-notes-agenda`
 
@@ -375,19 +400,38 @@ Ele nasce e evolui por meio de artefatos explicitamente versionados.
 
 ## Primeiros Passos
 
+### Requisitos
+
+- Node.js 20+
+- pnpm
+
 ### Instalacao
 
 ```bash
 pnpm install
 ```
 
+### Sincronizacao de docs da IA
+
+```bash
+pnpm docs:sync-ai
+```
+
 ### Desenvolvimento
+
+Superficies principais durante desenvolvimento:
 
 ```bash
 pnpm dev
 pnpm dev:web
 pnpm dev:desktop
 ```
+
+Significado pratico:
+
+- `pnpm dev`: CLI local do produto
+- `pnpm dev:web`: interface web local
+- `pnpm dev:desktop`: shell desktop Electron
 
 ### Verificacao
 
@@ -396,6 +440,15 @@ pnpm test
 pnpm typecheck
 pnpm lint
 pnpm build
+```
+
+Checklist tecnico recomendado antes de validacao manual ou distribuicao:
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm docs:sync-ai
 ```
 
 Se voce nao estiver usando o vault padrao configurado no app, informe `--vault <path>` nos comandos da CLI.
@@ -412,10 +465,12 @@ pnpm dev context --path "MinhaNota.md"
 pnpm dev doctor
 ```
 
-### Busca e relacoes
+### Busca, retrieval e relacoes
 
 ```bash
 pnpm dev search --query "vault"
+pnpm dev retrieve --query "clean architecture"
+pnpm dev agent-context --query "sdd" --path "Architecture"
 pnpm dev related --path "Docs/Alpha.md"
 ```
 
@@ -426,7 +481,7 @@ pnpm dev organize --dry-run
 pnpm dev plan
 pnpm dev diff
 pnpm dev /preview
-pnpm dev /apply
+pnpm dev /apply --preview-id <id>
 ```
 
 ### Workspace
@@ -438,6 +493,29 @@ pnpm dev edit --path "Projetos/minha-nota.md" --content "# Minha nota\n\nAtualiz
 pnpm dev rename --source "Projetos/minha-nota.md" --destination "Projetos/nota-final.md"
 pnpm dev move --source "Projetos/nota-final.md" --destination "Arquivo/nota-final.md"
 ```
+
+### Modo dev e skills do produto
+
+```bash
+pnpm dev /start
+pnpm dev /guide
+pnpm dev /skills
+pnpm dev /flows
+pnpm dev /route-intent --query "o que voce acha desse app?"
+pnpm dev /product-context
+pnpm dev /analyze-note --path "Docs/Alpha.md"
+pnpm dev /prepare-edit-task --path "Docs/Alpha.md" --query "revisar estrutura"
+pnpm dev /prepare-writing-task --path "Docs/Alpha.md" --query "escrever resumo executivo"
+pnpm dev /maintenance-diagnose
+```
+
+### Fluxo recomendado para IA
+
+1. Comece por `/start`
+2. Use `/route-intent` ou `/product-context` quando a pergunta for sobre o app
+3. Use `search`, `retrieve`, `agent-context` ou `analyze-note` para montar contexto
+4. Use `prepare-edit-task` ou `prepare-writing-task` antes de mutacao assistida
+5. Use `preview` antes de `apply`
 
 Para referencia operacional curta:
 
@@ -464,9 +542,18 @@ Neste momento, o projeto nao quer ser:
 
 ## Estado Atual
 
-O projeto esta em evolucao ativa.
+O projeto esta em evolucao ativa, mas ja passou da fase de prova de conceito.
 
-Ja existe uma base funcional real para CLI, web local, workspace, agenda, relacoes semanticas e shell desktop. Ao mesmo tempo, varias superficies continuam amadurecendo dentro do fluxo de changes do OpenSpec.
+Ja existe uma base funcional real para CLI, web local, workspace, agenda, relacoes semanticas, retrieval local e shell desktop.
+
+Estado operacional atual:
+
+- `Manual Mode`: estavel para a rodada atual
+- `Dev Mode`: beta, com validacao manual aprovada
+- `organize-batch`: experimental
+- base pronta para `teste fechado com usuario`
+
+As proximas iteracoes devem ser guiadas principalmente por feedback real de uso, com foco em refinamento de UX, graph e evolucao de skills compostas.
 
 ## Referencias Importantes
 
@@ -483,7 +570,7 @@ Ja existe uma base funcional real para CLI, web local, workspace, agenda, relaco
 
 Orion Vault e um produto para quem quer tratar notas Markdown como infraestrutura pessoal de conhecimento, e nao apenas como arquivos dispersos.
 
-Ele junta produto, arquitetura e governanca num mesmo eixo:
+Ele combina produto, arquitetura e governanca num mesmo eixo:
 
 - experiencia local-first
 - seguranca de vault
