@@ -6261,6 +6261,7 @@ body[data-view='setup'] .overview-options-panel {
 .tree {
   display: grid;
   gap: 2px;
+  align-content: start;
   overflow: auto;
   padding-right: 4px;
 }

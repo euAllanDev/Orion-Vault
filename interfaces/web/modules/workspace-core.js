@@ -160,6 +160,7 @@ export function createWorkspaceCoreController(params) {
     const normalizedPath = normalizeRelativePath(relativePath);
     const vaultRoot = getConfiguredVaultRoot();
     const data = await api(`/api/file?vaultRoot=${encodeURIComponent(vaultRoot)}&path=${encodeURIComponent(normalizedPath)}`);
+    const previousSelectedFile = state.selectedFile;
     state.selectedFile = normalizeRelativePath(data.path);
     closeEditorAssistMenu();
     setEditorTitleValue(fileLabel(state.selectedFile), { enabled: true });
@@ -168,10 +169,16 @@ export function createWorkspaceCoreController(params) {
     const persistedContent = String(data.content ?? '');
     const draftContent = readEditorDraft(state.selectedFile);
     const nextContent = draftContent || persistedContent;
-    els.noteEditor.value = nextContent;
-    resetEditorHistory({ value: nextContent, selectionStart: 0, selectionEnd: 0 });
-    resetEditorSaveState(persistedContent);
-    renderEditorPresentation();
+    const isCurrentContent = normalizedPath === previousSelectedFile && els.noteEditor.value === nextContent;
+
+    // The vault watcher also observes this editor's autosave. Do not recreate the
+    // editor surface for identical content, or its native selection returns to zero.
+    if (!isCurrentContent) {
+      els.noteEditor.value = nextContent;
+      resetEditorHistory({ value: nextContent, selectionStart: 0, selectionEnd: 0 });
+      resetEditorSaveState(persistedContent);
+      renderEditorPresentation();
+    }
     els.editorStatus.textContent = draftContent ? `Editando ${state.selectedFile} com rascunho local.` : `Editando ${state.selectedFile}`;
     if (draftContent) {
       markEditorDirty();
