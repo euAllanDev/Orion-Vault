@@ -1,4 +1,6 @@
 export function createGlobalGraphController(params) {
+  const maxVisibleNotes = 220;
+  const maxVisibleFolders = 40;
   const {
     state,
     els,
@@ -148,6 +150,13 @@ export function createGlobalGraphController(params) {
     });
     if (visibleNodes.length === 0) visibleNodes = rawNodes;
 
+    const totalNodeCount = visibleNodes.length;
+    if (visibleNodes.length > maxVisibleNotes + maxVisibleFolders) {
+      const folders = visibleNodes.filter((node) => node.kind === 'folder').slice(0, maxVisibleFolders);
+      const notes = visibleNodes.filter((node) => node.kind !== 'folder').slice(0, maxVisibleNotes);
+      visibleNodes = [...folders, ...notes];
+    }
+
     const clusterMap = new Map();
     for (const node of visibleNodes) {
       const key = graphGlobalClusterKeyForNode(node);
@@ -184,11 +193,9 @@ export function createGlobalGraphController(params) {
         const radialY = cluster.ry * (0.16 + (radiusRatio * 0.72));
         const baseX = cluster.x + (Math.cos(angle) * radialX * 0.82);
         const baseY = cluster.y + (Math.sin(angle) * radialY * 0.8);
-        const floatX = Math.sin((graphGlobalScene.motionTime / 1200) + (seed * 0.009)) * (node.kind === 'folder' ? 1.2 : 2.4);
-        const floatY = Math.cos((graphGlobalScene.motionTime / 1380) + (seed * 0.007)) * (node.kind === 'folder' ? 1.2 : 2.8);
         const isHub = node.kind === 'note' && index < Math.max(1, Math.min(2, Math.ceil(cluster.noteCount * 0.12)));
         const size = node.kind === 'folder' ? 12 + (Math.min(1, node.score) * 3) : 10 + (Math.min(1, node.score) * 6) + (isHub ? 5 : 0);
-        const entry = { node, cluster, x: baseX + floatX, y: baseY + floatY, size, isHub };
+        const entry = { node, cluster, x: baseX, y: baseY, size, isHub };
         positions.set(node.path, entry);
         nodeOrder.push(entry);
       });
@@ -206,7 +213,7 @@ export function createGlobalGraphController(params) {
       if (from.cluster.key !== to.cluster.key) to.cluster.connectionCount += 1;
     }
 
-    return { clusters, clusterByKey, positions, nodeOrder, edges, connectionCounts };
+    return { clusters, clusterByKey, positions, nodeOrder, edges, connectionCounts, totalNodeCount };
   }
 
   function ensureGlobalGraphSelection(layout) {
@@ -312,8 +319,14 @@ export function createGlobalGraphController(params) {
     const width = Math.max(700, Math.round(rect.width || 920));
     const height = Math.max(560, Math.round(rect.height || 760));
     const layout = buildGlobalGraphLayout(graph, width, height);
+    graphGlobalScene.lastLayout = layout;
 
-    if (els.graphGlobalCount) els.graphGlobalCount.textContent = `${layout.nodeOrder.length} nós · ${layout.clusters.length} ilhas`;
+    if (els.graphGlobalCount) {
+      const nodeLabel = layout.totalNodeCount > layout.nodeOrder.length
+        ? `${layout.nodeOrder.length} de ${layout.totalNodeCount} nós`
+        : `${layout.nodeOrder.length} nós`;
+      els.graphGlobalCount.textContent = `${nodeLabel} · ${layout.clusters.length} ilhas`;
+    }
 
     if (layout.nodeOrder.length === 0) {
       sphere.innerHTML = '<div class="empty-inline graph-global-empty">Sem relações</div>';
@@ -404,13 +417,13 @@ export function createGlobalGraphController(params) {
     graphGlobalScene.activePath = normalizedPath;
     const node = graphGlobalScene.lastGraph?.nodes?.find((entry) => normalizeRelativePath(entry.path) === normalizedPath);
     graphGlobalScene.activeCluster = node ? graphGlobalClusterKeyForNode(node) : graphGlobalScene.activeCluster;
-    renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+    refreshGlobalGraphFocus();
   }
 
   function focusIslandGlobalGraphCluster(clusterKey) {
     graphGlobalScene.activePath = '';
     graphGlobalScene.activeCluster = clusterKey;
-    renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+    refreshGlobalGraphFocus();
   }
 
   function openGlobalGraphNode(node) {
@@ -430,17 +443,40 @@ export function createGlobalGraphController(params) {
 
   function renderIslandGlobalGraphFrame() {
     graphGlobalScene.animationFrame = null;
-    if (state.view !== 'relations' && !graphGlobalViewport.dragging) return;
-    graphGlobalScene.motionTime = performance.now();
+    if (document.hidden || state.view !== 'relations') return;
     renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
-    if (state.view === 'relations' || graphGlobalViewport.dragging) {
-      graphGlobalScene.animationFrame = window.requestAnimationFrame(renderIslandGlobalGraphFrame);
+  }
+
+  function closeIslandGlobalGraphOverlay() {
+    graphGlobalScene.activePath = '';
+    graphGlobalScene.hoverPath = '';
+    graphGlobalScene.hoverCluster = '';
+    refreshGlobalGraphFocus();
+  }
+
+  function refreshGlobalGraphFocus() {
+    const layout = graphGlobalScene.lastLayout;
+    if (!layout) {
+      renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+      return;
     }
+
+    ensureGlobalGraphSelection(layout);
+    const { displayPath, displayCluster } = buildGlobalGraphHighlights(layout);
+    els.graphGlobalSphere?.querySelectorAll('.graph-global-node').forEach((element) => {
+      element.classList.toggle('active', element.dataset.path === displayPath);
+      element.classList.toggle('dimmed', Boolean(displayCluster) && element.dataset.cluster !== displayCluster);
+    });
+    els.graphGlobalSphere?.querySelectorAll('.graph-global-cluster-hit').forEach((element) => {
+      element.classList.toggle('active', !displayCluster || element.dataset.cluster === displayCluster);
+      element.classList.toggle('dimmed', Boolean(displayCluster) && element.dataset.cluster !== displayCluster);
+    });
+    updateGlobalGraphOverlay(layout, displayPath, displayCluster);
   }
 
   function startIslandGlobalGraphAnimation() {
-    if (graphGlobalScene.animationFrame !== null) return;
-    graphGlobalScene.animationFrame = window.requestAnimationFrame(renderIslandGlobalGraphFrame);
+    if (document.hidden || state.view !== 'relations') return;
+    renderIslandGlobalGraphFrame();
   }
 
   function stopIslandGlobalGraphAnimation() {
@@ -493,6 +529,12 @@ export function createGlobalGraphController(params) {
   }
 
   function bindEvents() {
+    document.addEventListener('visibilitychange', () => {
+      document.body.classList.toggle('graph-motion-paused', document.hidden);
+      if (!document.hidden && state.view === 'relations') {
+        refreshGlobalGraphFocus();
+      }
+    });
     els.graphGlobalStage.addEventListener('pointerdown', (event) => {
       const node = getIslandGlobalGraphNode(event.target);
       const cluster = getIslandGlobalGraphCluster(event.target);
@@ -521,13 +563,13 @@ export function createGlobalGraphController(params) {
       if (path !== graphGlobalScene.hoverPath || clusterKey !== graphGlobalScene.hoverCluster) {
         graphGlobalScene.hoverPath = path;
         graphGlobalScene.hoverCluster = clusterKey;
-        renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+        refreshGlobalGraphFocus();
       }
     });
     els.graphGlobalStage.addEventListener('pointerleave', () => {
       graphGlobalScene.hoverPath = '';
       graphGlobalScene.hoverCluster = '';
-      renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+      refreshGlobalGraphFocus();
     });
     els.graphGlobalStage.addEventListener('pointerup', () => {
       graphGlobalScene.dragging = false;
@@ -568,7 +610,7 @@ export function createGlobalGraphController(params) {
       if (path !== graphGlobalScene.hoverPath || clusterKey !== graphGlobalScene.hoverCluster) {
         graphGlobalScene.hoverPath = path;
         graphGlobalScene.hoverCluster = clusterKey;
-        renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+        refreshGlobalGraphFocus();
       }
     });
     els.graphGlobalSphere.addEventListener('pointerout', (event) => {
@@ -578,7 +620,7 @@ export function createGlobalGraphController(params) {
       if (!graphGlobalViewport.dragging && (graphGlobalScene.hoverPath || graphGlobalScene.hoverCluster)) {
         graphGlobalScene.hoverPath = '';
         graphGlobalScene.hoverCluster = '';
-        renderIslandGlobalGraph(graphGlobalScene.lastGraph || state.graphGlobal);
+        refreshGlobalGraphFocus();
       }
     });
     els.graphGlobalSphere.addEventListener('dblclick', (event) => {
@@ -635,10 +677,15 @@ export function createGlobalGraphController(params) {
       if (!node?.path) return;
       focusIslandGlobalGraphNode(node.path);
     });
+    els.graphGlobalOverlayCloseButton?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      closeIslandGlobalGraphOverlay();
+    });
   }
 
   return {
     bindEvents,
+    closeIslandGlobalGraphOverlay,
     focusIslandGlobalGraphCluster,
     focusIslandGlobalGraphNode,
     getGraphGlobalOverlayNode,

@@ -79,6 +79,10 @@
         </button>
       </nav>
       <div class="rail-footer">
+        <button id="feedbackButton" class="rail-footer-btn" type="button" aria-label="Enviar feedback">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v10H9l-4 3z"/><path d="M8 9h8M8 12h5"/></svg>
+          <span>Feedback</span>
+        </button>
         <button id="aiModeButton" class="rail-footer-btn" type="button" aria-label="Modo dev">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 9-3.5 3 3.5 3"/><path d="m16 9 3.5 3-3.5 3"/><path d="m13.5 6-3 12"/></svg>
           <span>Modo dev</span>
@@ -132,7 +136,19 @@
           <button id="templatesButton" class="action">Modelos</button>
           <button id="dailyNoteButton" class="action">Hoje</button>
           <button id="desktopSearchButton" class="action">Buscar</button>
+          <button id="openVaultFolderButton" class="action" type="button">Abrir pasta</button>
           <button id="openWorkspaceButton" class="action primary">Abrir workspace</button>
+          <div class="window-controls" aria-label="Controles da janela">
+            <button id="windowMinimizeButton" class="window-control" type="button" aria-label="Minimizar janela" title="Minimizar">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg>
+            </button>
+            <button id="windowMaximizeButton" class="window-control" type="button" aria-label="Maximizar ou restaurar janela" title="Maximizar ou restaurar">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" /></svg>
+            </button>
+            <button id="windowCloseButton" class="window-control close" type="button" aria-label="Fechar janela" title="Fechar para a bandeja">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 8 8 8M16 8l-8 8" /></svg>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -289,7 +305,7 @@
           <section class="relations-graph glass">
             <div class="graph-panel-head">
               <div>
-                <span class="eyebrow">Graph global</span>
+                <span class="eyebrow">Graph global experimental</span>
                 <h3>Relações do vault</h3>
                 <p class="graph-panel-copy">Cada ilha representa um assunto principal do vault. Clique para focar, dê duplo clique em notas ou pastas para abrir e use scroll para zoom.</p>
               </div>
@@ -368,6 +384,7 @@
               </div>
             </div>
             <div class="graph-global-wrap">
+              <div class="graph-global-floating-label" aria-hidden="true">Graph global experimental</div>
               <div id="graphGlobalStage" class="graph-global-stage" role="img" aria-label="Graph global do vault">
                 <div id="graphGlobalSphere" class="graph-global-sphere"></div>
               </div>
@@ -378,6 +395,7 @@
                     <span id="graphGlobalOverlayBadge">Nota focada</span>
                   </div>
                   <span class="graph-global-subject-label" id="graphGlobalOverlayKicker">Assunto local</span>
+                  <button id="graphGlobalOverlayCloseButton" class="graph-global-overlay-close" type="button" aria-label="Fechar detalhes da nota">×</button>
                 </header>
 
                 <h3 class="graph-global-title" id="graphGlobalOverlayTitle">Nenhuma nota</h3>

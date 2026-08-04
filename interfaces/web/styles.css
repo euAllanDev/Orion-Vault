@@ -241,6 +241,68 @@ h3,
   justify-content: flex-end;
 }
 
+.window-controls {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding-left: 4px;
+}
+
+html.shell-desktop .topbar-title {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+html.shell-desktop .topbar-actions {
+  -webkit-app-region: no-drag;
+  padding-right: 106px;
+}
+
+html.shell-desktop .window-controls {
+  display: flex;
+  position: fixed;
+  z-index: 100;
+  top: 6px;
+  right: 12px;
+}
+
+.window-control {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 9px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.window-control:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.window-control.close:hover {
+  color: #fff;
+  background: #c42b1c;
+}
+
+.window-control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.window-control svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .home-search {
   display: none;
   align-items: center;
@@ -1235,43 +1297,30 @@ body[data-view='setup'] .setup-side > .overview-summary-column {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  width: min(100%, var(--shell-content-max));
+  width: 100%;
   margin: 0 auto;
-  padding: var(--shell-page-pad-y) var(--shell-page-pad-x) 20px;
-  background:
-    radial-gradient(circle at 50% 12%, rgba(59, 130, 246, 0.08), transparent 34%),
-    radial-gradient(circle at 82% 78%, rgba(148, 163, 184, 0.09), transparent 30%),
-    linear-gradient(135deg, #020617, #08111f 45%, #020617);
+  padding: 0;
+  background: #020617;
 }
 
 .relations-graph {
-  min-height: auto;
-  padding: 12px 18px 14px;
+  min-height: calc(100vh - var(--shell-topbar-height));
+  padding: 0;
   display: grid;
-  gap: 10px;
-  background:
-    radial-gradient(circle at 50% 16%, rgba(59, 130, 246, 0.13), transparent 30%),
-    radial-gradient(circle at 20% 12%, rgba(147, 197, 253, 0.08), transparent 24%),
-    radial-gradient(circle at 80% 72%, rgba(148, 163, 184, 0.08), transparent 28%),
-    linear-gradient(135deg, #020617, #08111f 46%, #020617);
+  gap: 0;
+  border: 0;
+  background: transparent;
   position: relative;
-  overflow: visible;
+  overflow: hidden;
   isolation: isolate;
 }
 
 .relations-graph::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at 50% 15%, rgba(96, 165, 250, 0.07), transparent 34%),
-    radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.03), transparent 18%);
-  pointer-events: none;
+  content: none;
 }
 
 .graph-panel-head {
-  position: relative;
-  z-index: 30;
+  display: none;
 }
 
 .relations-pane-actions {
@@ -1384,16 +1433,16 @@ body[data-view='setup'] .setup-side > .overview-summary-column {
 
 .graph-global-wrap {
   position: relative;
-  min-height: clamp(500px, calc(100vh - 320px), 720px);
+  min-height: calc(100vh - var(--shell-topbar-height));
 }
 
 .graph-global-stage {
   width: 100%;
-  height: clamp(500px, calc(100vh - 320px), 720px);
-  min-height: 500px;
-  max-height: 720px;
-  border-radius: 36px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  height: calc(100vh - var(--shell-topbar-height));
+  min-height: 0;
+  max-height: none;
+  border-radius: 0;
+  border: 0;
   background:
     radial-gradient(circle at 50% 50%, rgba(96, 165, 250, 0.12), transparent 30%),
     radial-gradient(circle at 20% 16%, rgba(147, 197, 253, 0.1), transparent 23%),
@@ -1405,10 +1454,20 @@ body[data-view='setup'] .setup-side > .overview-summary-column {
   perspective: 1600px;
   perspective-origin: 50% 50%;
   position: relative;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
-    0 30px 90px rgba(0, 0, 0, 0.35);
+  box-shadow: none;
+}
+
+.graph-global-floating-label {
+  position: absolute;
+  z-index: 12;
+  top: 20px;
+  left: 24px;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.9);
+  text-transform: uppercase;
 }
 
 .graph-global-stage::before {
@@ -1996,6 +2055,25 @@ body[data-view='setup'] .setup-side > .overview-summary-column {
   gap: 12px;
 }
 
+.graph-global-overlay-close {
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  color: #b9beca;
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.graph-global-overlay-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.09);
+}
+
 .graph-global-focus-badge {
   display: inline-flex;
   align-items: center;
@@ -2448,8 +2526,74 @@ body[data-view='setup'] .setup-side > .overview-summary-column {
   background: #2a2d33;
 }
 
-.context-menu {
-  min-width: 190px;
+.quick-menu.context-menu {
+  min-width: 236px;
+  padding: 9px;
+  border-color: rgba(255, 255, 255, 0.075);
+  border-radius: 23px;
+  background: linear-gradient(145deg, #1c2029, #14171e);
+  box-shadow:
+    14px 16px 34px rgba(0, 0, 0, 0.48),
+    -7px -7px 20px rgba(255, 255, 255, 0.025),
+    inset 1px 1px rgba(255, 255, 255, 0.045);
+}
+
+.quick-menu.context-menu button {
+  width: 100%;
+  min-height: 0;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: #d9dde6;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+  transition: transform 160ms ease, background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.quick-menu.context-menu button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.quick-menu.context-menu button:active {
+  transform: scale(0.98);
+}
+
+.quick-menu.context-menu .context-menu-separator {
+  height: 1px;
+  margin: 7px 10px;
+  background: rgba(255, 255, 255, 0.07);
+  list-style: none;
+}
+
+.quick-menu.context-menu button.is-danger {
+  color: #ff8d98;
+}
+
+.quick-menu.context-menu button.is-danger:hover {
+  background: rgba(255, 84, 99, 0.09);
+  color: #ffb0b7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-global-stars,
+  .graph-global-cluster-beacon,
+  .graph-global-pulse,
+  .graph-global-connection,
+  .graph-global-node {
+    animation: none !important;
+  }
+}
+
+.graph-motion-paused .graph-global-stars,
+.graph-motion-paused .graph-global-cluster-beacon,
+.graph-motion-paused .graph-global-pulse,
+.graph-motion-paused .graph-global-connection,
+.graph-motion-paused .graph-global-node {
+  animation-play-state: paused;
 }
 
 .input-dialog {
@@ -2528,6 +2672,7 @@ body[data-view='setup'] .setup-side > .overview-summary-column {
   min-height: 160px;
   resize: vertical;
 }
+
 
 .input-dialog-actions {
   display: flex;
@@ -3501,7 +3646,25 @@ textarea#noteEditor {
   line-height: 1.7;
 }
 
-@media (max-width: 1200px) {
+@media (min-width: 1120px) and (max-width: 1260px) {
+  :root {
+    --shell-workspace-tree: 220px;
+    --shell-workspace-summary: 240px;
+    --shell-page-pad-x: 16px;
+    --shell-panel-gap: 12px;
+  }
+
+  .workspace-layout {
+    padding-top: 14px;
+  }
+
+  .tree-pane,
+  .summary-pane {
+    font-size: 0.94rem;
+  }
+}
+
+@media (max-width: 1119px) {
   .agenda-layout,
   .setup-layout,
   .workspace-layout {
@@ -4937,12 +5100,12 @@ dialog::backdrop {
   }
 
   .graph-global-wrap {
-    min-height: 560px;
+    min-height: calc(100vh - var(--shell-topbar-height));
   }
 
   .graph-global-stage {
-    height: 560px;
-    min-height: 560px;
+    height: calc(100vh - var(--shell-topbar-height));
+    min-height: 0;
   }
 
   .graph-global-overlay {
