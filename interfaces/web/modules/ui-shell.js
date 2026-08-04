@@ -12,7 +12,11 @@ export function createUiShellController(params) {
     closeRelationsDetailsMenu,
     createNote,
     createFolder,
-    renameNote
+    renameEntry,
+    moveEntry,
+    deleteEntry,
+    openNote,
+    showError
   } = params;
 
   function normalizeContainerPath(relativePath, kind = 'folder') {
@@ -232,23 +236,52 @@ export function createUiShellController(params) {
     const actions = kind === 'folder'
       ? [
           ['create-note', 'Nova nota'],
-          ['create-folder', 'Nova pasta']
+          ['create-folder', 'Nova pasta'],
+          ['rename-folder', 'Renomear pasta'],
+          ['move-folder', 'Mover pasta'],
+          ['copy-path', 'Copiar caminho'],
+          ['delete-folder', 'Apagar pasta']
         ]
       : [
+          ['open-note', 'Abrir nota'],
           ['create-note', 'Nova nota'],
-          ['create-folder', 'Nova pasta']
+          ['create-folder', 'Nova pasta'],
+          ['rename-note', 'Renomear nota'],
+          ['move-note', 'Mover nota'],
+          ['copy-path', 'Copiar caminho'],
+          ['delete-note', 'Apagar nota']
         ];
 
     for (const [action, label] of actions) {
+      if (action.startsWith('delete-')) {
+        const separator = document.createElement('li');
+        separator.className = 'context-menu-separator';
+        els.folderContextMenu.appendChild(separator);
+      }
       const item = document.createElement('button');
       item.type = 'button';
       item.dataset.action = action;
       item.textContent = label;
-      item.addEventListener('click', () => {
+      if (action.startsWith('delete-')) item.classList.add('is-danger');
+      item.addEventListener('click', async () => {
         closeMenus();
-        if (action === 'create-note') void createNote();
-        if (action === 'create-folder') void createFolder();
-        if (action === 'rename') void renameNote();
+        try {
+          if (action === 'open-note') await openNote(relativePath, { recordActivity: true, kind: 'open' });
+          if (action === 'create-note') await createNote();
+          if (action === 'create-folder') await createFolder();
+          if (action === 'rename-folder') await renameEntry(relativePath, 'folder');
+          if (action === 'rename-note') await renameEntry(relativePath, 'note');
+          if (action === 'move-folder') await moveEntry(relativePath, 'folder');
+          if (action === 'move-note') await moveEntry(relativePath, 'note');
+          if (action === 'copy-path') {
+            await navigator.clipboard.writeText(relativePath);
+            els.editorStatus.textContent = `Caminho copiado: ${relativePath}`;
+          }
+          if (action === 'delete-folder') await deleteEntry({ kind: 'folder', path: relativePath });
+          if (action === 'delete-note') await deleteEntry({ kind: 'note', path: relativePath });
+        } catch (error) {
+          showError(error instanceof Error ? error.message : 'Não foi possível concluir a ação');
+        }
       });
       els.folderContextMenu.appendChild(item);
     }

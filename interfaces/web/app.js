@@ -111,9 +111,21 @@ const editorSaveState = {
   saving: false,
   lastSavedValue: ''
 };
+const localVaultWriteExpiryByPath = new Map();
 
-async function loadDesktopBootstrap() {
-  return vaultBootstrap.loadDesktopBootstrap();
+function rememberLocalVaultWrite(pathValue) {
+  const path = normalizeRelativePath(String(pathValue ?? ''));
+  if (!path) return;
+  localVaultWriteExpiryByPath.set(path, Date.now() + 3000);
+}
+
+function consumeLocalVaultWrite(pathValue) {
+  const path = normalizeRelativePath(String(pathValue ?? ''));
+  const expiresAt = localVaultWriteExpiryByPath.get(path);
+  if (!expiresAt) return false;
+
+  localVaultWriteExpiryByPath.delete(path);
+  return expiresAt >= Date.now();
 }
 
 async function getDesktopBootstrapVaultRoot() {
@@ -133,7 +145,8 @@ const setupHints = {
 
 const uiStorageKeys = {
   railCollapsed: 'orion-vault-rail-collapsed',
-  editorDraftPrefix: 'orion-vault-editor-draft:'
+  editorDraftPrefix: 'orion-vault-editor-draft:',
+  betaDataNoticeAcknowledged: 'orion-vault-beta-data-notice-acknowledged'
 };
 
 const els = {
@@ -149,7 +162,11 @@ const els = {
   templatesButton: document.getElementById('templatesButton'),
   dailyNoteButton: document.getElementById('dailyNoteButton'),
   desktopSearchButton: document.getElementById('desktopSearchButton'),
+  openVaultFolderButton: document.getElementById('openVaultFolderButton'),
   openWorkspaceButton: document.getElementById('openWorkspaceButton'),
+  windowMinimizeButton: document.getElementById('windowMinimizeButton'),
+  windowMaximizeButton: document.getElementById('windowMaximizeButton'),
+  windowCloseButton: document.getElementById('windowCloseButton'),
   agendaForm: document.getElementById('agendaForm'),
   agendaList: document.getElementById('agendaList'),
   agendaEmpty: document.getElementById('agendaEmpty'),
@@ -172,6 +189,7 @@ const els = {
   startVaultButton: document.getElementById('startVaultButton'),
   sidebarNewNoteButton: document.getElementById('sidebarNewNoteButton'),
   railCollapseButton: document.getElementById('railCollapseButton'),
+  feedbackButton: document.getElementById('feedbackButton'),
   aiModeButton: document.getElementById('aiModeButton'),
   newNoteButton: document.getElementById('newNoteButton'),
   newFolderButton: document.getElementById('newFolderButton'),
@@ -271,6 +289,7 @@ const els = {
   graphGlobalOverlayLinks: document.getElementById('graphGlobalOverlayLinks'),
   graphGlobalOverlayLayer: document.getElementById('graphGlobalOverlayLayer'),
   graphGlobalOverlayHint: document.getElementById('graphGlobalOverlayHint'),
+  graphGlobalOverlayCloseButton: document.getElementById('graphGlobalOverlayCloseButton'),
   graphGlobalOverlayOpenButton: document.getElementById('graphGlobalOverlayOpenButton'),
   graphGlobalOverlayFocusButton: document.getElementById('graphGlobalOverlayFocusButton'),
   relationsNoteTitle: document.getElementById('relationsNoteTitle'),
@@ -992,18 +1011,6 @@ function makeUniqueVaultPathForTarget(targetPath) {
   return candidate;
 }
 
-function closeLinkPickerDialog() {
-  resourceBrowser.closeLinkPickerDialog();
-}
-
-function renderLinkPickerDialog() {
-  resourceBrowser.renderLinkPickerDialog();
-}
-
-async function insertLinkToCurrentNote(targetPath, targetLabel) {
-  await resourceBrowser.insertLinkToCurrentNote(targetPath, targetLabel);
-}
-
 async function openLinkPickerDialog() {
   await resourceBrowser.openLinkPickerDialog();
 }
@@ -1033,104 +1040,10 @@ function parseAgendaDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function agendaStatusClass(status) {
-  if (status === 'done') return 'done';
-  if (status === 'overdue') return 'overdue';
-  return 'pending';
-}
-
-function agendaStatusLabel(status) {
-  if (status === 'done') return 'Concluída';
-  if (status === 'overdue') return 'Em atraso';
-  return 'Pendente';
-}
-
-function agendaFilterLabel(filter) {
-  if (filter === 'pending') return 'Pendentes';
-  if (filter === 'done') return 'Concluídas';
-  if (filter === 'overdue') return 'Em atraso';
-  return 'Todos';
-}
-
-function agendaStatusKey(status) {
-  return status === 'done' ? 'done' : 'pending';
-}
-
 function agendaDateLabel(value) {
   const date = parseAgendaDate(value);
   if (!date) return 'Data inválida';
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(date);
-}
-
-function agendaSlug(value) {
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .replace(/[\s_-]+/g, '-');
-}
-
-function buildAgendaFilePath(title, dueValue) {
-  const date = parseAgendaDate(dueValue) ?? new Date();
-  const isoDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const slug = agendaSlug(title || 'nova-nota') || 'nova-nota';
-  return `Agenda/${isoDate}-${slug}.md`;
-}
-
-function buildAgendaMarkdown({ vaultRoot, title, dueValue, status, body }) {
-  const safeTitle = title.trim() || 'Nota com data';
-  const safeBody = body.trim();
-  const lines = [
-    '---',
-    `vaultRoot: ${vaultRoot}`,
-    `due: ${dueValue}`,
-    `status: ${agendaStatusKey(status)}`,
-    '---',
-    `# ${safeTitle}`,
-    ''
-  ];
-
-  if (safeBody) {
-    lines.push(safeBody, '');
-  }
-
-  return lines.join('\n');
-}
-
-function updateAgendaMarkdownStatus(content, nextStatus) {
-  const lines = content.split(/\r?\n/);
-  if (lines[0] !== '---') {
-    return [
-      '---',
-      `status: ${agendaStatusKey(nextStatus)}`,
-      '---',
-      '',
-      content
-    ].join('\n');
-  }
-
-  const output = [...lines];
-  let cursor = 1;
-  let matched = false;
-
-  for (; cursor < output.length; cursor += 1) {
-    const line = output[cursor].trim();
-    if (line === '---') break;
-
-    if (/^status\s*:/i.test(line)) {
-      output[cursor] = `status: ${agendaStatusKey(nextStatus)}`;
-      matched = true;
-      break;
-    }
-  }
-
-  if (!matched) {
-    output.splice(cursor, 0, `status: ${agendaStatusKey(nextStatus)}`);
-  }
-
-  return output.join('\n');
 }
 
 function agendaNotificationKey(item, windowKey) {
@@ -1233,12 +1146,29 @@ function setDesktopReady(isReady) {
 
 async function refreshAfterVaultChange(payload) {
   const nextPath = normalizeRelativePath(String(payload?.path ?? ''));
+  const isExternalChange = payload?.kind === 'external';
+  if (isExternalChange && consumeLocalVaultWrite(nextPath)) return;
+
   const bootstrapVaultRoot = isDesktopShell ? await getDesktopBootstrapVaultRoot() : '';
   const nextVaultRoot = String(payload?.vaultRoot ?? bootstrapVaultRoot ?? getConfiguredVaultRoot()).trim();
   const isAgendaNote = nextPath.startsWith('Agenda/') || payload?.kind === 'agenda';
-  const shouldOpenChangedNote = payload?.kind === 'external'
+  const isCurrentNoteChange = nextPath === normalizeRelativePath(state.selectedFile || '');
+  const shouldOpenChangedNote = isExternalChange
     && /\.(md|markdown)$/i.test(nextPath)
-    && nextPath !== normalizeRelativePath(state.selectedFile || '');
+    && !isCurrentNoteChange;
+
+  if (isExternalChange && isCurrentNoteChange && editorSaveState.dirty) {
+    const shouldReloadExternalContent = window.confirm(
+      `A nota ${nextPath} foi alterada fora do Orion Vault. Recarregar e descartar o rascunho local?`
+    );
+    if (!shouldReloadExternalContent) {
+      els.editorStatus.textContent = 'Alteração externa detectada. Seu rascunho local foi preservado.';
+      updateEditorDraftIndicator('Rascunho local preservado', 'dirty');
+      return;
+    }
+    clearEditorDraft(nextPath);
+    resetEditorSaveState(els.noteEditor.value);
+  }
 
   if (isAgendaNote) {
     await loadAgenda(nextVaultRoot);
@@ -1341,10 +1271,6 @@ function showError(message) {
 
 function hideDesktopNotification() {
   uiShell.hideDesktopNotification();
-}
-
-function showDesktopNotification({ title, body, timeLabel = 'agora', actionLabel = 'Abrir agenda' }) {
-  uiShell.showDesktopNotification({ title, body, timeLabel, actionLabel });
 }
 
 function closeGuideDialog() {
@@ -1574,8 +1500,11 @@ uiShell = createUiShellController({
   closeRelationsDetailsMenu: () => workspaceGraph.closeRelationsDetailsMenu(),
   createNote: async () => workspaceCore.createNote(),
   createFolder: async () => workspaceCore.createFolder(),
-  renameNote: async () => workspaceCore.renameNote(),
-  moveNote: async () => workspaceCore.moveNote()
+  renameEntry: async (...args) => workspaceCore.renameEntry(...args),
+  moveEntry: async (...args) => workspaceCore.moveEntry(...args),
+  deleteEntry: async (target) => deleteSelectedWorkspaceEntry(target),
+  openNote: async (...args) => workspaceCore.loadNote(...args),
+  showError
 });
 
 vaultBootstrap = createVaultBootstrapController({
@@ -1627,7 +1556,6 @@ const loadRecentActivity = overviewDashboard.loadRecentActivity;
 const persistRecentActivity = overviewDashboard.persistRecentActivity;
 const recordActivity = overviewDashboard.recordActivity;
 const renderOverviewDashboard = overviewDashboard.renderOverviewDashboard;
-const closeOverviewOptionsMenu = overviewDashboard.closeOverviewOptionsMenu;
 const toggleOverviewOptionsMenu = overviewDashboard.toggleOverviewOptionsMenu;
 const editorPresentation = createEditorPresentationController({
   els,
@@ -1695,7 +1623,6 @@ const editorHistory = createEditorHistoryController({
   saveNote: (options) => saveNote(options),
   showError
 });
-const readEditorDraft = editorHistory.readEditorDraft;
 const writeEditorDraft = editorHistory.writeEditorDraft;
 const clearEditorDraft = editorHistory.clearEditorDraft;
 const markEditorDirty = editorHistory.markEditorDirty;
@@ -1707,23 +1634,11 @@ const updateEditorDraftIndicator = editorHistory.updateEditorDraftIndicator;
 const scheduleEditorAutoSave = editorHistory.scheduleEditorAutoSave;
 const isApplyingEditorHistory = editorHistory.isApplyingEditorHistory;
 const formatAgendaInputValue = agendaController.formatAgendaInputValue;
-const buildAgendaStatusData = agendaController.buildAgendaStatusData;
-const renderAgendaList = agendaController.renderAgendaList;
 const loadAgenda = agendaController.loadAgenda;
-const closeAgendaOptionsMenu = agendaController.closeAgendaOptionsMenu;
-const createAgendaNote = agendaController.createAgendaNote;
-const toggleAgendaItemStatus = agendaController.toggleAgendaItemStatus;
 const openAgendaItem = agendaController.openAgendaItem;
-const renderRelatedPanels = relationsSurface.renderRelatedPanels;
-const renderLinkSuggestions = relationsSurface.renderLinkSuggestions;
-const renderLinkPreview = relationsSurface.renderLinkPreview;
-const loadRelatedData = relationsSurface.loadRelatedData;
-const loadLinkSuggestions = relationsSurface.loadLinkSuggestions;
 const loadLinkPreview = relationsSurface.loadLinkPreview;
 const applyPreviewLink = relationsSurface.applyPreviewLink;
 const refreshRelationsSurface = relationsSurface.refreshRelationsSurface;
-const selectFolder = workspaceTree.selectFolder;
-const clearFolderSelection = workspaceTree.clearFolderSelection;
 const handleFolderSelectionBackgroundClick = workspaceTree.handleFolderSelectionBackgroundClick;
 const renderTree = workspaceTree.renderTree;
 const refreshWorkspace = workspaceCore.refreshWorkspace;
@@ -1859,10 +1774,6 @@ function closeRelationsDetailsMenu() {
   workspaceGraph.closeRelationsDetailsMenu();
 }
 
-function openRelationsDetailsMenu() {
-  workspaceGraph.openRelationsDetailsMenu();
-}
-
 function toggleRelationsDetailsMenu() {
   workspaceGraph.toggleRelationsDetailsMenu();
 }
@@ -1928,54 +1839,6 @@ async function refreshGraph() {
   await workspaceGraph.refreshGraph();
 }
 
-function renderIslandGlobalGraph(graph) {
-  globalGraph.renderIslandGlobalGraph(graph);
-}
-
-function resetIslandGlobalGraphViewport() {
-  globalGraph.resetIslandGlobalGraphViewport();
-}
-
-function zoomIslandGlobalGraph(delta) {
-  globalGraph.zoomIslandGlobalGraph(delta);
-}
-
-function startIslandGlobalGraphDrag(clientX, clientY) {
-  globalGraph.startIslandGlobalGraphDrag(clientX, clientY);
-}
-
-function moveIslandGlobalGraphDrag(clientX, clientY) {
-  globalGraph.moveIslandGlobalGraphDrag(clientX, clientY);
-}
-
-function stopIslandGlobalGraphDrag() {
-  globalGraph.stopIslandGlobalGraphDrag();
-}
-
-function getIslandGlobalGraphNode(target) {
-  return globalGraph.getIslandGlobalGraphNode(target);
-}
-
-function getIslandGlobalGraphCluster(target) {
-  return globalGraph.getIslandGlobalGraphCluster(target);
-}
-
-function getGraphGlobalOverlayNode() {
-  return globalGraph.getGraphGlobalOverlayNode();
-}
-
-function focusIslandGlobalGraphNode(pathValue) {
-  globalGraph.focusIslandGlobalGraphNode(pathValue);
-}
-
-function focusIslandGlobalGraphCluster(clusterKey) {
-  globalGraph.focusIslandGlobalGraphCluster(clusterKey);
-}
-
-function renderIslandGlobalGraphFrame() {
-  globalGraph.renderIslandGlobalGraphFrame();
-}
-
 function startIslandGlobalGraphAnimation() {
   globalGraph.startIslandGlobalGraphAnimation();
 }
@@ -1996,32 +1859,12 @@ async function loadTemplates() {
   await resourceBrowser.loadTemplates();
 }
 
-function renderTemplatesDialog() {
-  resourceBrowser.renderTemplatesDialog();
-}
-
 async function openTemplatesDialog() {
   await resourceBrowser.openTemplatesDialog();
 }
 
 async function openTemplatePickerDialog() {
   await resourceBrowser.openTemplatePickerDialog();
-}
-
-function applyTemplateSelection(index) {
-  resourceBrowser.applyTemplateSelection(index);
-}
-
-function closeSearchDialog() {
-  resourceBrowser.closeSearchDialog();
-}
-
-function renderSearchResults(matches) {
-  resourceBrowser.renderSearchResults(matches);
-}
-
-async function runSearch() {
-  await resourceBrowser.runSearch();
 }
 
 function openSearchDialog() {
@@ -2077,10 +1920,6 @@ function startProjectSlide() {
   }, 4500);
 }
 
-function closeInputDialog() {
-  uiShell.closeInputDialog();
-}
-
 function openInputDialog({ eyebrow, title, message, label, value = '', multiline = false }) {
   return uiShell.openInputDialog({ eyebrow, title, message, label, value, multiline });
 }
@@ -2093,34 +1932,8 @@ function applyActiveVaultRoot(vaultRoot) {
   vaultBootstrap.applyActiveVaultRoot(vaultRoot);
 }
 
-async function openVaultFromBootstrap(vaultRoot, { autoOpenFirstNote = true } = {}) {
-  await vaultBootstrap.openVaultFromBootstrap(vaultRoot, { autoOpenFirstNote });
-}
-
-async function openDesktopDefaultVault(autoOpenFirstNote = true) {
-  await vaultBootstrap.openDesktopDefaultVault(autoOpenFirstNote);
-}
-
-async function openSearchResult(relativePath) {
-  closeSearchDialog();
-  setView('workspace');
-  try {
-    await loadNote(relativePath, { recordActivity: true, kind: 'open' });
-  } catch (error) {
-    showError(error instanceof Error ? error.message : 'Falha ao abrir resultado');
-  }
-}
-
 function closeMenus() {
   uiShell.closeMenus();
-}
-
-function openMenu(menu, x, y) {
-  uiShell.openMenu(menu, x, y);
-}
-
-function showQuickMenu(button) {
-  uiShell.showQuickMenu(button);
 }
 
 function toggleNoteOptionsMenu() {
@@ -2175,6 +1988,7 @@ function syncWorkspaceState() {
     els.templatesButton,
     els.dailyNoteButton,
     els.desktopSearchButton,
+    els.openVaultFolderButton,
     els.summaryOverviewButton,
     els.agendaOptionsButton,
   ].forEach((button) => {
@@ -2193,18 +2007,26 @@ function syncWorkspaceState() {
   els.desktopCommandsButton.disabled = false;
 }
 
-async function askMultiline(message, fallback = '') {
-  const value = await openInputDialog({
-    eyebrow: 'Conteúdo',
-    title: message,
-    message: 'Escreva o conteúdo inicial da nota.',
-    label: 'Texto',
-    value: fallback,
-    multiline: true
-  });
+async function showBetaDataNoticeIfNeeded() {
+  if (!isDesktopShell || localStorage.getItem(uiStorageKeys.betaDataNoticeAcknowledged) === 'true') return;
 
-  if (value === null) return null;
-  return String(value);
+  const acknowledged = await openConfirmDialog({
+    eyebrow: 'Beta fechada',
+    title: 'Você está mexendo em arquivos de verdade',
+    message: 'Este app ainda está em teste. Faça uma cópia das suas notas ou tenha um backup. Apagar e renomear aqui muda os arquivos da pasta do vault.',
+    confirmLabel: 'Entendi',
+    cancelLabel: 'Lembrar depois'
+  });
+  if (acknowledged) {
+    localStorage.setItem(uiStorageKeys.betaDataNoticeAcknowledged, 'true');
+  }
+}
+
+function openVaultFolder() {
+  if (!isDesktopShell || typeof window.orionDesktop?.openVaultFolder !== 'function') return;
+  void window.orionDesktop.openVaultFolder().catch((error) => {
+    showError(error instanceof Error ? error.message : 'Não foi possível abrir a pasta do vault');
+  });
 }
 
 async function startVault() {
@@ -2294,6 +2116,7 @@ async function saveNote({ source = 'manual' } = {}) {
   updateEditorDraftIndicator(source === 'auto' ? 'Autosave...' : 'Salvando...', 'saving');
 
   try {
+    rememberLocalVaultWrite(savedPath);
     await api('/api/file', {
       method: 'POST',
       body: JSON.stringify({ vaultRoot, path: savedPath, content: submittedContent, operation: 'edit' })
@@ -2334,7 +2157,6 @@ async function saveNote({ source = 'manual' } = {}) {
         editorScrollHost.scrollTop = savedScrollTop;
       }
       updateEditorAssistMenu();
-      updateEditorToolbarPosition();
     }
   } finally {
     editorSaveState.saving = false;
@@ -2396,8 +2218,8 @@ function getWorkspaceDeleteTarget() {
   return null;
 }
 
-async function deleteSelectedWorkspaceEntry() {
-  const target = getWorkspaceDeleteTarget();
+async function deleteSelectedWorkspaceEntry(requestedTarget = null) {
+  const target = requestedTarget ?? getWorkspaceDeleteTarget();
   if (!target) return;
 
   if (target.kind === 'folder' && isProtectedAgendaFolderPath(target.path)) {
@@ -2405,17 +2227,18 @@ async function deleteSelectedWorkspaceEntry() {
     return;
   }
 
+  const vaultRoot = await ensureActiveVaultReady('apagar um item');
+  const absoluteTargetPath = `${vaultRoot.replace(/[\\/]+$/, '')}\\${target.path.replace(/\//g, '\\')}`;
   const confirmed = await openConfirmDialog({
     eyebrow: 'Excluir',
-    title: target.kind === 'folder' ? 'Apagar pasta' : 'Apagar nota',
+    title: target.kind === 'folder' ? 'Apagar esta pasta?' : 'Apagar esta nota?',
     message: target.kind === 'folder'
-      ? `Tem certeza que quer apagar ${prettyPath(target.path)}? Todo o conteudo dentro dessa pasta tambem sera apagado.`
-      : `Tem certeza que quer apagar ${prettyPath(target.path)}?`,
-    confirmLabel: 'Apagar'
+      ? `Tudo dentro desta pasta vai ser apagado. Isso não dá para desfazer.\n\n${absoluteTargetPath}`
+      : `Esta nota vai ser apagada. Isso não dá para desfazer.\n\n${absoluteTargetPath}`,
+    confirmLabel: target.kind === 'folder' ? 'Apagar pasta' : 'Apagar nota'
   });
   if (!confirmed) return;
 
-  const vaultRoot = await ensureActiveVaultReady('apagar um item');
   sendDebugState('delete.before', { vaultRoot, targetKind: target.kind, targetPath: target.path });
 
   await api('/api/delete', {
@@ -2872,6 +2695,25 @@ els.overviewOptionsButton.addEventListener('click', (event) => {
   event.stopPropagation();
   toggleOverviewOptionsMenu();
 });
+function controlDesktopWindow(action) {
+  if (!isDesktopShell || typeof window.orionDesktop?.controlWindow !== 'function') return;
+  void window.orionDesktop.controlWindow(action).catch((error) => {
+    showError(error instanceof Error ? error.message : 'Falha ao controlar janela');
+  });
+}
+els.windowMinimizeButton?.addEventListener('click', () => controlDesktopWindow('minimize'));
+els.windowMaximizeButton?.addEventListener('click', () => controlDesktopWindow('toggle-maximize'));
+els.windowCloseButton?.addEventListener('click', () => controlDesktopWindow('close'));
+els.openVaultFolderButton?.addEventListener('click', openVaultFolder);
+els.feedbackButton?.addEventListener('click', () => {
+  if (isDesktopShell && typeof window.orionDesktop?.openFeedback === 'function') {
+    void window.orionDesktop.openFeedback().catch((error) => {
+      showError(error instanceof Error ? error.message : 'Não foi possível abrir a página de feedback');
+    });
+    return;
+  }
+  window.location.assign('https://orionvault.onrender.com/#feedback');
+});
 els.desktopNotificationClose?.addEventListener('click', hideDesktopNotification);
 els.desktopNotificationAction?.addEventListener('click', () => {
   hideDesktopNotification();
@@ -2946,6 +2788,7 @@ startProjectSlide();
 updateVaultSummary(null);
 renderOverviewDashboard();
 restoreAiLauncherPosition();
+void showBetaDataNoticeIfNeeded();
 window.addEventListener('resize', () => {
   applyAiLauncherPosition(aiLauncherState.offsetX, aiLauncherState.offsetY);
   if (state.view === 'relations') {
@@ -2970,6 +2813,18 @@ if (window.orionDesktop && typeof window.orionDesktop.onAgendaSaved === 'functio
 if (window.orionDesktop && typeof window.orionDesktop.onVaultChanged === 'function') {
   window.orionDesktop.onVaultChanged((payload) => {
     void refreshAfterVaultChange(payload).catch((error) => showError(error instanceof Error ? error.message : 'Falha ao atualizar vault'));
+  });
+}
+
+if (window.orionDesktop && typeof window.orionDesktop.onOpenMarkdown === 'function') {
+  window.orionDesktop.onOpenMarkdown((payload) => {
+    const vaultRoot = String(payload?.vaultRoot ?? '').trim();
+    const filePath = normalizeRelativePath(String(payload?.path ?? ''));
+    if (!vaultRoot || !filePath) return;
+
+    void vaultBootstrap.openVaultFromBootstrap(vaultRoot, { autoOpenFirstNote: false })
+      .then(() => workspaceCore.loadNote(filePath, { recordActivity: true, kind: 'open' }))
+      .catch((error) => showError(error instanceof Error ? error.message : 'Não foi possível abrir o arquivo Markdown'));
   });
 }
 

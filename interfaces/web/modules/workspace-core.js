@@ -7,7 +7,6 @@ export function createWorkspaceCoreController(params) {
     applyActiveVaultRoot,
     reconcileVaultScopedState,
     renderTree,
-    loadPinnedPaths,
     setEditorTitleValue,
     resetEditorHistory,
     resetEditorSaveState,
@@ -15,7 +14,6 @@ export function createWorkspaceCoreController(params) {
     closeEditorAssistMenu,
     syncWorkspaceState,
     updateVaultSummary,
-    updatePinButton,
     refreshBacklinks,
     refreshGraph,
     loadRelatedData,
@@ -33,10 +31,8 @@ export function createWorkspaceCoreController(params) {
     openInputDialog,
     makeUniqueVaultPath,
     normalizeRelativePath,
-    makeUniqueVaultPathForTarget,
     setView,
     updatePinButtonAndPinnedList,
-    refreshOverviewAfterSave,
     sendDebugState
   } = params;
 
@@ -308,16 +304,17 @@ export function createWorkspaceCoreController(params) {
     els.editorStatus.textContent = `Nota renomeada para ${destination}.`;
   }
 
-  async function renameNote() {
-    if (!state.selectedFile) return;
-    const { directory, fileName } = splitPathParts(state.selectedFile);
+  async function renameEntry(sourcePath, kind = 'note') {
+    const source = normalizeRelativePath(sourcePath);
+    if (!source) return;
+    const { directory, fileName } = splitPathParts(source);
     const extensionMatch = fileName.match(/(\.[^.]+)$/);
-    const currentExtension = extensionMatch ? extensionMatch[1] : '';
+    const currentExtension = kind === 'note' && extensionMatch ? extensionMatch[1] : '';
     const nextName = await openInputDialog({
       eyebrow: 'Workspace',
-      title: 'Renomear',
-      message: 'Digite apenas o novo nome do arquivo atual.',
-      label: 'Nome do arquivo',
+      title: kind === 'folder' ? 'Renomear pasta' : 'Renomear nota',
+      message: kind === 'folder' ? 'Digite apenas o novo nome da pasta.' : 'Digite apenas o novo nome do arquivo.',
+      label: kind === 'folder' ? 'Nome da pasta' : 'Nome do arquivo',
       value: fileName,
       multiline: false
     });
@@ -331,31 +328,52 @@ export function createWorkspaceCoreController(params) {
 
     const nextPath = directory ? `${directory}/${cleanedName}` : cleanedName;
     if (!nextPath) return;
-    await renameCurrentNoteToPath(nextPath);
+    const vaultRoot = getConfiguredVaultRoot();
+    await api('/api/rename', {
+      method: 'POST',
+      body: JSON.stringify({ vaultRoot, source, destination: normalizeRelativePath(nextPath) })
+    });
+    recordActivity('rename', `Renomeada ${fileLabel(nextPath)}`, nextPath);
+    state.selectedFolder = kind === 'folder' ? normalizeRelativePath(nextPath) : pathDirectory(nextPath);
+    setView('workspace');
+    await refreshWorkspace(kind === 'note' ? nextPath : '', kind === 'note');
+    els.editorStatus.textContent = `${kind === 'folder' ? 'Pasta' : 'Nota'} renomeada para ${nextPath}.`;
   }
 
-  async function moveNote() {
-    if (!state.selectedFile) return;
-    const nextPath = await askRelativePath('Mover', state.selectedFile);
+  async function renameNote() {
+    await renameEntry(state.selectedFile, 'note');
+  }
+
+  async function moveEntry(sourcePath, kind = 'note') {
+    const source = normalizeRelativePath(sourcePath);
+    if (!source) return;
+    const nextPath = await askRelativePath(kind === 'folder' ? 'Mover pasta' : 'Mover nota', source);
     if (!nextPath) return;
     const vaultRoot = getConfiguredVaultRoot();
 
     await api('/api/move', {
       method: 'POST',
-      body: JSON.stringify({ vaultRoot, source: state.selectedFile, destination: normalizeRelativePath(nextPath) })
+      body: JSON.stringify({ vaultRoot, source, destination: normalizeRelativePath(nextPath) })
     });
 
     recordActivity('move', `Movida ${fileLabel(nextPath)}`, nextPath);
+    state.selectedFolder = kind === 'folder' ? normalizeRelativePath(nextPath) : pathDirectory(nextPath);
     setView('workspace');
-    await refreshWorkspace(normalizeRelativePath(nextPath));
-    els.editorStatus.textContent = `Nota movida para ${normalizeRelativePath(nextPath)}.`;
+    await refreshWorkspace(normalizeRelativePath(nextPath), kind === 'note');
+    els.editorStatus.textContent = `${kind === 'folder' ? 'Pasta' : 'Nota'} movida para ${normalizeRelativePath(nextPath)}.`;
+  }
+
+  async function moveNote() {
+    await moveEntry(state.selectedFile, 'note');
   }
 
   return {
     createFolder,
     createNote,
     loadNote,
+    moveEntry,
     moveNote,
+    renameEntry,
     refreshWorkspace,
     renameCurrentNoteToPath,
     renameNote

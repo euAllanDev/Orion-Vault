@@ -170,6 +170,7 @@ export function createVaultBootstrapController(params) {
 
     if (isDesktopShell) {
       const requestedVaultRoot = els.vaultPathInput.value.trim() || getConfiguredVaultRoot() || getDefaultVaultPath();
+      await syncDesktopActiveVaultRoot(requestedVaultRoot);
       const result = await setupVault(requestedVaultRoot);
       await openVaultFromBootstrap(String(result.vaultRoot ?? requestedVaultRoot), { autoOpenFirstNote: true });
       const operationLabel = result.created ? 'criado' : 'aberto';
