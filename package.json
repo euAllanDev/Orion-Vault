@@ -93,6 +93,20 @@
         ]
       }
     ],
+    "fileAssociations": [
+      {
+        "ext": "md",
+        "name": "OrionVault.Markdown",
+        "description": "Documento Markdown do Orion Vault",
+        "role": "Editor"
+      },
+      {
+        "ext": "markdown",
+        "name": "OrionVault.Markdown",
+        "description": "Documento Markdown do Orion Vault",
+        "role": "Editor"
+      }
+    ],
     "win": {
       "target": [
         "nsis",
