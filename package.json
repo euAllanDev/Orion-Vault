@@ -12,13 +12,11 @@
     "dev": "tsx interfaces/cli/main.ts",
     "dev:web": "tsx interfaces/web/server.ts",
     "dev:desktop": "electron interfaces/desktop/bootstrap.cjs",
-
     "dist": "pnpm build && electron-builder",
     "dist:win": "pnpm build && electron-builder --win",
     "dist:win:portable": "pnpm build && electron-builder --win portable",
     "dist:linux": "pnpm build && electron-builder --linux",
     "dist:mac": "pnpm build && electron-builder --mac",
-
     "dev:inspect:testvault": "tsx interfaces/cli/main.ts inspect --vault C:\\teste-vault",
     "dev:validate:testvault": "tsx interfaces/cli/main.ts validate --vault C:\\teste-vault",
     "dev:scan:testvault": "tsx interfaces/cli/main.ts scan --vault C:\\teste-vault",
@@ -28,10 +26,10 @@
     "dev:plan:testvault": "tsx interfaces/cli/main.ts plan --vault C:\\teste-vault",
     "dev:diff:testvault": "tsx interfaces/cli/main.ts diff --vault C:\\teste-vault",
     "dev:sync": "tsx interfaces/cli/main.ts sync",
-
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "pnpm build && playwright test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "benchmark:embeddings": "tsx scripts/benchmark-embeddings.ts",
     "embedder:local": "node scripts/local-embedder.js",
@@ -46,10 +44,12 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",
+    "@playwright/test": "^1.52.0",
     "@types/node": "^22.10.1",
     "electron": "^33.4.11",
     "electron-builder": "^24.13.3",
     "eslint": "^9.14.0",
+    "globals": "^14.0.0",
     "prettier": "^3.3.3",
     "tsup": "^8.3.5",
     "typescript": "^5.6.3",
