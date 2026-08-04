@@ -27,7 +27,7 @@ function normalizeText(value) {
 
 function tokenize(value) {
   return normalizeText(value)
-    .replace(/[`*_>~\[\]#!|():,.;]/g, ' ')
+    .replace(/[`*_>~[]#!|():,.;]/g, ' ')
     .split(/[^a-z0-9-]+/i)
     .map((token) => token.trim())
     .filter(Boolean);

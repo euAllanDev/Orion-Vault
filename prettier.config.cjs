@@ -1,4 +1,3 @@
-/* eslint-disable no-undef */
 module.exports = {
   semi: true,
   singleQuote: true,

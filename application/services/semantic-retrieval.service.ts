@@ -135,7 +135,7 @@ function normalizeText(value: string): string {
 function tokenize(value: string): string[] {
   return [...new Set(
     normalizeText(value)
-      .replace(/[`*_>~\[\]#!|():,.;]/g, ' ')
+      .replace(/[`*_>~[]#!|():,.;]/g, ' ')
       .split(/[^a-z0-9]+/i)
       .map((token) => token.trim())
       .filter(Boolean)
@@ -163,7 +163,7 @@ function formatSnippet(text: string, terms: readonly string[]): string {
 }
 
 function buildChunkDuplicateSignature(text: string): { normalizedText: string; tokenSet: ReadonlySet<string> } {
-  const normalizedText = normalizeText(text).replace(/[`*_>~\[\]#!|():,.;-]/g, ' ').replace(/\s+/g, ' ').trim();
+  const normalizedText = normalizeText(text).replace(/[`*_>~[]#!|():,.;-]/g, ' ').replace(/\s+/g, ' ').trim();
   return {
     normalizedText,
     tokenSet: new Set(tokenize(normalizedText))

@@ -84,7 +84,7 @@ function normalizeText(value: string): string {
 
 function stripMarkdownFormatting(value: string): string {
   return value
-    .replace(/[`*_>~\[\]#!|]/g, ' ')
+    .replace(/[`*_>~[]#!|]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -145,7 +145,7 @@ function extractTags(content: string): string[] {
   const tags = new Set<string>();
   const frontmatterTags = fields.tags ?? '';
 
-  for (const raw of frontmatterTags.split(/[\[,\]]/g)) {
+  for (const raw of frontmatterTags.split(/[[,\]]/g)) {
     const tag = normalizeTag(raw);
     if (tag) tags.add(tag);
   }
@@ -602,7 +602,7 @@ function noteSummary(note: NoteSnapshotDto): string | undefined {
   return summary || undefined;
 }
 
-function mapLinkMatch(source: NoteSnapshotDto, raw: ParsedLink, resolved: string[], notesByPath: Map<string, IndexedNote>): NoteLinkMatchDto {
+function mapLinkMatch(raw: ParsedLink, resolved: string[]): NoteLinkMatchDto {
   const uniqueCandidates = unique(resolved);
   return {
     raw: raw.raw,
@@ -612,13 +612,6 @@ function mapLinkMatch(source: NoteSnapshotDto, raw: ParsedLink, resolved: string
     candidates: uniqueCandidates,
     ambiguous: uniqueCandidates.length !== 1
   };
-}
-
-function rankingLabel(score: number): string {
-  if (score >= 0.75) return 'Relação forte';
-  if (score >= 0.55) return 'Relação média';
-  if (score >= 0.35) return 'Relação fraca';
-  return 'Relação oculta';
 }
 
 function suggestionPlacement(source: IndexedNote, target: IndexedNote): { mode: 'inline' | 'section'; matchedText?: string; ambiguous: boolean; reasons: string[] } {
@@ -665,15 +658,12 @@ export class SemanticNoteRelationsService {
       return { vaultRoot, sourcePath: normalizeRelativePath(sourcePath), manualLinks: [], backlinks: [], related: [] };
     }
 
-    const outgoing = [...(index.outgoingLinks.get(source.relativePath) ?? new Set<string>())]
-      .map((candidate) => index.byPath.get(candidate))
-      .filter((value): value is IndexedNote => Boolean(value));
     const incoming = [...(index.incomingLinks.get(source.relativePath) ?? new Set<string>())]
       .map((candidate) => index.byPath.get(candidate))
       .filter((value): value is IndexedNote => Boolean(value));
 
     const manualLinks = sourceIndexed.links
-      .map((link) => mapLinkMatch(sourceIndexed.note, link, resolveLinkTarget(sourceIndexed.note.relativePath, link, index.identifiers), index.byPath))
+      .map((link) => mapLinkMatch(link, resolveLinkTarget(sourceIndexed.note.relativePath, link, index.identifiers)))
       .filter((link) => Boolean(link.targetPath));
 
     const backlinks = incoming.map((note) => ({
@@ -816,7 +806,6 @@ export class SemanticNoteRelationsService {
       ? nodeScores.slice(0, Math.max(0, Math.min(limit, nodeScores.length)))
       : nodeScores;
 
-    const selectedPaths = new Set(visibleNodeScores.map((entry) => entry.node.note.relativePath));
     const selectedFolders = new Set<string>();
     for (const entry of visibleNodeScores) {
       let folder = entry.node.folderPath;

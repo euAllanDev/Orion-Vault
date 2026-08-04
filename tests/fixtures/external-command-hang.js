@@ -1,5 +1,6 @@
 setInterval(() => {}, 1_000);
 
-for await (const _chunk of process.stdin) {
+for await (const chunk of process.stdin) {
+  void chunk;
   // Intentionally keep the process alive without responding.
 }

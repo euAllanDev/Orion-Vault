@@ -8,8 +8,7 @@ export function createRelationsSurfaceController(params) {
     refreshGlobalGraph,
     refreshAfterVaultChange,
     escapeHtml,
-    fileLabel,
-    prettyPath
+    fileLabel
   } = params;
 
   function renderLinkList(container, items, emptyLabel, kind = 'note-link-item') {
