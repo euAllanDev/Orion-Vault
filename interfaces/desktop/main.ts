@@ -1,5 +1,6 @@
-import { app, BrowserWindow, Notification, ipcMain, session } from 'electron';
+import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, session, shell } from 'electron';
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, watch, type FSWatcher } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -65,6 +66,12 @@ type AgendaReminderPollOptions = {
   catchUp: boolean;
 };
 
+type MarkdownOpenRequest = {
+  absolutePath: string;
+  vaultRoot: string;
+  relativePath: string;
+};
+
 function getDesktopVaultRoot(): string {
   return appConfig.vaultRoot;
 }
@@ -120,14 +127,14 @@ function resolveNodeRuntimePath(): string {
 
 const desktopWorkspace = new NodeVaultWorkspace();
 const noteReader = new NodeNoteReader();
-const desktopWebOptions: { desktopSessionPath?: string; activeVaultRoot?: string } = {
-  activeVaultRoot: getDesktopVaultRoot()
+const desktopWebOptions: { desktopSessionPath?: string; activeVaultRoot?: string; desktopSessionToken: string } = {
+  activeVaultRoot: getDesktopVaultRoot(),
+  desktopSessionToken: randomBytes(32).toString('base64url')
 };
 
 let mainWindow: BrowserWindow | null = null;
 let webServer: Awaited<ReturnType<typeof startWebServer>>['server'] | null = null;
 let desktopUrl = 'http://127.0.0.1:4173';
-let desktopPort = 4173;
 const appRoot = resolveDesktopAppRoot();
 const nodeRuntimePath = resolveNodeRuntimePath();
 let desktopWindowReady = false;
@@ -140,6 +147,26 @@ let agendaReminderKeys = new Set<string>();
 let lastAgendaOpenSummaryAt = 0;
 let isQuitting = false;
 let agendaOpenSummaryTimeout: NodeJS.Timeout | null = null;
+let tray: Tray | null = null;
+let trayHintShown = false;
+
+function markdownOpenRequestFromArgs(args: string[]): MarkdownOpenRequest | null {
+  for (const value of args) {
+    const candidate = String(value ?? '').trim();
+    if (!candidate || !/\.(md|markdown)$/i.test(candidate)) continue;
+    const absolutePath = path.resolve(candidate);
+    if (!existsSync(absolutePath)) continue;
+    return {
+      absolutePath,
+      vaultRoot: path.dirname(absolutePath),
+      relativePath: path.basename(absolutePath)
+    };
+  }
+
+  return null;
+}
+
+let pendingMarkdownOpen = markdownOpenRequestFromArgs(process.argv);
 
 app.commandLine.appendSwitch('disable-http-cache');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -404,6 +431,94 @@ function openAgendaFromNotification(): void {
   });
 }
 
+function revealDesktopWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+async function openMarkdownFile(request: MarkdownOpenRequest): Promise<void> {
+  pendingMarkdownOpen = request;
+  desktopWebOptions.activeVaultRoot = request.vaultRoot;
+  await normalizeDesktopSessionFile(getDesktopSessionPath(), request.vaultRoot);
+  await startVaultWatcher(request.vaultRoot);
+
+  if (!mainWindow || mainWindow.isDestroyed() || !desktopWindowReady) return;
+
+  mainWindow.webContents.send('markdown:open', {
+    vaultRoot: request.vaultRoot,
+    path: request.relativePath
+  });
+  pendingMarkdownOpen = null;
+  revealDesktopWindow();
+}
+
+function notifyTrayLifecycle(): void {
+  if (trayHintShown || !Notification.isSupported()) return;
+  trayHintShown = true;
+
+  new Notification({
+    title: desktopShell.appName,
+    body: 'O Orion Vault continua ativo na bandeja para enviar lembretes.',
+    icon: getDesktopNotificationIconPath()
+  }).show();
+}
+
+function createTray(): void {
+  if (tray) return;
+
+  const iconPath = getDesktopNotificationIconPath();
+  if (!iconPath) {
+    void logStartup('tray.unavailable missing-icon');
+    return;
+  }
+
+  tray = new Tray(iconPath);
+  tray.setToolTip(desktopShell.appName);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Abrir Orion Vault', click: revealDesktopWindow },
+    { label: 'Abrir Agenda', click: openAgendaFromNotification },
+    { type: 'separator' },
+    { label: 'Lembretes ativos', enabled: false },
+    { type: 'separator' },
+    { label: 'Sair do Orion Vault', click: () => void quitDesktop() }
+  ]));
+  tray.on('click', revealDesktopWindow);
+  tray.on('double-click', revealDesktopWindow);
+}
+
+function destroyTray(): void {
+  tray?.destroy();
+  tray = null;
+}
+
+async function closeWebServer(): Promise<void> {
+  const server = webServer;
+  webServer = null;
+  if (!server) return;
+
+  await new Promise<void>((resolve) => {
+    server.close(() => resolve());
+  });
+}
+
+async function quitDesktop(): Promise<void> {
+  if (isQuitting) return;
+  isQuitting = true;
+  stopVaultWatcher();
+  stopAgendaReminderScheduler();
+  if (agendaOpenSummaryTimeout) {
+    clearTimeout(agendaOpenSummaryTimeout);
+    agendaOpenSummaryTimeout = null;
+  }
+  await closeWebServer();
+  destroyTray();
+  app.quit();
+}
+
 async function maybeNotifyAgendaOnWindowOpen(force = false): Promise<void> {
   const nowMs = Date.now();
   if (!force && nowMs - lastAgendaOpenSummaryAt < agendaOpenSummaryThrottleMs) return;
@@ -573,7 +688,9 @@ function createWindow(): BrowserWindow {
     backgroundColor: '#141518',
     title: desktopShell.title,
     show: true,
-    titleBarStyle: 'default',
+    ...(process.platform === 'win32' ? {
+      frame: false
+    } : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -601,7 +718,8 @@ function createWindow(): BrowserWindow {
   window.on('close', (event) => {
     if (isQuitting) return;
     event.preventDefault();
-    window.minimize();
+    window.hide();
+    notifyTrayLifecycle();
   });
 
   window.on('show', () => {
@@ -613,40 +731,6 @@ function createWindow(): BrowserWindow {
   });
 
   return window;
-}
-
-async function waitForWorkspaceReady(window: BrowserWindow, timeoutMs = 10000): Promise<void> {
-  const startedAt = Date.now();
-
-  while (!window.isDestroyed() && Date.now() - startedAt < timeoutMs) {
-    try {
-      const ready = await window.webContents.executeJavaScript(`(() => {
-        const body = document.body;
-        const workspaceEmpty = document.getElementById('workspaceEmpty');
-        return Boolean(body && body.dataset.view === 'workspace' && body.dataset.desktopReady === 'true' && workspaceEmpty && !workspaceEmpty.classList.contains('active'));
-      })()`, true);
-
-      if (ready) {
-        window.show();
-        window.focus();
-        return;
-      }
-    } catch {
-      // keep waiting until the web app is ready
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 120));
-  }
-
-  if (!window.isDestroyed()) {
-    window.show();
-  }
-}
-
-function revealDesktopWindow(): void {
-  if (!mainWindow || mainWindow.isDestroyed() || !desktopWindowReady) return;
-  mainWindow.show();
-  mainWindow.focus();
 }
 
 function stopVaultWatcher(): void {
@@ -864,7 +948,7 @@ ipcMain.handle('agenda:play-sound', async () => {
 });
 
 ipcMain.handle('agenda:create', async (_event, payload?: { vaultRoot?: string; path?: string; content?: string }) => {
-  const vaultRoot = String(payload?.vaultRoot ?? '').trim() || getActiveDesktopVaultRoot();
+  const vaultRoot = getActiveDesktopVaultRoot();
   const filePath = String(payload?.path ?? '').trim();
   const content = String(payload?.content ?? '');
 
@@ -905,10 +989,69 @@ ipcMain.handle('vault:activate', async (_event, vaultRoot?: string) => {
   return { ok: true, vaultRoot: nextVaultRoot };
 });
 
+ipcMain.handle('desktop:api-token', (event) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
+    throw new Error('Unauthorized desktop API token request');
+  }
+  return desktopWebOptions.desktopSessionToken;
+});
+
+ipcMain.handle('window:control', (event, action?: string) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender.id !== mainWindow.webContents.id) {
+    throw new Error('Unauthorized window control request');
+  }
+
+  if (action === 'minimize') {
+    mainWindow.minimize();
+    return { maximized: false };
+  }
+
+  if (action === 'toggle-maximize') {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+    return { maximized: mainWindow.isMaximized() };
+  }
+
+  if (action === 'close') {
+    mainWindow.close();
+    return { maximized: mainWindow.isMaximized() };
+  }
+
+  throw new Error('Unsupported window control request');
+});
+
+ipcMain.handle('vault:open-folder', async (event) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender.id !== mainWindow.webContents.id) {
+    throw new Error('Unauthorized vault folder request');
+  }
+
+  const result = await shell.openPath(getActiveDesktopVaultRoot());
+  if (result) {
+    throw new Error(result);
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('feedback:open', async (event) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender.id !== mainWindow.webContents.id) {
+    throw new Error('Unauthorized feedback request');
+  }
+  await shell.openExternal('https://orionvault.onrender.com/#feedback');
+  return { ok: true };
+});
+
 ipcMain.on('desktop:ready', (event) => {
   if (mainWindow && event.sender.id === mainWindow.webContents.id) {
     desktopWindowReady = true;
     revealDesktopWindow();
+    if (pendingMarkdownOpen) {
+      void openMarkdownFile(pendingMarkdownOpen).catch((error) => {
+        void logStartup(`markdown.open.error ${error instanceof Error ? error.stack || error.message : String(error)}`);
+      });
+    }
     scheduleAgendaOpenSummary(true, 1800);
   }
 });
@@ -919,7 +1062,8 @@ async function startDesktop(): Promise<void> {
   await session.defaultSession.clearCache();
   await readAgendaReminderState();
   const persistedVaultRoot = await readDesktopSessionVaultRoot(sessionPath);
-  desktopWebOptions.activeVaultRoot = await normalizeDesktopSessionFile(sessionPath, persistedVaultRoot ?? desktopWebOptions.activeVaultRoot ?? getDesktopVaultRoot());
+  const startupVaultRoot = pendingMarkdownOpen?.vaultRoot ?? persistedVaultRoot ?? desktopWebOptions.activeVaultRoot ?? getDesktopVaultRoot();
+  desktopWebOptions.activeVaultRoot = await normalizeDesktopSessionFile(sessionPath, startupVaultRoot);
   desktopWebOptions.desktopSessionPath = sessionPath;
   await startVaultWatcher(desktopWebOptions.activeVaultRoot);
   ensureAgendaReminderScheduler();
@@ -927,8 +1071,8 @@ async function startDesktop(): Promise<void> {
   await logStartup(`startDesktop.webServer port=${started.port}`);
   webServer = started.server;
   desktopUrl = `http://127.0.0.1:${started.port}`;
-  desktopPort = started.port;
   desktopWindowReady = false;
+  createTray();
   mainWindow = createWindow();
   const window = mainWindow;
 
@@ -943,6 +1087,11 @@ async function startDesktop(): Promise<void> {
 
 app.setName(desktopShell.appName);
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
+
 if (process.platform === 'win32') {
   app.setAppUserModelId(desktopShell.appId);
 }
@@ -951,7 +1100,20 @@ app.on('before-quit', () => {
   isQuitting = true;
 });
 
+app.on('second-instance', (_event, commandLine) => {
+  const markdownOpen = markdownOpenRequestFromArgs(commandLine);
+  if (markdownOpen) {
+    void openMarkdownFile(markdownOpen).catch((error) => {
+      void logStartup(`markdown.second-instance.error ${error instanceof Error ? error.stack || error.message : String(error)}`);
+    });
+    return;
+  }
+
+  revealDesktopWindow();
+});
+
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
   void startDesktop().catch((error) => {
     void logStartup(`startDesktop.error ${(error instanceof Error ? error.stack || error.message : String(error))}`);
   });
@@ -971,14 +1133,16 @@ app.on('activate', () => {
 });
 
 app.on('window-all-closed', () => {
+  if (!isQuitting) return;
+
   stopVaultWatcher();
   if (process.platform === 'darwin') {
     return;
   }
 
   stopAgendaReminderScheduler();
-  void webServer?.close();
-  app.quit();
+  destroyTray();
+  void closeWebServer();
 });
 
 export type DesktopShellConfig = typeof desktopShell;

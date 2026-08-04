@@ -10,6 +10,7 @@ async function createTempVault(): Promise<string> {
 
 describe('agenda note api', () => {
   let server: Awaited<ReturnType<typeof startWebServer>>['server'] | null = null;
+  const desktopSessionToken = 'desktop-agenda-test-token';
 
   afterEach(async () => {
     await new Promise<void>((resolve) => {
@@ -52,22 +53,28 @@ Conteudo da agenda.
     expect(agenda.items.some((item) => item.path === agendaPath && item.title === 'Testando agenda')).toBe(true);
   });
 
-  it('uses the opened desktop vault as the agenda root', async () => {
+  it('uses the active desktop vault as the agenda root', async () => {
     const workspaceRoot = await createTempVault();
     const agendaRoot = await createTempVault();
     const sessionPath = path.join(workspaceRoot, 'desktop-session.json');
-    const started = await startWebServer(0, { desktopSessionPath: sessionPath, activeVaultRoot: workspaceRoot });
+    const started = await startWebServer(0, {
+      desktopSessionPath: sessionPath,
+      activeVaultRoot: agendaRoot,
+      desktopSessionToken
+    });
     server = started.server;
 
     const setupResponse = await fetch(`http://127.0.0.1:${started.port}/api/setup`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Orion-Session-Token': desktopSessionToken },
       body: JSON.stringify({ action: 'open', vaultRoot: agendaRoot })
     });
 
     expect(setupResponse.ok).toBe(true);
 
-    const bootstrapResponse = await fetch(`http://127.0.0.1:${started.port}/api/bootstrap`);
+    const bootstrapResponse = await fetch(`http://127.0.0.1:${started.port}/api/bootstrap`, {
+      headers: { 'X-Orion-Session-Token': desktopSessionToken }
+    });
     expect(bootstrapResponse.ok).toBe(true);
     const bootstrap = await bootstrapResponse.json() as { vaultRoot: string };
     expect(bootstrap.vaultRoot).toBe(agendaRoot);
@@ -85,13 +92,15 @@ Conteudo da agenda.
 
     const saveResponse = await fetch(`http://127.0.0.1:${started.port}/api/file`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Orion-Session-Token': desktopSessionToken },
       body: JSON.stringify({ vaultRoot: agendaRoot, path: agendaPath, content, operation: 'create' })
     });
 
     expect(saveResponse.ok).toBe(true);
 
-    const agendaResponse = await fetch(`http://127.0.0.1:${started.port}/api/agenda`);
+    const agendaResponse = await fetch(`http://127.0.0.1:${started.port}/api/agenda`, {
+      headers: { 'X-Orion-Session-Token': desktopSessionToken }
+    });
     expect(agendaResponse.ok).toBe(true);
     const agenda = await agendaResponse.json() as { vaultRoot: string; items: Array<{ path: string; title: string }> };
     expect(agenda.vaultRoot).toBe(agendaRoot);

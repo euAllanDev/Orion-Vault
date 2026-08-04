@@ -47,6 +47,7 @@ type JsonValue = Record<string, unknown>;
 type WebServerOptions = {
   desktopSessionPath?: string;
   activeVaultRoot?: string;
+  desktopSessionToken?: string;
 };
 
 type DesktopSessionData = {
@@ -56,10 +57,6 @@ type DesktopSessionData = {
 
 function isDesktopShellRequest(options: WebServerOptions): boolean {
   return Boolean(options.desktopSessionPath);
-}
-
-function getDesktopDefaultVaultRoot(): string {
-  return config.vaultRoot;
 }
 
 type AgendaStatus = 'pending' | 'done' | 'overdue';
@@ -164,7 +161,13 @@ function pickVaultRoot(candidate: string | undefined, fallback: string): string 
 }
 
 function resolveRequestVaultRoot(options: WebServerOptions, candidate: string | undefined, fallback: string): string {
+  if (isDesktopShellRequest(options)) return fallback;
   return pickVaultRoot(candidate, fallback);
+}
+
+function isAuthorizedDesktopApiRequest(req: http.IncomingMessage, options: WebServerOptions): boolean {
+  if (!isDesktopShellRequest(options)) return true;
+  return req.headers['x-orion-session-token'] === options.desktopSessionToken;
 }
 
 function normalizeApiPath(value: string): string {
@@ -211,10 +214,6 @@ function normalizeAgendaStatus(value: string): AgendaStatus {
   return 'pending';
 }
 
-function normalizeRootPath(value: string): string {
-  return path.resolve(String(value ?? '').trim()).replace(/\\/g, '/').toLowerCase();
-}
-
 function extractBodyExcerpt(body: string): string {
   return body
     .split(/\r?\n/)
@@ -223,7 +222,7 @@ function extractBodyExcerpt(body: string): string {
     ?.slice(0, 140) ?? '';
 }
 
-function buildAgendaItem(note: { relativePath: string; title?: string; content: string }, activeVaultRoot: string): AgendaItemDto | null {
+function buildAgendaItem(note: { relativePath: string; title?: string; content: string }): AgendaItemDto | null {
   const { fields, body } = parseFrontmatter(note.content);
   const dueValue = fields.due ?? fields.date ?? '';
   if (!dueValue) return null;
@@ -349,6 +348,11 @@ async function serveStatic(res: http.ServerResponse, requestPath: string): Promi
 }
 
 async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL, options: WebServerOptions): Promise<void> {
+  if (!isAuthorizedDesktopApiRequest(req, options)) {
+    sendJson(res, 401, { error: 'unauthorized desktop api request' });
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
     const vaultRoot = await resolveActiveVaultRoot(options);
     const sessionData = await readDesktopSessionData(options.desktopSessionPath, vaultRoot);
@@ -594,7 +598,7 @@ async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, ur
     const notes = await noteReader.listNotes(vaultRoot);
     const items = notes
       .filter((note) => normalizeApiPath(note.relativePath).startsWith('Agenda/'))
-      .map((note) => buildAgendaItem(note, vaultRoot))
+      .map((note) => buildAgendaItem(note))
       .filter((item): item is AgendaItemDto => Boolean(item))
       .sort((left, right) => {
         const leftTime = new Date(left.due).getTime();
@@ -1000,10 +1004,15 @@ export function createWebServer(options: WebServerOptions = {}): http.Server {
 }
 
 export async function startWebServer(port = 4173, options: WebServerOptions = {}): Promise<{ server: http.Server; port: number }> {
+  if (isDesktopShellRequest(options) && !options.desktopSessionToken) {
+    throw new Error('desktopSessionToken is required for desktop web server');
+  }
+
   const server = createWebServer(options);
+  const host = isDesktopShellRequest(options) ? '127.0.0.1' : undefined;
 
   await new Promise<void>((resolve) => {
-    server.listen(port, resolve);
+    server.listen(port, host, resolve);
   });
 
   const address = server.address();

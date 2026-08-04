@@ -17,6 +17,10 @@ ipcRenderer.on('agenda:notify-sound', (_event: Electron.IpcRendererEvent, payloa
 
 contextBridge.exposeInMainWorld('orionDesktop', {
   openAiTerminal: (cwd?: string) => ipcRenderer.invoke('ai-terminal:open', cwd),
+  getApiToken: () => ipcRenderer.invoke('desktop:api-token'),
+  controlWindow: (action: 'minimize' | 'toggle-maximize' | 'close') => ipcRenderer.invoke('window:control', action),
+  openVaultFolder: () => ipcRenderer.invoke('vault:open-folder'),
+  openFeedback: () => ipcRenderer.invoke('feedback:open'),
   startupView: 'workspace',
   startVaultSetup: () => ipcRenderer.invoke('desktop:setup:start'),
   setActiveVaultRoot: (vaultRoot: string) => ipcRenderer.invoke('vault:activate', vaultRoot),
@@ -33,6 +37,11 @@ contextBridge.exposeInMainWorld('orionDesktop', {
     const listener = (_event: Electron.IpcRendererEvent, payload: { vaultRoot: string; path?: string; kind?: string }) => callback(payload);
     ipcRenderer.on('vault:changed', listener);
     return () => ipcRenderer.removeListener('vault:changed', listener);
+  },
+  onOpenMarkdown: (callback: (payload: { vaultRoot: string; path: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { vaultRoot: string; path: string }) => callback(payload);
+    ipcRenderer.on('markdown:open', listener);
+    return () => ipcRenderer.removeListener('markdown:open', listener);
   },
   onOpenAgendaFromNotification: (callback: () => void) => {
     const listener = () => callback();

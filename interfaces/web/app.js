@@ -18,6 +18,9 @@ const shellMode = new URLSearchParams(window.location.search).get('shell');
 const isDesktopShell = shellMode === 'desktop' || Boolean(window.orionDesktop);
 const startupView = isDesktopShell ? 'workspace' : 'setup';
 const startupVaultRoot = isDesktopShell ? (new URLSearchParams(window.location.search).get('vaultRoot') ?? '').trim() : '';
+const desktopApiTokenPromise = isDesktopShell && typeof window.orionDesktop?.getApiToken === 'function'
+  ? window.orionDesktop.getApiToken()
+  : Promise.resolve('');
 
 const state = {
   view: startupView,
@@ -393,9 +396,14 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 async function api(url, options = {}) {
+  const desktopApiToken = await desktopApiTokenPromise;
   const response = await fetch(url, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) }
+    headers: {
+      'Content-Type': 'application/json',
+      ...(desktopApiToken ? { 'X-Orion-Session-Token': desktopApiToken } : {}),
+      ...(options.headers ?? {})
+    }
   });
 
   const payload = await response.json().catch(() => ({}));

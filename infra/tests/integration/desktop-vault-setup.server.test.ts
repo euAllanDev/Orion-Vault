@@ -10,6 +10,7 @@ async function createTempRoot(): Promise<string> {
 
 describe('desktop vault setup api', () => {
   let server: Awaited<ReturnType<typeof startWebServer>>['server'] | null = null;
+  const desktopSessionToken = 'desktop-test-token';
 
   afterEach(async () => {
     await new Promise<void>((resolve) => {
@@ -45,12 +46,16 @@ describe('desktop vault setup api', () => {
     const workspaceRoot = await createTempRoot();
     const sessionPath = path.join(workspaceRoot, 'desktop-session.json');
     const missingVaultRoot = path.join(workspaceRoot, 'CreatedVault');
-    const started = await startWebServer(0, { desktopSessionPath: sessionPath, activeVaultRoot: missingVaultRoot });
+    const started = await startWebServer(0, {
+      desktopSessionPath: sessionPath,
+      activeVaultRoot: missingVaultRoot,
+      desktopSessionToken
+    });
     server = started.server;
 
     const response = await fetch(`http://127.0.0.1:${started.port}/api/setup`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Orion-Session-Token': desktopSessionToken },
       body: JSON.stringify({ action: 'create', vaultRoot: missingVaultRoot })
     });
 
@@ -62,9 +67,51 @@ describe('desktop vault setup api', () => {
     await expect(fs.stat(missingVaultRoot)).resolves.toBeTruthy();
     await expect(fs.stat(path.join(missingVaultRoot, 'Agenda'))).resolves.toBeTruthy();
 
-    const bootstrapResponse = await fetch(`http://127.0.0.1:${started.port}/api/bootstrap`);
+    const bootstrapResponse = await fetch(`http://127.0.0.1:${started.port}/api/bootstrap`, {
+      headers: { 'X-Orion-Session-Token': desktopSessionToken }
+    });
     expect(bootstrapResponse.ok).toBe(true);
     const bootstrap = await bootstrapResponse.json() as { vaultRoot: string };
     expect(bootstrap.vaultRoot).toBe(missingVaultRoot);
+  });
+
+  it('restricts desktop requests to the session token, loopback server, and active vault', async () => {
+    const activeVaultRoot = await createTempRoot();
+    const foreignVaultRoot = await createTempRoot();
+    const sessionPath = path.join(activeVaultRoot, 'desktop-session.json');
+    const started = await startWebServer(0, {
+      desktopSessionPath: sessionPath,
+      activeVaultRoot,
+      desktopSessionToken
+    });
+    server = started.server;
+
+    const address = started.server.address();
+    expect(typeof address === 'object' && address ? address.address : '').toBe('127.0.0.1');
+
+    const unauthorizedResponse = await fetch(`http://127.0.0.1:${started.port}/api/workspace`);
+    expect(unauthorizedResponse.status).toBe(401);
+
+    const workspaceResponse = await fetch(`http://127.0.0.1:${started.port}/api/workspace?vaultRoot=${encodeURIComponent(foreignVaultRoot)}`, {
+      headers: { 'X-Orion-Session-Token': desktopSessionToken }
+    });
+    expect(workspaceResponse.ok).toBe(true);
+    const workspace = await workspaceResponse.json() as { vaultRoot: string };
+    expect(workspace.vaultRoot).toBe(activeVaultRoot);
+
+    const createResponse = await fetch(`http://127.0.0.1:${started.port}/api/file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Orion-Session-Token': desktopSessionToken },
+      body: JSON.stringify({
+        vaultRoot: foreignVaultRoot,
+        path: 'desktop-only.md',
+        content: '# Desktop only',
+        operation: 'create'
+      })
+    });
+    expect(createResponse.ok).toBe(true);
+
+    await expect(fs.readFile(path.join(activeVaultRoot, 'desktop-only.md'), 'utf8')).resolves.toContain('Desktop only');
+    await expect(fs.stat(path.join(foreignVaultRoot, 'desktop-only.md'))).rejects.toThrow();
   });
 });
