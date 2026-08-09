@@ -7,6 +7,8 @@
 - [ ] Validar performance, legibilidade visual e comportamento local-first em vaults maiores
 - [x] Registrar a extração do graph local do workspace e dos controles da surface de relações para módulo dedicado do renderer
 - [x] Registrar a extração da surface principal do graph global por ilhas e de seus handlers para módulo dedicado do renderer
+- [x] Evitar reconstrução contínua do DOM do graph e respeitar redução de movimento ou janela oculta
+- [x] Limitar a visualização do graph em vaults grandes com amostragem explícita ao usuário
 
 ## Estado real atual
 - [x] `related` já existe como comando e usa score híbrido com sinais explicáveis

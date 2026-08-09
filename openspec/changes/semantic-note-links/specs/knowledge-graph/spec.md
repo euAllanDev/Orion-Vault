@@ -20,7 +20,7 @@ O sistema deve oferecer um graph global local-first para explorar notas e pastas
 14. Ao clicar em uma ilha principal, o sistema deve focar o assunto correspondente sem sair da superfície global.
 15. O graph deve permitir ocultar, reduzir ou filtrar conexões fracas para evitar poluição visual excessiva.
 16. O graph não deve depender de mutação automática do markdown para existir; relações inferidas podem permanecer apenas no índice local.
-17. O graph global deve renderizar todos os nós do vault ativo por padrão, sem exigir filtragem inicial manual para torná-lo visível.
+17. O graph global deve representar o vault ativo por padrão; em vaults grandes, pode usar uma amostragem de notas e pastas, desde que informe claramente a quantidade exibida e não bloqueie o fluxo principal de edição.
 18. Quando uma nota ou ilha estiver em destaque, a interface deve exibir um overlay ou painel leve com pelo menos título, resumo curto e métricas básicas de contexto.
 19. A direção visual deve privilegiar fundo escuro, profundidade, movimento fluido e sensação de rede viva, sem depender de imagens remotas obrigatórias.
 20. Quando não houver imagem associada à nota, a visualização deve conseguir representar a nota com título, cor, textura ou outro tratamento local equivalente.
@@ -28,6 +28,10 @@ O sistema deve oferecer um graph global local-first para explorar notas e pastas
 22. O estado abstrato da nota deve priorizar legibilidade da malha global, enquanto o estado em foco deve priorizar compreensão e navegação da entidade selecionada.
 23. A implementação do graph local do workspace e dos controles da surface de relações pode ser modularizada separadamente, desde que preserve a mesma navegação por clique, zoom, drag e abertura de nota ou pasta dentro do vault ativo.
 24. A implementação principal do graph global por ilhas e de seus handlers de foco, hover, drag, zoom e overlay pode ser modularizada separadamente, desde que preserve a mesma navegação e o mesmo foco visual dentro do vault ativo.
+
+31. O graph não deve reconstruir toda a árvore DOM em animação contínua; atualizações de foco e hover devem reaproveitar a cena renderizada sempre que possível.
+32. O graph deve interromper movimento contínuo em documento oculto e respeitar a preferência do sistema por movimento reduzido.
+33. O overlay de uma nota em foco deve poder ser fechado sem sair da superfície do graph.
 
 ## Pontos de atenção
 - Um graph global totalmente conectado tende a perder valor; a visualização precisa controlar limiares, foco e densidade.
@@ -107,8 +111,9 @@ And o graph preserva os vínculos mais importantes para leitura humana
 ### Cenário 6: densidade inicial completa
 Given um graph global com muitas relações candidatas
 When a visualização inicial é aberta
-Then o sistema exibe todos os nós do vault ativo por padrão
-And a densidade visual pode ser ajustada sem esconder a base do vault
+Then o sistema exibe uma representação navegável do vault ativo por padrão
+And a densidade visual pode ser ajustada ou amostrada quando o vault for grande
+And a interface informa quando a quantidade exibida for menor que o total
 
 ### Cenário 7: graph funciona sem imagens remotas
 Given um vault cujas notas não possuem imagens associadas
