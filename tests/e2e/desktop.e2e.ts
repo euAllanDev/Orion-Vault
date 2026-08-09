@@ -27,6 +27,9 @@ test.beforeEach(async () => {
   });
   page = await desktopApp.firstWindow();
   await expect(page.locator('#workspaceView')).toHaveClass(/active/);
+  await expect(page.locator('#inputDialog')).toBeVisible();
+  await page.locator('#inputDialogConfirm').click();
+  await expect(page.locator('#inputDialog')).toBeHidden();
 });
 
 test.afterEach(async () => {

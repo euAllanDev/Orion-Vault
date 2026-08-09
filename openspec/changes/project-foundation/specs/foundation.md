@@ -13,6 +13,8 @@ A fundação técnica do projeto deve existir como uma base consistente, tipada,
 7. A aplicação deve depender apenas do domínio.
 8. A infraestrutura deve implementar portas e contratos sem violar fronteiras.
 
+10. O projeto deve conter um comando E2E separado para validar o shell Electron contra um vault temporário.
+
 ## Cenários
 
 ### Cenário 1: base do projeto pronta para desenvolvimento
@@ -38,6 +40,12 @@ And a aplicação não importa interfaces ou frameworks
 Given o projeto configurado
 When um desenvolvedor executa scripts padrão
 Then deve ser possível rodar build, lint, testes e typecheck de forma previsível
+
+### Cenário 5: validação E2E do desktop
+Given uma máquina com Electron disponível
+When um desenvolvedor executa `pnpm test:e2e`
+Then o projeto gera o build desktop necessário
+And valida abertura, escrita, autosave e ciclo de janela sem usar o vault pessoal do desenvolvedor
 
 ## Critérios de aceitação
 - a fundação suporta evolução incremental

@@ -43,6 +43,15 @@
 - [x] Consolidar em spec a modularização incremental do renderer desktop, incluindo extrações de `Modo dev`, `agenda`, `relations`, `workspace tree`, `workspace core`, `overview dashboard`, `editor presentation`, `editor assist`, `editor history`, `editor formatting`, `workspace graph`, `global graph`, `resource browser`, `ui shell` e `vault bootstrap`
 
 ## Notes
+
+## Beta readiness
+- [x] Restringir a API desktop a loopback, token de sessão e vault ativo
+- [x] Manter o app ativo na bandeja após fechar a janela e oferecer saída explícita
+- [x] Registrar `.md` e `.markdown` para abertura pelo Orion Vault no Windows
+- [x] Cobrir o fluxo crítico do Electron com teste E2E em vault temporário
+- [x] Restaurar `lint`, `typecheck` e testes como gates de release
+- [ ] Executar smoke test manual no instalador Windows em ambiente representativo
+
 - O bug mais importante encontrado no fluxo desktop não era troca real de vault, mas bootstrap tardio combinado com ações de criação liberadas cedo demais.
 - O backend já escrevia no vault padrão correto; o problema era a UI parecer pronta antes da árvore real ser carregada.
 - O próximo agente deve preservar a regra: nenhuma escrita no desktop antes do vault ativo ficar explicitamente pronto.
