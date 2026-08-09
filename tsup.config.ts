@@ -9,6 +9,7 @@ export default defineConfig([
     sourcemap: true,
     clean: true,
     dts: false,
+    outExtension: () => ({ js: '.mjs' }),
     outDir: 'dist/cli'
   },
   {

@@ -321,6 +321,8 @@ const els = {
   templatePickerConfirm: document.getElementById('templatePickerConfirm'),
   aiDialog: document.getElementById('aiDialog'),
   aiDialogClose: document.getElementById('aiDialogClose'),
+  aiDialogOpenOpenCode: document.getElementById('aiDialogOpenOpenCode'),
+  aiDialogOpenClaudeCode: document.getElementById('aiDialogOpenClaudeCode'),
   aiDialogOpenTerminal: document.getElementById('aiDialogOpenTerminal'),
   aiDialogShowCommands: document.getElementById('aiDialogShowCommands'),
   aiDialogCommandsPanel: document.getElementById('aiDialogCommandsPanel'),

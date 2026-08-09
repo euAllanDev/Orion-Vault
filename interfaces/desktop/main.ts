@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { loadAppConfig } from '../../infra/config/app-config';
 import { NodeNoteReader } from '../../infra/filesystem/readers/node-note-reader';
 import { NodeVaultWorkspace } from '../../infra/filesystem/workspace/node-vault-workspace';
+import { buildOrionAiOnboarding } from '../../application/ai/skills/skill-catalog';
 import { startWebServer } from '../web/server';
 import { createAiTerminalOpenHandler } from './ai-terminal';
 
@@ -98,6 +99,14 @@ function resolveDesktopAppRoot(): string {
   return candidates.find((candidate) => isDesktopAppRoot(candidate)) ?? rawAppPath;
 }
 
+function resolveAiTerminalRuntimeRoot(): string {
+  const unpackedAppRoot = path.join(process.resourcesPath, 'app.asar.unpacked');
+  const startupScript = path.join(unpackedAppRoot, 'scripts', 'start-ai-terminal.ps1');
+  const compiledCli = path.join(unpackedAppRoot, 'dist', 'cli', 'main.mjs');
+
+  return existsSync(startupScript) && existsSync(compiledCli) ? unpackedAppRoot : appRoot;
+}
+
 function resolveNodeRuntimePath(): string {
   const configured = String(process.env.ORION_NODE_PATH ?? '').trim();
   if (configured && existsSync(configured)) {
@@ -125,6 +134,41 @@ function resolveNodeRuntimePath(): string {
   return '';
 }
 
+function resolveAgentPath(commandName: 'opencode' | 'claude'): string {
+  const systemRoot = process.env.SystemRoot ?? 'C:\\Windows';
+  const powerShellPath = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+
+  try {
+    const result = spawnSync(powerShellPath, [
+      '-NoProfile',
+      '-Command',
+      `$command = Get-Command ${commandName} -ErrorAction SilentlyContinue; if ($command) { $command.Source }`
+    ], {
+      cwd: app.getPath('home'),
+      env: process.env,
+      windowsHide: true,
+      encoding: 'utf8'
+    });
+    const commandPath = String(result.stdout ?? '').trim();
+    return commandPath && existsSync(commandPath) ? commandPath : '';
+  } catch {
+    return '';
+  }
+}
+
+function buildAgentPrompt(vaultRoot: string): string {
+  const onboarding = buildOrionAiOnboarding();
+  return [
+    'Voce esta no Modo dev do Orion Vault.',
+    `Vault ativo: ${vaultRoot}`,
+    'Use o executavel `orion` para capacidades do produto; ele esta no PATH desta sessao e dos shells filhos.',
+    'Execute primeiro `orion /start`, depois `orion /route-intent --query "<pedido>"` se escopo estiver ambiguo e `orion /skills` para catalogo.',
+    'Prefira comandos Orion para leitura, busca, escrita e organizacao quando existir equivalente. Nao trate vault como repositorio do app.',
+    'Priorize leitura e planejamento antes de mutacao. Use `orion /apply` somente com previewId valido.',
+    ...onboarding.policyLines
+  ].join('\n');
+}
+
 const desktopWorkspace = new NodeVaultWorkspace();
 const noteReader = new NodeNoteReader();
 const desktopWebOptions: { desktopSessionPath?: string; activeVaultRoot?: string; desktopSessionToken: string } = {
@@ -136,6 +180,7 @@ let mainWindow: BrowserWindow | null = null;
 let webServer: Awaited<ReturnType<typeof startWebServer>>['server'] | null = null;
 let desktopUrl = 'http://127.0.0.1:4173';
 const appRoot = resolveDesktopAppRoot();
+const aiTerminalRuntimeRoot = resolveAiTerminalRuntimeRoot();
 const nodeRuntimePath = resolveNodeRuntimePath();
 let desktopWindowReady = false;
 let vaultWatcher: FSWatcher | null = null;
@@ -796,6 +841,7 @@ function escapePowerShellLiteral(value: string): string {
 
 function resolveAiTerminalStartupScript(): string | null {
   const candidates = [
+    path.join(aiTerminalRuntimeRoot, 'scripts', 'start-ai-terminal.ps1'),
     path.join(appRoot, 'scripts', 'start-ai-terminal.ps1'),
     path.resolve(appRoot, '..', '..', 'scripts', 'start-ai-terminal.ps1'),
     path.join(process.cwd(), 'scripts', 'start-ai-terminal.ps1')
@@ -805,7 +851,7 @@ function resolveAiTerminalStartupScript(): string | null {
 }
 
 function buildAiTerminalInlineCommand(vaultRoot: string): string {
-  const escapedAppRoot = escapePowerShellLiteral(appRoot);
+  const escapedAppRoot = escapePowerShellLiteral(aiTerminalRuntimeRoot);
   const escapedVaultRoot = escapePowerShellLiteral(vaultRoot);
   const escapedNodePath = escapePowerShellLiteral(nodeRuntimePath);
 
@@ -836,7 +882,7 @@ function buildAiTerminalInlineCommand(vaultRoot: string): string {
   ].join('; ');
 }
 
-function openPowerShellInDirectory(cwd: string, vaultRoot: string): void {
+function openPowerShellInDirectory(cwd: string, vaultRoot: string, options: { openCodePath?: string; claudeCodePath?: string; agentPrompt?: string } = {}): void {
   const systemRoot = process.env.SystemRoot ?? 'C:\\Windows';
   const powerShellPath = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   const startupScript = resolveAiTerminalStartupScript();
@@ -849,15 +895,25 @@ function openPowerShellInDirectory(cwd: string, vaultRoot: string): void {
       '-File',
       startupScript,
       '-AppRoot',
-      appRoot,
+      aiTerminalRuntimeRoot,
       '-VaultRoot',
       vaultRoot,
       '-NodePath',
-      nodeRuntimePath
+      nodeRuntimePath,
+      ...(options.openCodePath ? ['-OpenCodePath', options.openCodePath] : []),
+      ...(options.claudeCodePath ? ['-ClaudeCodePath', options.claudeCodePath] : [])
     ]
     : ['-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', buildAiTerminalInlineCommand(vaultRoot)];
   const wtCommand = ['new-tab', '--title', 'Orion Vault AI', '--startingDirectory', cwd, 'powershell.exe', ...shellArgs];
-  const env = { ...process.env, ORION_VAULT_ROOT: vaultRoot };
+  const inheritedPath = process.env.Path ?? process.env.PATH ?? '';
+  const env = {
+    ...process.env,
+    ORION_VAULT_ROOT: vaultRoot,
+    ORION_APP_ROOT: aiTerminalRuntimeRoot,
+    ORION_NODE_PATH: nodeRuntimePath,
+    Path: `${path.join(aiTerminalRuntimeRoot, 'scripts')};${inheritedPath}`,
+    ...(options.agentPrompt ? { ORION_AGENT_PROMPT: options.agentPrompt } : {})
+  };
 
   const hasWindowsTerminal = (): boolean => {
     try {
@@ -927,9 +983,38 @@ function openPowerShellInDirectory(cwd: string, vaultRoot: string): void {
 }
 
 ipcMain.handle('ai-terminal:open', createAiTerminalOpenHandler({
-  appRoot,
   getActiveDesktopVaultRoot,
   openAiTerminal: openPowerShellInDirectory
+}));
+
+ipcMain.handle('ai-opencode:open', createAiTerminalOpenHandler({
+  getActiveDesktopVaultRoot,
+  openAiTerminal: (cwd, vaultRoot) => {
+    const openCodePath = resolveAgentPath('opencode');
+    if (!openCodePath) {
+      throw new Error('OpenCode nao encontrado. Instale-o ou abra Terminal Orion.');
+    }
+
+    openPowerShellInDirectory(cwd, vaultRoot, {
+      openCodePath,
+      agentPrompt: buildAgentPrompt(vaultRoot)
+    });
+  }
+}));
+
+ipcMain.handle('ai-claude-code:open', createAiTerminalOpenHandler({
+  getActiveDesktopVaultRoot,
+  openAiTerminal: (cwd, vaultRoot) => {
+    const claudeCodePath = resolveAgentPath('claude');
+    if (!claudeCodePath) {
+      throw new Error('Claude Code nao encontrado. Instale-o ou abra Terminal Orion.');
+    }
+
+    openPowerShellInDirectory(cwd, vaultRoot, {
+      claudeCodePath,
+      agentPrompt: buildAgentPrompt(vaultRoot)
+    });
+  }
 }));
 
 ipcMain.handle('agenda:notify', async (_event, payload?: { title?: string; body?: string }) => {

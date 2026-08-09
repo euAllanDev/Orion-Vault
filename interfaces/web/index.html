@@ -113,18 +113,20 @@
                 <span></span>
               </span>
               <span class="overview-options-copy">
-                <strong>Quick Actions</strong>
+                <strong>Ações rápidas</strong>
                 <small>Ações rápidas</small>
               </span>
             </button>
             <div id="overviewOptionsPanel" class="overview-options-panel is-closed" aria-hidden="true">
-              <section class="overview-options-card">
-                <span class="overview-options-card-label">Ações</span>
-                <button type="button" data-quick-action="create-note">Criar nova nota</button>
-                <button type="button" data-quick-action="create-agenda">Nova nota com data</button>
-                <button type="button" data-quick-action="agenda">Abrir agenda</button>
-                <button type="button" data-quick-action="relations">Abrir relações</button>
-                <button type="button" data-quick-action="graph">Abrir graph</button>
+              <section class="actions-menu-group">
+                <span class="actions-menu-title">Ações</span>
+                <div class="actions-menu-items">
+                  <button type="button" data-quick-action="create-note">Criar nova nota</button>
+                  <button type="button" data-quick-action="create-agenda">Nova nota com data</button>
+                  <button type="button" data-quick-action="agenda">Abrir agenda</button>
+                  <button type="button" data-quick-action="relations">Abrir relações</button>
+                  <button type="button" data-quick-action="graph">Abrir graph</button>
+                </div>
               </section>
             </div>
           </div>
@@ -535,17 +537,21 @@
                   </span>
                 </button>
                 <div id="agendaOptionsPanel" class="agenda-options-panel is-closed" aria-hidden="true">
-                  <section class="agenda-options-card">
-                    <span class="agenda-options-card-label">Ações</span>
-                    <button type="button" data-agenda-action="refresh">Atualizar</button>
-                    <button type="button" data-agenda-action="focus-form">Nova nota</button>
+                  <section class="actions-menu-group">
+                    <span class="actions-menu-title">Ações</span>
+                    <div class="actions-menu-items">
+                      <button type="button" data-agenda-action="refresh">Atualizar</button>
+                      <button type="button" data-agenda-action="focus-form">Nova nota</button>
+                    </div>
                   </section>
-                  <section class="agenda-options-card">
-                    <span class="agenda-options-card-label">Filtro</span>
-                    <button type="button" data-agenda-filter="all">Todos</button>
-                    <button type="button" data-agenda-filter="pending">Pendentes</button>
-                    <button type="button" data-agenda-filter="done">Concluídas</button>
-                    <button type="button" data-agenda-filter="overdue">Em atraso</button>
+                  <section class="actions-menu-group">
+                    <span class="actions-menu-title">Filtro</span>
+                    <div class="actions-menu-items">
+                      <button type="button" data-agenda-filter="all">Todos</button>
+                      <button type="button" data-agenda-filter="pending">Pendentes</button>
+                      <button type="button" data-agenda-filter="done">Concluídas</button>
+                      <button type="button" data-agenda-filter="overdue">Em atraso</button>
+                    </div>
                   </section>
                 </div>
               </div>
@@ -982,7 +988,9 @@ orion /prepare-writing-task --path Estudos/SDD.md --query "resumo"</pre>
       </div>
 
       <div class="ai-dialog-actions">
-        <button id="aiDialogOpenTerminal" class="action primary" type="button" onclick="window.orionAiActions?.openTerminal()">Abrir terminal da IA</button>
+        <button id="aiDialogOpenOpenCode" class="action primary" type="button" onclick="window.orionAiActions?.openOpenCode()">OpenCode no vault</button>
+        <button id="aiDialogOpenClaudeCode" class="action primary" type="button" onclick="window.orionAiActions?.openClaudeCode()">Claude Code no vault</button>
+        <button id="aiDialogOpenTerminal" class="action" type="button" onclick="window.orionAiActions?.openTerminal()">Terminal Orion</button>
         <button id="aiDialogShowCommands" class="action" type="button" onclick="window.orionAiActions?.showCommands()">Ver comandos</button>
       </div>
       <p id="aiDialogStatus" class="ai-dialog-status">Pronto para abrir o terminal local.</p>

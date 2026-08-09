@@ -55,6 +55,16 @@ O shell desktop deve reaproveitar o core local existente e expor a mesma frontei
 47. O onboarding da IA no desktop deve orientar o uso de `/start` antes de `/guide` e do restante do fluxo.
 48. Mudanças feitas no vault ativo por terminal local ou automação externa devem refletir no workspace sem exigir reinício manual do app.
 
+57. Em modo desktop, a API local deve escutar apenas em loopback, exigir um token criptograficamente seguro por sessão e ignorar raízes de vault fornecidas pelo renderer em favor da raiz ativa controlada pelo processo principal.
+58. Ao fechar a janela no Windows, o app deve continuar ativo na bandeja para manter watcher e lembretes; a saída completa deve ser uma ação explícita que encerra esses recursos e o servidor local.
+59. A instalação Windows deve registrar `.md` e `.markdown` como tipos que podem ser abertos pelo Orion Vault. Ao receber um arquivo, o shell deve reutilizar a instância existente quando houver uma e abrir a nota dentro da pasta que a contém.
+60. O projeto deve manter uma suíte E2E do Electron que use vault e perfil temporários e cubra ao menos abertura, criação, edição, autosave e o ciclo de ocultar/restaurar a janela.
+61. A build instalada deve abrir o `Modo dev` sem passar caminhos virtuais dentro de `app.asar` ao PowerShell ou ao runtime Node externo.
+62. O runtime empacotado do `Modo dev` deve disponibilizar fisicamente o script de inicialização, a CLI compilada e seus recursos locais necessários para o onboarding.
+63. O `Modo dev` deve disponibilizar `orion` como executável real no `PATH` da sessão e de seus subprocessos, usando a CLI compilada fora de `app.asar`.
+64. O desktop deve oferecer entradas explícitas para OpenCode e Claude Code no vault ativo, injetando contexto efêmero de sessão por interfaces suportadas de cada CLI.
+65. Em viewport desktop, a barra superior e o cabeçalho do painel auxiliar devem permanecer visíveis enquanto árvore, editor, resumo ou graph rolam em superfícies internas.
+
 ## Pontos de atenção
 - Controles opcionais ausentes em uma superfície não devem abortar a inicialização do renderer nem impedir o registro dos handlers do desktop.
 - A seleção de pasta do workspace deve ser desfeita apenas ao clicar em uma área vazia do background, sem depender de um botão dedicado.
@@ -81,6 +91,8 @@ O shell desktop deve reaproveitar o core local existente e expor a mesma frontei
 - O refresh do workspace não pode depender apenas de ações internas da UI quando o vault estiver sendo alterado por terminal local.
 - A modularização incremental do renderer não pode alterar os contratos de bootstrap, agenda, relações, workspace, overview, editor, graph, busca local, modelos, seleção de links, diálogos internos ou readiness do shell; ela deve apenas separar responsabilidades de apresentação, assistência, comandos de edição, histórico local, graph local, graph global e orquestração.
 - A composição do renderer não pode usar referências prematuras entre controllers que impeçam o registro dos handlers da interface ou deixem a aplicação presa na tela inicial.
+- O fluxo de abertura de arquivo pelo Windows não pode reutilizar a raiz de outro vault nem iniciar uma segunda instância concorrente do desktop.
+- O terminal externo não pode executar scripts ou resolver dependências somente dentro de `app.asar`; recursos necessários ao `Modo dev` devem estar em caminho físico do app instalado.
 
 ## Cenários
 
@@ -343,3 +355,38 @@ Given uma operação de escrita no desktop
 When o usuário tenta sair da raiz do vault
 Then a operação é rejeitada
 And nenhum arquivo fora do vault é alterado
+
+### Cenário 26: arquivo Markdown é aberto pelo Windows
+Given o Orion Vault está instalado no Windows
+When o usuário abre um arquivo `.md` ou `.markdown` pelo Explorer
+Then o Windows pode oferecer o Orion Vault como aplicativo de abertura
+And o app abre a nota dentro da pasta que a contém
+And uma instância já aberta é reutilizada
+
+### Cenário 27: fechamento mantém o ciclo de vida desktop
+Given o Orion Vault está aberto com watcher e lembretes ativos
+When o usuário fecha a janela principal
+Then a janela é ocultada e o processo continua disponível pela bandeja
+When o usuário escolhe sair explicitamente
+Then watcher, lembretes, servidor local e bandeja são encerrados
+
+### Cenário 28: Modo dev funciona na instalação Windows
+Given o Orion Vault está instalado no Windows e existe um vault ativo
+When o usuário abre `Modo dev`
+Then o PowerShell executa o script de inicialização a partir de recurso físico do app instalado
+And o helper `orion` usa a CLI compilada e acessa dependências e recursos locais necessários
+And o onboarding é exibido sem erro de módulo ou caminho dentro de `app.asar`
+
+### Cenário 29: agente recebe contexto e launcher do produto
+Given o desktop possui vault ativo e OpenCode ou Claude Code instalado
+When o usuário abre o agente correspondente pelo `Modo dev`
+Then o agente inicia no vault ativo com contexto de sessão
+And shells filhos encontram `orion` no `PATH`
+And o vault não recebe arquivo operacional persistente de onboarding
+
+### Cenário 30: navegação permanece fixa durante rolagem do workspace
+Given o vault contém notas ou pastas suficientes para exceder a altura da janela
+When o usuário rola árvore, editor, resumo ou graph no desktop
+Then a barra superior continua visível
+And o cabeçalho do painel auxiliar continua visível
+And cada superfície rola sem deslocar a navegação global

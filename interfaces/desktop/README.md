@@ -10,6 +10,9 @@ This folder contains the Electron desktop shell for Orion Vault.
 - supports the dev-mode terminal launcher inside the active vault
 - wires agenda notifications and vault change refresh events
 
+- keeps the window available through the tray until explicit exit
+- supports opening `.md` and `.markdown` files registered by the Windows installer
+
 ## Main files
 - `main.ts`: Electron bootstrap, window lifecycle, desktop IPC and vault watcher
 - `preload.ts`: safe bridge between renderer and desktop capabilities

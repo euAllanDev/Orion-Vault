@@ -17,6 +17,8 @@ ipcRenderer.on('agenda:notify-sound', (_event, payload) => {
 
 contextBridge.exposeInMainWorld('orionDesktop', {
   openAiTerminal: (cwd) => ipcRenderer.invoke('ai-terminal:open', cwd),
+  openOpenCode: () => ipcRenderer.invoke('ai-opencode:open'),
+  openClaudeCode: () => ipcRenderer.invoke('ai-claude-code:open'),
   getApiToken: () => ipcRenderer.invoke('desktop:api-token'),
   controlWindow: (action) => ipcRenderer.invoke('window:control', action),
   openVaultFolder: () => ipcRenderer.invoke('vault:open-folder'),

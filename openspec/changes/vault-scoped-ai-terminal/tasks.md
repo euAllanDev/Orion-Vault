@@ -37,6 +37,8 @@ Status da primeira leva:
 - [x] O launcher do terminal desktop foi validado end-to-end no fluxo completo do Electron; a sessão abriu no vault ativo, exibiu onboarding completo, policy lines e helper `orion`, sem cair na raiz do app
 - [x] O fluxo agora expõe `orion /route-intent --query "..."` para classificar explicitamente produto, vault ativo, código do app e casos ambíguos antes da resposta
 - [x] O card principal do `Modo dev` passou a destacar `orion /route-intent` e os comandos compostos orientados à intenção (`analyze-note`, `prepare-edit-task`, `prepare-writing-task`, `organize-batch`) em vez de um resumo genérico mais antigo focado em `/context`, `/plan` e `/preview`
+- [x] A build instalada disponibiliza script PowerShell, CLI compilada, `zod` e OpenSpec fora de `app.asar` para o runtime do `Modo dev`
+- [x] O instalador Windows foi validado com `orion /onboarding` e inicialização PowerShell após instalação temporária
 
 ## Public MVP Readiness
 - [ ] Validar o fluxo completo do usuário comum para escrita, agenda, dashboards e graph
@@ -60,3 +62,4 @@ Status da primeira leva:
 - Validação manual confirmada: launcher visual coerente com o posicionamento do produto, terminal aberto no vault ativo `C:\Users\as409\MarikaVault`, onboarding completo carregado e sem erro residual de `openspec/registry.md`.
 - O gap principal de intenção/escopo foi coberto com `orion /route-intent`; a próxima validação deve confirmar se esse passo fica suficientemente visível para usuários dev no fluxo manual do desktop.
 - A visibilidade de `route-intent` no launcher melhorou: o fluxo recomendado do card principal do `Modo dev` agora começa por `orion /start`, traz `orion /route-intent --query "o que voce quer descobrir?"` logo na sequência e prioriza comandos compostos orientados à task.
+- O runtime instalado do `Modo dev` não pode usar `tsx` ou scripts dentro de `app.asar`; o launcher deve usar a CLI compilada e recursos desempacotados em `app.asar.unpacked`.

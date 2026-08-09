@@ -10,6 +10,8 @@
 52. O desktop deve apresentar o fluxo de IA como acesso a skills e recursos do produto, não como abertura de um terminal genérico sem orientação.
 53. Quando a pergunta do usuário mencionar o app, o produto, a ferramenta ou o projeto, o fluxo padrão da IA deve distinguir explicitamente entre produto Orion Vault, vault ativo e código do app antes de responder.
 54. O shell desktop deve expor um caminho explícito para contexto do produto, sem exigir que a IA inferira a identidade do app apenas a partir do diretório atual do vault.
+55. Na build instalada, o launcher do terminal deve executar o script PowerShell e a CLI compilada a partir de recursos físicos fora de `app.asar`.
+56. O runtime externo do terminal deve incluir as dependências e recursos locais necessários para carregar o onboarding sem exigir acesso ao ASAR por Node ou PowerShell.
 
 ## ADDED Pontos de atenção
 - Abrir a IA direto no repositório do app aumenta o risco de respostas fora do escopo das notas do usuário.
@@ -18,6 +20,7 @@
 - O shell desktop deve reforçar, já na abertura, quais capacidades são de leitura, planejamento e execução segura.
 - Perguntas ambíguas sobre "o app" não podem ser resolvidas só por leitura cega do vault atual.
 - O launcher precisa ensinar a IA a diferenciar produto, conteúdo do vault e código-fonte antes de qualquer diagnóstico sobre a ferramenta.
+- PowerShell e Node externos não compartilham o filesystem virtual do Electron; o fluxo instalado precisa resolver somente caminhos físicos destinados ao runtime do terminal.
 
 ## UPDATED Cenários
 - Cenário 6c: Given a aplicação desktop está aberta com um vault ativo
@@ -45,3 +48,10 @@ Given a aplicação desktop está aberta com um vault ativo
 When o usuário pede uma opinião sobre "esse app"
 Then a IA distingue produto Orion Vault, vault ativo e código do app antes de responder
 And a sessão não conclui que o vault atual é o código-fonte do produto
+
+### Cenário 6h: terminal empacotado inicia sem depender do ASAR
+Given o Orion Vault foi instalado no Windows e possui um vault ativo
+When o usuário abre o terminal da IA pelo fluxo padrão
+Then o launcher usa um script PowerShell físico do runtime instalado
+And o helper `orion` executa a CLI compilada com suas dependências locais disponíveis
+And a sessão exibe o onboarding sem erro de arquivo, módulo ou `openspec/registry.md`

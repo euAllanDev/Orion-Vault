@@ -15,7 +15,7 @@ async function createVaultRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'orion-ai-terminal-'));
 }
 
-async function runStartAiTerminal(appRoot: string, vaultRoot: string): Promise<{ location: string; vaultRoot: string; onboardingFirstCommand: string; onboardingStatusText: string }> {
+async function runStartAiTerminal(appRoot: string, vaultRoot: string): Promise<{ location: string; vaultRoot: string; appRoot: string; onboardingFirstCommand: string; childOnboardingFirstCommand: string; onboardingStatusText: string }> {
   const systemRoot = process.env.SystemRoot ?? 'C:\\Windows';
   const powerShellPath = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   const scriptPath = path.resolve(process.cwd(), 'scripts', 'start-ai-terminal.ps1');
@@ -28,7 +28,8 @@ async function runStartAiTerminal(appRoot: string, vaultRoot: string): Promise<{
     `$nodePath = '${escapePowerShellLiteral(process.execPath)}'`,
     `. $scriptPath -AppRoot $appRoot -VaultRoot $vaultRoot -NodePath $nodePath *> $null`,
     `$onboarding = (orion /onboarding | Out-String).Trim() | ConvertFrom-Json`,
-    `[Console]::Out.Write((@{ location = (Get-Location).Path; vaultRoot = $env:ORION_VAULT_ROOT; onboardingFirstCommand = $onboarding.commandLines[0]; onboardingStatusText = $onboarding.statusText } | ConvertTo-Json -Compress))`
+    `$childOnboarding = (& cmd.exe /d /c "orion /onboarding" | Out-String).Trim() | ConvertFrom-Json`,
+    `[Console]::Out.Write((@{ location = (Get-Location).Path; vaultRoot = $env:ORION_VAULT_ROOT; appRoot = $env:ORION_APP_ROOT; onboardingFirstCommand = $onboarding.commandLines[0]; childOnboardingFirstCommand = $childOnboarding.commandLines[0]; onboardingStatusText = $onboarding.statusText } | ConvertTo-Json -Compress))`
   ].join('\n'), 'utf8');
 
   try {
@@ -44,7 +45,7 @@ async function runStartAiTerminal(appRoot: string, vaultRoot: string): Promise<{
       env: process.env
     });
 
-    return JSON.parse(stdout) as { location: string; vaultRoot: string; onboardingFirstCommand: string; onboardingStatusText: string };
+    return JSON.parse(stdout) as { location: string; vaultRoot: string; appRoot: string; onboardingFirstCommand: string; childOnboardingFirstCommand: string; onboardingStatusText: string };
   } finally {
     await fs.rm(runnerPath, { force: true });
   }
@@ -59,7 +60,9 @@ describe('start-ai-terminal.ps1', () => {
 
       expect(result.location).toBe(vaultRoot);
       expect(result.vaultRoot).toBe(vaultRoot);
+      expect(result.appRoot).toBe(process.cwd());
       expect(result.onboardingFirstCommand).toBe('orion /start');
+      expect(result.childOnboardingFirstCommand).toBe('orion /start');
       expect(result.onboardingStatusText).toContain('Orion Vault');
     } finally {
       await fs.rm(vaultRoot, { recursive: true, force: true });

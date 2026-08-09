@@ -13,6 +13,7 @@ Lista de changes OpenSpec registradas no projeto.
 - `editor-writing-experience` - draft
 - `overview-dashboard` - draft
 - `vault-scoped-ai-terminal` - draft
+- `agent-compatible-dev-mode` - draft
 
 ## Modules
 - `domain/notes`

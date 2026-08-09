@@ -2,27 +2,25 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAiTerminalOpenHandler } from './ai-terminal';
 
 describe('ai-terminal:open', () => {
-  it('opens the requested vault root and returns it as cwd', () => {
+  it('always opens active vault instead of accepting a renderer path', () => {
     const openAiTerminal = vi.fn();
     const handler = createAiTerminalOpenHandler({
-      appRoot: 'C:\\orion',
       getActiveDesktopVaultRoot: () => 'C:\\vault-active',
       openAiTerminal
     });
 
     const result = handler({}, 'C:\\vault-requested');
 
-    expect(openAiTerminal).toHaveBeenCalledWith('C:\\vault-requested', 'C:\\vault-requested');
+    expect(openAiTerminal).toHaveBeenCalledWith('C:\\vault-active', 'C:\\vault-active');
     expect(result).toEqual({
-      cwd: 'C:\\vault-requested',
-      vaultRoot: 'C:\\vault-requested'
+      cwd: 'C:\\vault-active',
+      vaultRoot: 'C:\\vault-active'
     });
   });
 
   it('falls back to the active vault when no vault is requested', () => {
     const openAiTerminal = vi.fn();
     const handler = createAiTerminalOpenHandler({
-      appRoot: 'C:\\orion',
       getActiveDesktopVaultRoot: () => 'C:\\vault-active',
       openAiTerminal
     });
@@ -39,7 +37,6 @@ describe('ai-terminal:open', () => {
   it('rejects opening when there is no active vault', () => {
     const openAiTerminal = vi.fn();
     const handler = createAiTerminalOpenHandler({
-      appRoot: 'C:\\orion',
       getActiveDesktopVaultRoot: () => '',
       openAiTerminal
     });

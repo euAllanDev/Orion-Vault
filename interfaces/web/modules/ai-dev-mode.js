@@ -233,11 +233,43 @@ export function createAiDevModeController(params) {
     }
 
     els.aiDialogStatus.textContent = `Abrindo terminal da IA no vault ${vaultRoot}...`;
-    await bridge.openAiTerminal(vaultRoot);
+    await bridge.openAiTerminal();
     els.aiDialogStatus.textContent = `Terminal aberto no vault ativo ${vaultRoot}.`;
     const onboarding = await loadAiOnboarding().catch(() => null);
     const template = String(onboarding?.setupHintTemplate ?? 'Terminal da IA aberto no vault ativo {{vaultRoot}}.');
     updateSetupHint(template.replace('{{vaultRoot}}', vaultRoot));
+  }
+
+  async function openOpenCode() {
+    const vaultRoot = getActiveVaultPath();
+    if (!vaultRoot) {
+      throw new Error('Abra ou crie um vault antes de iniciar o OpenCode');
+    }
+
+    const bridge = bridgeProvider();
+    if (!bridge || typeof bridge.openOpenCode !== 'function') {
+      throw new Error('Bridge do desktop indisponivel');
+    }
+
+    els.aiDialogStatus.textContent = `Abrindo OpenCode no vault ${vaultRoot}...`;
+    await bridge.openOpenCode();
+    els.aiDialogStatus.textContent = `OpenCode aberto no vault ativo ${vaultRoot}.`;
+  }
+
+  async function openClaudeCode() {
+    const vaultRoot = getActiveVaultPath();
+    if (!vaultRoot) {
+      throw new Error('Abra ou crie um vault antes de iniciar o Claude Code');
+    }
+
+    const bridge = bridgeProvider();
+    if (!bridge || typeof bridge.openClaudeCode !== 'function') {
+      throw new Error('Bridge do desktop indisponivel');
+    }
+
+    els.aiDialogStatus.textContent = `Abrindo Claude Code no vault ${vaultRoot}...`;
+    await bridge.openClaudeCode();
+    els.aiDialogStatus.textContent = `Claude Code aberto no vault ativo ${vaultRoot}.`;
   }
 
   function buildWindowActions() {
@@ -246,6 +278,18 @@ export function createAiDevModeController(params) {
         closeDialog();
         setTimeout(() => {
           void openTerminal().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir terminal da IA'));
+        }, 50);
+      },
+      openOpenCode: () => {
+        closeDialog();
+        setTimeout(() => {
+          void openOpenCode().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir OpenCode'));
+        }, 50);
+      },
+      openClaudeCode: () => {
+        closeDialog();
+        setTimeout(() => {
+          void openClaudeCode().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao abrir Claude Code'));
         }, 50);
       },
       showCommands: () => {
@@ -267,6 +311,8 @@ export function createAiDevModeController(params) {
     closeCommandsDialog,
     openDialog,
     openCommandsDialog,
+    openClaudeCode,
+    openOpenCode,
     openTerminal,
     buildWindowActions
   };

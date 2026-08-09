@@ -17,6 +17,8 @@ ipcRenderer.on('agenda:notify-sound', (_event: Electron.IpcRendererEvent, payloa
 
 contextBridge.exposeInMainWorld('orionDesktop', {
   openAiTerminal: (cwd?: string) => ipcRenderer.invoke('ai-terminal:open', cwd),
+  openOpenCode: () => ipcRenderer.invoke('ai-opencode:open'),
+  openClaudeCode: () => ipcRenderer.invoke('ai-claude-code:open'),
   getApiToken: () => ipcRenderer.invoke('desktop:api-token'),
   controlWindow: (action: 'minimize' | 'toggle-maximize' | 'close') => ipcRenderer.invoke('window:control', action),
   openVaultFolder: () => ipcRenderer.invoke('vault:open-folder'),

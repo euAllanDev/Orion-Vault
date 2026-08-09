@@ -36,6 +36,61 @@ body {
   overflow-x: hidden;
 }
 
+/* Desktop shell owns viewport scrolling so navigation remains visible. */
+html.shell-desktop,
+html.shell-desktop body,
+html.shell-desktop .app,
+html.shell-desktop .main {
+  height: 100vh;
+  overflow: hidden;
+}
+
+html.shell-desktop .main {
+  min-height: 0;
+}
+
+html.shell-desktop .topbar {
+  position: relative;
+  z-index: 20;
+}
+
+html.shell-desktop .view {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html.shell-desktop ::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+html.shell-desktop .workspace-layout {
+  min-height: 0;
+  height: 100%;
+}
+
+html.shell-desktop .workspace-layout .tree-pane,
+html.shell-desktop .workspace-layout .editor-pane,
+html.shell-desktop .workspace-layout .summary-pane {
+  min-height: 0;
+  height: 100%;
+}
+
+html.shell-desktop .workspace-layout .summary-pane {
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+html.shell-desktop .workspace-layout .summary-pane > .summary-overview,
+html.shell-desktop .workspace-layout .summary-pane > .graph-panel {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
 button, input { font: inherit; }
 select, textarea { font: inherit; }
 button { border: 0; }
@@ -7524,16 +7579,79 @@ body[data-view='workspace'] .setup-layout {
 }
 
 /* Final layout guards for action panels with long labels. */
-.overview-options-panel {
-  width: min(420px, calc(100vw - 32px)) !important;
+.overview-options-panel,
+.agenda-options-panel {
+  width: min(360px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(20, 23, 30, 0.99), rgba(12, 14, 19, 0.99));
+  box-shadow:
+    14px 16px 34px rgba(0, 0, 0, 0.48),
+    -7px -7px 20px rgba(255, 255, 255, 0.025),
+    inset 1px 1px rgba(255, 255, 255, 0.045);
+  gap: 12px;
 }
 
-.overview-options-card button {
+.actions-menu-group {
+  display: grid;
+  gap: 2px;
+}
+
+.actions-menu-title {
+  margin: 2px 10px 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  color: #aeb4c0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.actions-menu-items {
+  display: grid;
+  gap: 2px;
+}
+
+.overview-options-panel button,
+.agenda-options-panel button {
   width: 100% !important;
   min-width: 0 !important;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: #d9dde6;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
   white-space: normal !important;
   word-break: break-word !important;
   line-height: 1.35;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.overview-options-panel button:hover,
+.agenda-options-panel button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.overview-options-panel button:active,
+.agenda-options-panel button:active {
+  transform: scale(0.985);
+}
+
+.overview-options-panel button:focus-visible,
+.agenda-options-panel button:focus-visible {
+  outline: none;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.065);
+  box-shadow: 0 0 0 2px rgba(139, 124, 255, 0.35), inset 0 1px rgba(255, 255, 255, 0.05);
 }
 
 .relations-details-panel {

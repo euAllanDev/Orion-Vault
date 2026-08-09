@@ -1,9 +1,17 @@
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 function getProjectRoot(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(moduleDirectory, '..'),
+    path.resolve(moduleDirectory, '..', '..')
+  ];
+
+  return candidates.find((candidate) => existsSync(path.join(candidate, 'openspec', 'registry.md')))
+    ?? candidates[0];
 }
 
 function isExecutedDirectly(): boolean {

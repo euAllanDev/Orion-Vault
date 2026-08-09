@@ -1,7 +1,7 @@
 {
   "name": "orion-vault",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Workspace local-first para notas Markdown, vaults e IA assistiva.",
   "author": "Allan Wake",
   "type": "module",
@@ -62,7 +62,12 @@
     "asar": true,
     "asarUnpack": [
       "node_modules/esbuild/**",
-      "node_modules/@esbuild/**"
+      "node_modules/@esbuild/**",
+      "node_modules/zod/**",
+      "dist/cli/**",
+      "openspec/**",
+      "scripts/start-ai-terminal.ps1",
+      "scripts/orion.cmd"
     ],
     "directories": {
       "output": "release"
