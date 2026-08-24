@@ -1,5 +1,19 @@
 export type OpenAiTerminal = (cwd: string, vaultRoot: string) => void;
 
+export const linuxTerminalCandidates = ['x-terminal-emulator', 'gnome-terminal', 'konsole', 'xfce4-terminal'] as const;
+
+export function selectLinuxTerminal(
+  terminal: string | undefined,
+  isExecutable: (command: string) => boolean
+): string | null {
+  const configured = String(terminal ?? '').trim();
+  if (configured && !/\s/.test(configured) && isExecutable(configured)) {
+    return configured;
+  }
+
+  return linuxTerminalCandidates.find(isExecutable) ?? null;
+}
+
 export function createAiTerminalOpenHandler(options: {
   getActiveDesktopVaultRoot: () => string;
   openAiTerminal: OpenAiTerminal;

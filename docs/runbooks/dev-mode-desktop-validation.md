@@ -87,9 +87,9 @@ Validar o tunelamento real do terminal desktop.
 - [ ] clicar em `Abrir terminal da IA`
 - [ ] confirmar que o terminal abre sem cair na raiz do app
 - [ ] confirmar visualmente que o diretório inicial e o vault ativo
-- [ ] rodar `Get-Location`
+- [ ] rodar `Get-Location` no Windows ou `pwd` no Linux
 - [ ] confirmar que o path retornado e o vault ativo
-- [ ] rodar `echo $env:ORION_VAULT_ROOT`
+- [ ] rodar `echo $env:ORION_VAULT_ROOT` no Windows ou `echo "$ORION_VAULT_ROOT"` no Linux
 - [ ] confirmar que a variavel aponta para o mesmo vault ativo
 - [ ] confirmar que a mensagem inicial diz que Orion Vault e um app de notas local-first adaptado para IA e agentes
 - [ ] confirmar que o helper `orion` aparece disponivel

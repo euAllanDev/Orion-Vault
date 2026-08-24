@@ -3,7 +3,10 @@
   "private": true,
   "version": "0.1.1",
   "description": "Workspace local-first para notas Markdown, vaults e IA assistiva.",
-  "author": "Allan Wake",
+  "author": {
+    "name": "Allan Wake",
+    "email": "jorgeallandev@gamil.com"
+  },
   "type": "module",
   "main": "interfaces/desktop/bootstrap.cjs",
   "packageManager": "pnpm@9.12.0",
@@ -67,7 +70,9 @@
       "dist/cli/**",
       "openspec/**",
       "scripts/start-ai-terminal.ps1",
-      "scripts/orion.cmd"
+      "scripts/orion.cmd",
+      "scripts/start-ai-terminal.sh",
+      "scripts/orion"
     ],
     "directories": {
       "output": "release"

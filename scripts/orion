@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+if [ -z "${ORION_APP_ROOT:-}" ]; then
+  echo 'Orion Vault: ORION_APP_ROOT indisponivel. Abra pelo Modo dev.' >&2
+  exit 1
+fi
+
+node_command="${ORION_NODE_PATH:-node}"
+cli_path="$ORION_APP_ROOT/dist/cli/main.mjs"
+
+if [ ! -f "$cli_path" ]; then
+  echo 'Orion Vault: CLI compilada indisponivel. Reinstale o aplicativo.' >&2
+  exit 1
+fi
+
+exec "$node_command" "$cli_path" "$@"

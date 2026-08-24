@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createAiTerminalOpenHandler } from './ai-terminal';
+import { createAiTerminalOpenHandler, selectLinuxTerminal } from './ai-terminal';
 
 describe('ai-terminal:open', () => {
   it('always opens active vault instead of accepting a renderer path', () => {
@@ -43,5 +43,19 @@ describe('ai-terminal:open', () => {
 
     expect(() => handler({}, undefined)).toThrowError('O fluxo padrao da IA exige um vault ativo antes de abrir o terminal.');
     expect(openAiTerminal).not.toHaveBeenCalled();
+  });
+});
+
+describe('Linux terminal selection', () => {
+  it('prefers an executable configured in TERMINAL', () => {
+    expect(selectLinuxTerminal('/usr/bin/custom-terminal', (command) => command === '/usr/bin/custom-terminal')).toBe('/usr/bin/custom-terminal');
+  });
+
+  it('uses the documented fallback order', () => {
+    expect(selectLinuxTerminal(undefined, (command) => command === 'konsole')).toBe('konsole');
+  });
+
+  it('returns no terminal when none are available', () => {
+    expect(selectLinuxTerminal(undefined, () => false)).toBeNull();
   });
 });

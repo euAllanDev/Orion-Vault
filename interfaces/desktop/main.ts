@@ -10,7 +10,7 @@ import { NodeNoteReader } from '../../infra/filesystem/readers/node-note-reader'
 import { NodeVaultWorkspace } from '../../infra/filesystem/workspace/node-vault-workspace';
 import { buildOrionAiOnboarding } from '../../application/ai/skills/skill-catalog';
 import { startWebServer } from '../web/server';
-import { createAiTerminalOpenHandler } from './ai-terminal';
+import { createAiTerminalOpenHandler, selectLinuxTerminal } from './ai-terminal';
 
 const desktopShell = {
   appId: 'com.orionvault.desktop',
@@ -83,8 +83,8 @@ function getActiveDesktopVaultRoot(): string {
 
 function isDesktopAppRoot(candidate: string): boolean {
   return existsSync(path.join(candidate, 'package.json'))
-    && existsSync(path.join(candidate, 'interfaces', 'cli', 'main.ts'))
-    && existsSync(path.join(candidate, 'scripts', 'start-ai-terminal.ps1'));
+    && existsSync(path.join(candidate, 'dist', 'cli', 'main.mjs'))
+    && existsSync(path.join(candidate, 'scripts', process.platform === 'win32' ? 'start-ai-terminal.ps1' : 'start-ai-terminal.sh'));
 }
 
 function resolveDesktopAppRoot(): string {
@@ -101,7 +101,7 @@ function resolveDesktopAppRoot(): string {
 
 function resolveAiTerminalRuntimeRoot(): string {
   const unpackedAppRoot = path.join(process.resourcesPath, 'app.asar.unpacked');
-  const startupScript = path.join(unpackedAppRoot, 'scripts', 'start-ai-terminal.ps1');
+  const startupScript = path.join(unpackedAppRoot, 'scripts', process.platform === 'win32' ? 'start-ai-terminal.ps1' : 'start-ai-terminal.sh');
   const compiledCli = path.join(unpackedAppRoot, 'dist', 'cli', 'main.mjs');
 
   return existsSync(startupScript) && existsSync(compiledCli) ? unpackedAppRoot : appRoot;
@@ -113,8 +113,10 @@ function resolveNodeRuntimePath(): string {
     return configured;
   }
 
+  const command = process.platform === 'win32' ? 'where.exe' : 'which';
+  const args = process.platform === 'win32' ? ['node.exe'] : ['node'];
   try {
-    const result = spawnSync('where.exe', ['node.exe'], {
+    const result = spawnSync(command, args, {
       cwd: app.getPath('home'),
       env: process.env,
       windowsHide: true,
@@ -135,6 +137,20 @@ function resolveNodeRuntimePath(): string {
 }
 
 function resolveAgentPath(commandName: 'opencode' | 'claude'): string {
+  if (process.platform !== 'win32') {
+    try {
+      const result = spawnSync('which', [commandName], {
+        cwd: app.getPath('home'),
+        env: process.env,
+        encoding: 'utf8'
+      });
+      const commandPath = String(result.stdout ?? '').trim();
+      return commandPath && existsSync(commandPath) ? commandPath : '';
+    } catch {
+      return '';
+    }
+  }
+
   const systemRoot = process.env.SystemRoot ?? 'C:\\Windows';
   const powerShellPath = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 
@@ -840,11 +856,12 @@ function escapePowerShellLiteral(value: string): string {
 }
 
 function resolveAiTerminalStartupScript(): string | null {
+  const scriptName = process.platform === 'win32' ? 'start-ai-terminal.ps1' : 'start-ai-terminal.sh';
   const candidates = [
-    path.join(aiTerminalRuntimeRoot, 'scripts', 'start-ai-terminal.ps1'),
-    path.join(appRoot, 'scripts', 'start-ai-terminal.ps1'),
-    path.resolve(appRoot, '..', '..', 'scripts', 'start-ai-terminal.ps1'),
-    path.join(process.cwd(), 'scripts', 'start-ai-terminal.ps1')
+    path.join(aiTerminalRuntimeRoot, 'scripts', scriptName),
+    path.join(appRoot, 'scripts', scriptName),
+    path.resolve(appRoot, '..', '..', 'scripts', scriptName),
+    path.join(process.cwd(), 'scripts', scriptName)
   ];
 
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
@@ -982,9 +999,71 @@ function openPowerShellInDirectory(cwd: string, vaultRoot: string, options: { op
   }
 }
 
+function isLinuxCommandAvailable(command: string): boolean {
+  if (path.isAbsolute(command)) return existsSync(command);
+  try {
+    return spawnSync('which', [command], { env: process.env, stdio: 'ignore' }).status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function openLinuxTerminalInDirectory(cwd: string, vaultRoot: string, options: { openCodePath?: string; claudeCodePath?: string; agentPrompt?: string } = {}): void {
+  const startupScript = resolveAiTerminalStartupScript();
+  if (!startupScript) {
+    throw new Error('Launcher Linux indisponivel. Reinstale o aplicativo.');
+  }
+
+  const terminal = selectLinuxTerminal(process.env.TERMINAL, isLinuxCommandAvailable);
+  if (!terminal) {
+    throw new Error('Nenhum terminal compativel foi encontrado. Instale x-terminal-emulator, gnome-terminal, konsole ou xfce4-terminal, ou configure TERMINAL.');
+  }
+
+  const launcherArgs = [
+    startupScript,
+    '--app-root', aiTerminalRuntimeRoot,
+    '--vault-root', vaultRoot,
+    '--node-path', nodeRuntimePath || 'node',
+    ...(options.openCodePath ? ['--opencode-path', options.openCodePath] : []),
+    ...(options.claudeCodePath ? ['--claude-code-path', options.claudeCodePath] : []),
+    ...(options.agentPrompt ? ['--agent-prompt', options.agentPrompt] : [])
+  ];
+  const terminalArgs = terminal === 'gnome-terminal'
+    ? ['--working-directory', cwd, '--', ...launcherArgs]
+    : terminal === 'konsole'
+      ? ['--workdir', cwd, '-e', ...launcherArgs]
+      : terminal === 'xfce4-terminal'
+        ? ['--working-directory', cwd, '--execute', ...launcherArgs]
+        : ['-e', ...launcherArgs];
+  const env = {
+    ...process.env,
+    ORION_VAULT_ROOT: vaultRoot,
+    ORION_APP_ROOT: aiTerminalRuntimeRoot,
+    ORION_NODE_PATH: nodeRuntimePath || 'node',
+    PATH: `${path.join(aiTerminalRuntimeRoot, 'scripts')}:${process.env.PATH ?? ''}`,
+    ...(options.agentPrompt ? { ORION_AGENT_PROMPT: options.agentPrompt } : {})
+  };
+
+  const child = spawn(terminal, terminalArgs, { cwd, env, detached: true, stdio: 'ignore' });
+  child.once('error', (error) => console.error(`Failed to open Linux terminal ${terminal}`, error));
+  child.unref();
+}
+
+function openAiTerminalInDirectory(cwd: string, vaultRoot: string, options: { openCodePath?: string; claudeCodePath?: string; agentPrompt?: string } = {}): void {
+  if (process.platform === 'win32') {
+    openPowerShellInDirectory(cwd, vaultRoot, options);
+    return;
+  }
+  if (process.platform === 'linux') {
+    openLinuxTerminalInDirectory(cwd, vaultRoot, options);
+    return;
+  }
+  throw new Error('Modo dev indisponivel nesta plataforma.');
+}
+
 ipcMain.handle('ai-terminal:open', createAiTerminalOpenHandler({
   getActiveDesktopVaultRoot,
-  openAiTerminal: openPowerShellInDirectory
+  openAiTerminal: openAiTerminalInDirectory
 }));
 
 ipcMain.handle('ai-opencode:open', createAiTerminalOpenHandler({
@@ -995,7 +1074,7 @@ ipcMain.handle('ai-opencode:open', createAiTerminalOpenHandler({
       throw new Error('OpenCode nao encontrado. Instale-o ou abra Terminal Orion.');
     }
 
-    openPowerShellInDirectory(cwd, vaultRoot, {
+    openAiTerminalInDirectory(cwd, vaultRoot, {
       openCodePath,
       agentPrompt: buildAgentPrompt(vaultRoot)
     });
@@ -1010,7 +1089,7 @@ ipcMain.handle('ai-claude-code:open', createAiTerminalOpenHandler({
       throw new Error('Claude Code nao encontrado. Instale-o ou abra Terminal Orion.');
     }
 
-    openPowerShellInDirectory(cwd, vaultRoot, {
+    openAiTerminalInDirectory(cwd, vaultRoot, {
       claudeCodePath,
       agentPrompt: buildAgentPrompt(vaultRoot)
     });

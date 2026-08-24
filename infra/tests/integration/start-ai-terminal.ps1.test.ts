@@ -51,7 +51,7 @@ async function runStartAiTerminal(appRoot: string, vaultRoot: string): Promise<{
   }
 }
 
-describe('start-ai-terminal.ps1', () => {
+describe.runIf(process.platform === 'win32')('start-ai-terminal.ps1', () => {
   it('starts in the active vault, exports ORION_VAULT_ROOT and keeps onboarding available', async () => {
     const vaultRoot = await createVaultRoot();
 

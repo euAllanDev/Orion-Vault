@@ -433,6 +433,23 @@ Significado pratico:
 - `pnpm dev:web`: interface web local
 - `pnpm dev:desktop`: shell desktop Electron
 
+### Ubuntu/Linux
+
+O desktop e suportado em Ubuntu LTS x64 com sessao grafica Wayland ou X11. Sao necessarios Node.js 20+, pnpm e um dos terminais `x-terminal-emulator`, `gnome-terminal`, `konsole` ou `xfce4-terminal` para o Modo dev.
+
+```bash
+pnpm install
+pnpm build
+pnpm dev:desktop
+pnpm dev:web
+pnpm dev:mcp
+pnpm dist:linux
+```
+
+`pnpm dist:linux` gera `release/Orion Vault-<versao>.AppImage` e `release/Orion Vault-<versao>.deb`. Instale o pacote com `sudo apt install ./release/Orion\ Vault-<versao>.deb` ou torne a AppImage executavel com `chmod +x "release/Orion Vault-<versao>.AppImage"` e execute-a. Caso a AppImage nao abra, instale FUSE ou use a alternativa de extracao documentada pela distribuicao.
+
+OpenCode e Claude Code sao opcionais e devem estar instalados no `PATH` do usuario. Ao reportar um problema, informe a distribuicao, sessao grafica, emulador de terminal e logs relevantes.
+
 ### Verificacao
 
 ```bash
