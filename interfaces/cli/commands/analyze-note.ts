@@ -1,5 +1,5 @@
 import type { AiBridgeResponseDto, AiBridgeAgentContextDataDto, AiBridgeContextDataDto, AiBridgeIssueDto } from '../../../application/dto/ai-bridge.dto';
-import { createAiBridgeRunner } from '../runtime/ai-bridge-runner';
+import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 
 export interface AnalyzeNoteCommandOptions {
   readonly vaultRoot?: string;
@@ -90,7 +90,7 @@ function presentText(response: AiBridgeResponseDto<AnalyzeNoteData>): void {
 }
 
 export async function executeAnalyzeNoteCommand(options: AnalyzeNoteCommandOptions): Promise<void> {
-  const { service, vaultRoot } = createAiBridgeRunner(options.vaultRoot);
+  const { service, vaultRoot } = createAiBridgeRuntime(options.vaultRoot);
   const focusPath = options.path?.trim() || undefined;
   const [contextResponse, agentResponse] = await Promise.all([
     service.loadContext({ vaultRoot, focusPath }),

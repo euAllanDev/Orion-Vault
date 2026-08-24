@@ -1,5 +1,5 @@
 import { presentAiBridgeJson, presentApplyResponse, presentPlanResponse } from '../presenters/ai-bridge.presenter';
-import { createAiBridgeRunner } from '../runtime/ai-bridge-runner';
+import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 
 export interface OrganizeCommandOptions {
   readonly vaultRoot?: string;
@@ -10,7 +10,7 @@ export interface OrganizeCommandOptions {
 }
 
 export async function executeOrganizeCommand(options: OrganizeCommandOptions): Promise<void> {
-  const { service, vaultRoot, config } = createAiBridgeRunner(options.vaultRoot);
+  const { service, vaultRoot, config } = createAiBridgeRuntime(options.vaultRoot);
 
   if (options.dryRun ?? config.defaultDryRun) {
     const response = await service.preview({

@@ -1,11 +1,11 @@
-import { createAiBridgeRunner } from '../runtime/ai-bridge-runner';
+import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 
 export interface DiffCommandOptions {
   readonly vaultRoot?: string;
 }
 
 export async function executeDiffCommand(options: DiffCommandOptions): Promise<void> {
-  const { service, vaultRoot } = createAiBridgeRunner(options.vaultRoot);
+  const { service, vaultRoot } = createAiBridgeRuntime(options.vaultRoot);
   const response = await service.preview({
     vaultRoot
   });

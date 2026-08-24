@@ -1,5 +1,5 @@
 import { presentAiBridgeJson, presentRetrieveResponse } from '../presenters/ai-bridge.presenter';
-import { createAiBridgeRunner } from '../runtime/ai-bridge-runner';
+import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 
 export interface RetrieveCommandOptions {
   readonly vaultRoot?: string;
@@ -11,7 +11,7 @@ export interface RetrieveCommandOptions {
 }
 
 export async function executeRetrieveCommand(options: RetrieveCommandOptions): Promise<void> {
-  const { service, vaultRoot } = createAiBridgeRunner(options.vaultRoot);
+  const { service, vaultRoot } = createAiBridgeRuntime(options.vaultRoot);
   const response = await service.retrieve({
     vaultRoot,
     query: options.query,

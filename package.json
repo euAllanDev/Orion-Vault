@@ -11,6 +11,7 @@
     "build": "tsup",
     "dev": "tsx interfaces/cli/main.ts",
     "dev:web": "tsx interfaces/web/server.ts",
+    "dev:mcp": "tsx interfaces/mcp/server.ts",
     "dev:desktop": "electron interfaces/desktop/bootstrap.cjs",
     "dist": "pnpm build && electron-builder",
     "dist:win": "pnpm build && electron-builder --win",
@@ -40,6 +41,7 @@
   "dependencies": {
     "esbuild": "^0.24.2",
     "tsx": "^4.21.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

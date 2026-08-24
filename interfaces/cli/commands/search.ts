@@ -1,5 +1,5 @@
 import { presentAiBridgeJson, presentSearchResponse } from '../presenters/ai-bridge.presenter';
-import { createAiBridgeRunner } from '../runtime/ai-bridge-runner';
+import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 import { LocalNoteSearchService } from '../../../application/services/local-note-search.service';
 import type { SearchMatchDto } from '../../../application/dto/ai-bridge.dto';
 import type { NoteSnapshotDto } from '../../../application/dto/note-snapshot.dto';
@@ -23,7 +23,7 @@ export function buildSearchMatches(notes: readonly NoteSnapshotDto[], criteria: 
 }
 
 export async function executeSearchCommand(options: SearchCommandOptions): Promise<void> {
-  const { service, vaultRoot } = createAiBridgeRunner(options.vaultRoot);
+  const { service, vaultRoot } = createAiBridgeRuntime(options.vaultRoot);
   const response = await service.search({
     vaultRoot,
     query: options.query,

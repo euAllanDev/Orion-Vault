@@ -1,5 +1,5 @@
 import { presentAiBridgeJson, presentApplyResponse } from '../presenters/ai-bridge.presenter';
-import { createAiBridgeRunner } from '../runtime/ai-bridge-runner';
+import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 
 export interface ApplyCommandOptions {
   readonly vaultRoot?: string;
@@ -11,7 +11,7 @@ export interface ApplyCommandOptions {
 }
 
 export async function executeApplyCommand(options: ApplyCommandOptions): Promise<void> {
-  const { service, vaultRoot } = createAiBridgeRunner(options.vaultRoot);
+  const { service, vaultRoot } = createAiBridgeRuntime(options.vaultRoot);
   const response = await service.apply({
     vaultRoot,
     previewId: options.previewId,

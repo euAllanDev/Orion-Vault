@@ -1,5 +1,5 @@
 import { presentAiBridgeJson, presentPlanResponse } from '../presenters/ai-bridge.presenter';
-import { createAiBridgeRunner } from '../runtime/ai-bridge-runner';
+import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 
 export interface PlanCommandOptions {
   readonly vaultRoot?: string;
@@ -9,7 +9,7 @@ export interface PlanCommandOptions {
 }
 
 export async function executePlanCommand(options: PlanCommandOptions): Promise<void> {
-  const { service, vaultRoot } = createAiBridgeRunner(options.vaultRoot);
+  const { service, vaultRoot } = createAiBridgeRuntime(options.vaultRoot);
   const response = await service.preview({
     vaultRoot,
     scopePath: options.path?.trim() || undefined,

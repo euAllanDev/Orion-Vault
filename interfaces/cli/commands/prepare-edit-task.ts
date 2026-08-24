@@ -5,7 +5,7 @@ import type {
   AiBridgeResponseDto,
   AiBridgeRetrieveDataDto
 } from '../../../application/dto/ai-bridge.dto';
-import { createAiBridgeRunner } from '../runtime/ai-bridge-runner';
+import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 
 export interface PrepareEditTaskCommandOptions {
   readonly vaultRoot?: string;
@@ -117,7 +117,7 @@ function presentText(response: AiBridgeResponseDto<PrepareEditTaskData>): void {
 }
 
 export async function executePrepareEditTaskCommand(options: PrepareEditTaskCommandOptions): Promise<void> {
-  const { service, vaultRoot } = createAiBridgeRunner(options.vaultRoot);
+  const { service, vaultRoot } = createAiBridgeRuntime(options.vaultRoot);
   const focusPath = options.path?.trim() || undefined;
   const query = options.query?.trim() || undefined;
   const tags = options.tags ?? [];

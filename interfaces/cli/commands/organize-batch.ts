@@ -1,5 +1,5 @@
 import { presentAiBridgeJson } from '../presenters/ai-bridge.presenter';
-import { createAiBridgeRunner } from '../runtime/ai-bridge-runner';
+import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 import type { AiBridgePlanDataDto, AiBridgeResponseDto } from '../../../application/dto/ai-bridge.dto';
 import { NodeNoteReader } from '../../../infra/filesystem/readers/node-note-reader';
 import { LocalNoteSearchService } from '../../../application/services/local-note-search.service';
@@ -100,7 +100,7 @@ function presentText(response: OrganizeBatchResponse): void {
 }
 
 export async function executeOrganizeBatchCommand(options: OrganizeBatchCommandOptions): Promise<void> {
-  const { service, vaultRoot } = createAiBridgeRunner(options.vaultRoot);
+  const { service, vaultRoot } = createAiBridgeRuntime(options.vaultRoot);
   const scopePath = options.path?.trim() || undefined;
   const query = options.query?.trim() || undefined;
   const response = await service.preview({

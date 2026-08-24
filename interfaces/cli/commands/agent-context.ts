@@ -1,5 +1,5 @@
 import { presentAgentContextResponse, presentAiBridgeJson } from '../presenters/ai-bridge.presenter';
-import { createAiBridgeRunner } from '../runtime/ai-bridge-runner';
+import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 
 export interface AgentContextCommandOptions {
   readonly vaultRoot?: string;
@@ -11,7 +11,7 @@ export interface AgentContextCommandOptions {
 }
 
 export async function executeAgentContextCommand(options: AgentContextCommandOptions): Promise<void> {
-  const { service, vaultRoot } = createAiBridgeRunner(options.vaultRoot);
+  const { service, vaultRoot } = createAiBridgeRuntime(options.vaultRoot);
   const response = await service.loadAgentContext({
     vaultRoot,
     query: options.query,
