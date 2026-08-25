@@ -4,6 +4,8 @@ import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { executeOrionContext, ORION_CONTEXT_TOOL } from './tools/orion-context';
 import { executeOrionSearch, ORION_SEARCH_TOOL } from './tools/orion-search';
+import { executeOrionRead, ORION_READ_TOOL } from './tools/orion-read';
+import { executeOrionRemember, ORION_REMEMBER_TOOL } from './tools/orion-remember';
 
 export const ORION_PING_TOOL = {
   description: 'Checks whether the Orion Vault MCP server is running.'
@@ -21,6 +23,8 @@ export function createOrionMcpServer(): McpServer {
   server.registerTool('orion_ping', ORION_PING_TOOL, handleOrionPing);
   server.registerTool('orion_search', ORION_SEARCH_TOOL, executeOrionSearch);
   server.registerTool('orion_context', ORION_CONTEXT_TOOL, executeOrionContext);
+  server.registerTool('orion_read', ORION_READ_TOOL, executeOrionRead);
+  server.registerTool('orion_remember', ORION_REMEMBER_TOOL, executeOrionRemember);
 
   return server;
 }

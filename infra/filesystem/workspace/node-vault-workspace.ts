@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { VaultWorkspacePort } from '../../../application/ports/vault-workspace.port';
 import { ValidationError } from '../../../domain/shared/errors/validation-error';
@@ -56,6 +57,25 @@ export class NodeVaultWorkspace implements VaultWorkspacePort {
     }
 
     await fs.writeFile(resolvedPath, content, 'utf8');
+  }
+
+  async editMarkdownFileIfUnchanged(vaultRoot: string, filePath: string, expectedContentHash: string, content: string): Promise<boolean> {
+    ensureProvidedPath(filePath, 'VAULT_FILE_PATH_EMPTY', 'File path cannot be empty');
+    ensureMarkdownPath(filePath);
+    const resolvedPath = await resolveExistingWithinRoot(vaultRoot, filePath);
+    const stat = await fs.stat(resolvedPath);
+
+    if (!stat.isFile()) {
+      throw new ValidationError('Target is not a file', 'VAULT_TARGET_NOT_FILE');
+    }
+
+    const currentContent = await fs.readFile(resolvedPath, 'utf8');
+    if (createHash('sha256').update(currentContent).digest('hex') !== expectedContentHash) {
+      return false;
+    }
+
+    await fs.writeFile(resolvedPath, content, 'utf8');
+    return true;
   }
 
   async renamePath(vaultRoot: string, sourcePath: string, destinationPath: string): Promise<void> {

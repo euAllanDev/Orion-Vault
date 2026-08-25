@@ -13,6 +13,7 @@ function readEnvValue(env: NodeJS.ProcessEnv, key: string, legacyKey?: string): 
 
 export const AppConfigSchema = z.object({
   vaultRoot: z.string().min(1).default(getDefaultVaultRoot()),
+  writeVaultRoot: z.string().min(1).optional(),
   aiProvider: z.enum(['noop', 'local']).default('noop'),
   embeddingsProvider: z.enum(['noop', 'token-hash', 'expanded-token-hash', 'external-command']).default('noop'),
   embeddingsCommand: z.string().trim().min(1).optional(),
@@ -31,6 +32,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   const config = AppConfigSchema.parse({
     vaultRoot: readEnvValue(env, 'ORION_VAULT_ROOT', 'MARIKA_VAULT_ROOT'),
+    writeVaultRoot: env.ORION_WRITE_VAULT_ROOT?.trim() ? path.resolve(env.ORION_WRITE_VAULT_ROOT.trim()) : undefined,
     aiProvider: readEnvValue(env, 'ORION_AI_PROVIDER', 'MARIKA_AI_PROVIDER'),
     embeddingsProvider: readEnvValue(env, 'ORION_EMBEDDINGS_PROVIDER', 'MARIKA_EMBEDDINGS_PROVIDER'),
     embeddingsCommand: readEnvValue(env, 'ORION_EMBEDDINGS_COMMAND', 'MARIKA_EMBEDDINGS_COMMAND'),

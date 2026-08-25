@@ -4,6 +4,7 @@ import type {
   AiBridgeSearchDataDto,
   AiBridgeSearchRequestDto
 } from '../../../application/dto/ai-bridge.dto';
+import { searchAcrossVaults } from '../orion-multi-vault';
 import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 
 export const ORION_SEARCH_INPUT_SCHEMA = {
@@ -62,7 +63,14 @@ export async function handleOrionSearch(service: OrionSearchService, vaultRoot: 
 export async function executeOrionSearch(input: OrionSearchInput): Promise<CallToolResult> {
   try {
     const runtime = createAiBridgeRuntime();
-    return await handleOrionSearch(runtime.service, runtime.vaultRoot, input);
+    const response = await searchAcrossVaults(runtime.service, runtime.vaultRoots, {
+      query: input.query.trim(),
+      tags: input.tags,
+      scopePath: input.scopePath
+    });
+    return response.status === 'error' || response.status === 'conflict'
+      ? { content: [{ type: 'text', text: formatSearchError(response) }], isError: true }
+      : { content: [{ type: 'text', text: formatSearchMatches(response.data) }] };
   } catch {
     return {
       content: [{ type: 'text', text: 'Unable to search Orion Vault.' }],

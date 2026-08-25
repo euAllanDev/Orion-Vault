@@ -22,5 +22,16 @@ export default defineConfig([
     clean: false,
     dts: false,
     outDir: 'dist/desktop'
+  },
+  {
+    entry: ['interfaces/mcp/server.ts'],
+    format: ['esm'],
+    platform: 'node',
+    target: 'node20',
+    sourcemap: true,
+    clean: false,
+    dts: false,
+    outExtension: () => ({ js: '.mjs' }),
+    outDir: 'dist/mcp'
   }
 ]);

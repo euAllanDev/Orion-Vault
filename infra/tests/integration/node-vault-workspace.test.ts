@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { NodeVaultWorkspace } from '../../filesystem/workspace/node-vault-workspace';
 
@@ -53,6 +54,26 @@ describe('NodeVaultWorkspace', () => {
       await expect(workspace.createMarkdownFile(root, 'notes/a.md', '# A')).rejects.toThrow();
       await expect(workspace.editMarkdownFile(root, 'notes/missing.md', '# Missing')).rejects.toThrow();
       await expect(workspace.movePath(root, 'notes/a.md', 'notes/a.md')).rejects.toThrow();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not edit a Markdown file when its expected base hash changed', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'orion-workspace-'));
+    const workspace = new NodeVaultWorkspace();
+
+    try {
+      await workspace.createMarkdownFile(root, 'note.md', '# Note\n\nOriginal');
+      const changed = await workspace.editMarkdownFileIfUnchanged(
+        root,
+        'note.md',
+        createHash('sha256').update('# Note\n\nDifferent').digest('hex'),
+        '# Note\n\nReplacement'
+      );
+
+      expect(changed).toBe(false);
+      await expect(fs.readFile(path.join(root, 'note.md'), 'utf8')).resolves.toBe('# Note\n\nOriginal');
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

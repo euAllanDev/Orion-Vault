@@ -14,6 +14,7 @@ Lista de changes OpenSpec registradas no projeto.
 - `overview-dashboard` - draft
 - `vault-scoped-ai-terminal` - draft
 - `agent-compatible-dev-mode` - draft
+- `orion-remember` - draft
 
 ## Modules
 - `domain/notes`
@@ -70,3 +71,4 @@ Lista de changes OpenSpec registradas no projeto.
 - `openspec/changes/vault-scoped-ai-terminal/specs`
 - `docs/runbooks`
 - `scripts`
+- `openspec/changes/orion-remember/specs`

@@ -15,6 +15,10 @@ export class VaultWorkspaceService {
     return this.workspace.editMarkdownFile(vaultRoot, filePath, content);
   }
 
+  editMarkdownFileIfUnchanged(vaultRoot: string, filePath: string, expectedContentHash: string, content: string): Promise<boolean> {
+    return this.workspace.editMarkdownFileIfUnchanged(vaultRoot, filePath, expectedContentHash, content);
+  }
+
   renamePath(vaultRoot: string, sourcePath: string, destinationPath: string): Promise<void> {
     return this.workspace.renamePath(vaultRoot, sourcePath, destinationPath);
   }

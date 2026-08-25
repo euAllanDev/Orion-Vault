@@ -4,6 +4,7 @@ import type {
   AiBridgeAgentContextRequestDto,
   AiBridgeResponseDto
 } from '../../../application/dto/ai-bridge.dto';
+import { contextAcrossVaults } from '../orion-multi-vault';
 import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 
 export const ORION_CONTEXT_INPUT_SCHEMA = {
@@ -64,7 +65,10 @@ export async function handleOrionContext(service: OrionContextService, vaultRoot
 export async function executeOrionContext(input: OrionContextInput): Promise<CallToolResult> {
   try {
     const runtime = createAiBridgeRuntime();
-    return await handleOrionContext(runtime.service, runtime.vaultRoot, input);
+    const response = await contextAcrossVaults(runtime.service, runtime.vaultRoots, input);
+    return response.status === 'error' || response.status === 'conflict'
+      ? { content: [{ type: 'text', text: formatContextError(response) }], isError: true }
+      : { content: [{ type: 'text', text: formatAgentContext(response.data) }] };
   } catch {
     return {
       content: [{ type: 'text', text: 'Unable to load Orion Vault context.' }],

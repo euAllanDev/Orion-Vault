@@ -44,4 +44,36 @@ describe('NodeNoteReader', () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it('reads one markdown note by a safe relative path', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'orion-notes-'));
+
+    try {
+      await fs.mkdir(path.join(root, 'Financas'));
+      await fs.writeFile(path.join(root, 'Financas', 'orcamento.md'), '# Orcamento\n\nConteudo');
+
+      const note = await new NodeNoteReader().getNote(root, 'Financas\\orcamento.md');
+
+      expect(note).toMatchObject({
+        relativePath: 'Financas/orcamento.md',
+        title: 'Orcamento',
+        content: '# Orcamento\n\nConteudo'
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects traversal and non-Markdown paths', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'orion-notes-'));
+    const reader = new NodeNoteReader();
+
+    try {
+      await expect(reader.getNote(root, '../secret.md')).resolves.toBeNull();
+      await expect(reader.getNote(root, '..\\secret.md')).resolves.toBeNull();
+      await expect(reader.getNote(root, 'config.json')).resolves.toBeNull();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });

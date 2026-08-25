@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import path from 'node:path';
 import { loadAppConfig } from '../../../infra/config/app-config';
 
 describe('loadAppConfig', () => {
@@ -38,5 +39,10 @@ describe('loadAppConfig', () => {
       embeddingsProvider: 'external-command',
       embeddingsCommand: 'node local-embedder.js'
     });
+  });
+
+  it('normalizes configured write target without requiring one for read-only operation', () => {
+    expect(loadAppConfig({} as NodeJS.ProcessEnv).writeVaultRoot).toBeUndefined();
+    expect(loadAppConfig({ ORION_WRITE_VAULT_ROOT: '.\\write-vault' } as NodeJS.ProcessEnv).writeVaultRoot).toBe(path.resolve('.\\write-vault'));
   });
 });

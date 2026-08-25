@@ -19,6 +19,9 @@ describe('OrganizeNotesUseCase', () => {
             tags: []
           }
         ];
+      },
+      async getNote() {
+        return null;
       }
     };
 

@@ -8,11 +8,35 @@ import { createEmbeddingProvider } from '../../infra/ai/local-models/embedding-p
 import { createSemanticNoteRelationsService } from '../../application/services/semantic-note-relations.service';
 import { VaultVerificationService } from '../../application/services/vault-verification.service';
 import { AiBridgeService } from '../../application/services/ai-bridge.service';
+import type { NoteSourcePort } from '../../application/ports/note-source.port';
+import { RememberKnowledgeUseCase } from '../../application/use-cases/remember-knowledge/remember-knowledge.use-case';
+import { NodeVaultWorkspace } from '../../infra/filesystem/workspace/node-vault-workspace';
+
+export const ORION_VAULT_ROOTS_SEPARATOR = ';';
+
+export function resolveOrionVaultRoots(env: NodeJS.ProcessEnv, fallbackRoot: string): readonly string[] {
+  const configuredRoots = (env.ORION_VAULT_ROOTS ?? '')
+    .split(ORION_VAULT_ROOTS_SEPARATOR)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const roots = configuredRoots.length > 0 ? configuredRoots : [fallbackRoot];
+  const seen = new Set<string>();
+
+  return roots.filter((root) => {
+    const key = root.replace(/\\/g, '/').toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 export function createAiBridgeRuntime(vaultRootOverride?: string): {
   readonly config: ReturnType<typeof loadAppConfig>;
   readonly service: AiBridgeService;
+  readonly noteSource: NoteSourcePort;
   readonly vaultRoot: string;
+  readonly vaultRoots: readonly string[];
+  readonly rememberService: RememberKnowledgeUseCase;
 } {
   const config = loadAppConfig();
   const aiProvider = config.aiProvider === 'local'
@@ -21,11 +45,23 @@ export function createAiBridgeRuntime(vaultRootOverride?: string): {
   const embeddingProvider = createEmbeddingProvider(config);
   const vaultRoot = vaultRootOverride?.trim() || config.vaultRoot;
 
+  const noteSource = new NodeNoteReader();
+
+  const vaultRoots = vaultRootOverride?.trim() ? [vaultRoot] : resolveOrionVaultRoots(process.env, vaultRoot);
+
   return {
     config,
     vaultRoot,
+    vaultRoots,
+    noteSource,
+    rememberService: new RememberKnowledgeUseCase({
+      noteSource,
+      workspace: new NodeVaultWorkspace(),
+      writeVaultRoot: config.writeVaultRoot,
+      readVaultRoots: vaultRoots
+    }),
     service: new AiBridgeService({
-      noteSource: new NodeNoteReader(),
+      noteSource,
       aiProvider,
       embeddingProvider,
       semanticExcludePaths: config.semanticExcludePaths,

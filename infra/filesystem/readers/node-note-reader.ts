@@ -122,6 +122,28 @@ function extractTags(content: string): readonly string[] {
   return [...new Set([...extractFrontmatterTags(content), ...extractInlineTags(content)])];
 }
 
+function normalizeRelativeMarkdownPath(relativePath: string): string | null {
+  const value = relativePath.trim();
+  const normalizedSeparators = value.replace(/\\/g, '/');
+
+  if (
+    !value ||
+    normalizedSeparators.startsWith('/') ||
+    /^[A-Za-z]:/.test(normalizedSeparators) ||
+    normalizedSeparators.split('/').some((segment) => segment === '.' || segment === '..')
+  ) {
+    return null;
+  }
+
+  const normalized = path.posix.normalize(normalizedSeparators);
+  return normalized.toLowerCase().endsWith('.md') ? normalized : null;
+}
+
+function isWithin(rootPath: string, candidatePath: string): boolean {
+  const relative = path.relative(rootPath, candidatePath);
+  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
 export class NodeNoteReader implements NoteSourcePort {
   async listNotes(vaultRoot: string) {
     const absolutePaths = await walkMarkdownFiles(vaultRoot);
@@ -139,5 +161,40 @@ export class NodeNoteReader implements NoteSourcePort {
         };
       })
     );
+  }
+
+  async getNote(vaultRoot: string, relativePath: string) {
+    const normalizedRelativePath = normalizeRelativeMarkdownPath(relativePath);
+    if (!normalizedRelativePath) {
+      return null;
+    }
+
+    const rootPath = await fs.realpath(vaultRoot);
+    const candidatePath = path.resolve(rootPath, ...normalizedRelativePath.split('/'));
+    if (!isWithin(rootPath, candidatePath)) {
+      return null;
+    }
+
+    try {
+      const resolvedPath = await fs.realpath(candidatePath);
+      if (!isWithin(rootPath, resolvedPath) || !(await fs.stat(resolvedPath)).isFile()) {
+        return null;
+      }
+
+      const content = await fs.readFile(resolvedPath, 'utf8');
+      return {
+        id: resolvedPath,
+        absolutePath: resolvedPath,
+        relativePath: normalizedRelativePath,
+        content,
+        title: extractTitle(content),
+        tags: extractTags(content)
+      };
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return null;
+      }
+      throw error;
+    }
   }
 }
