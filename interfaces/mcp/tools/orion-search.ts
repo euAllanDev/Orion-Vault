@@ -97,9 +97,27 @@ function formatSearchMatches(data: AiBridgeSearchDataDto): string {
     if (match.matchedFields.length > 0) {
       lines.push(`Matched fields: ${match.matchedFields.join(', ')}`);
     }
+
+    const snippets = new Set<string>();
+    if (match.snippet) {
+      lines.push(`Snippet: ${match.snippet}`);
+      snippets.add(normalizeSnippet(match.snippet));
+    }
+
+    const chunk = data.chunks.find((candidate) => candidate.path === match.path && !snippets.has(normalizeSnippet(candidate.snippet)));
+    if (chunk) {
+      if (chunk.heading) {
+        lines.push(`Relevant section: ${chunk.heading}`);
+      }
+      lines.push(`Snippet: ${chunk.snippet}`);
+    }
   }
 
   return lines.join('\n');
+}
+
+function normalizeSnippet(snippet: string): string {
+  return snippet.replace(/\s+/g, ' ').trim();
 }
 
 function formatSearchError(response: AiBridgeResponseDto<AiBridgeSearchDataDto>): string {

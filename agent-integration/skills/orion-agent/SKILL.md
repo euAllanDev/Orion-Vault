@@ -6,7 +6,7 @@ metadata:
   mcp-tools: orion_search, orion_read, orion_context, orion_remember, orion_ping
 ---
 
-# Orion Agent Skill v0.3
+# Orion Agent Skill v0.5 - Deep Retrieval
 
 ## Purpose
 
@@ -47,11 +47,13 @@ Before first authorized Orion read, give one short natural notice, such as `Vou 
 
 ## Operating principle
 
-After user authorizes reading, freely choose needed read tools. After user separately authorizes writing, freely choose necessary reads plus one semantic remember call for referred knowledge. Use minimum retrieval sufficient for good answer. Do not follow fixed tool sequence when another approach is more efficient.
+After user authorizes reading for current task, preserve deep, evidence-based retrieval while using fewest model/tool decision rounds needed. Do not trade away relevant knowledge merely to reduce calls; instead, avoid reprocessing knowledge already returned by another tool.
 
-Choose based on user objective, relevance, result size, note size, and information already obtained. You may combine tools, make another focused search when information is missing, or stop when sufficient information is available.
+Each new search, context, or read must have concrete evidence it can add relevant information: user-provided information, a result term, heading, snippet, path, backlink, relation, supporting chunk, or a directly necessary unanswered gap. Generic topical association alone is not enough. Do not impose artificial limits on searches, reads, paths, or notes. Tool budgets remain unchanged. Do not follow a fixed tool sequence when another approach is more useful.
 
-Do not load the whole Vault, read results merely because they appeared, make repeated calls without reason, use `orion_context` when a simple read resolves the request, use `orion_read` when search already answers it, or keep searching after sufficient information is found.
+Avoid calls that are speculative, clearly redundant, unrelated to goal, or unable to add relevant information. Do not load the whole Vault or read notes merely because they appeared. Stop when primary relevant notes were read, new retrieval would only repeat known context, available knowledge is exhausted, or evidence is sufficient for strong answer. Do not stop early merely to save calls.
+
+Do not infer that information is absent from empty notes, sparse results, or a focused search alone. Report that retrieved notes lacked the information, unless retrieval guarantees exhaustive coverage.
 
 ## Available tools
 
@@ -67,27 +69,41 @@ Current Orion MCP tools:
 
 ## Tool roles
 
-`orion_search` discovers knowledge and locates notes. Use it when topic or path is unknown, or when a list of matching notes is itself the answer. A discovery-only request can stop after search.
+`orion_search` discovers knowledge, locates notes, and progressively explores evidence-backed aspects of a topic. Use it when topic or path is unknown, when results reveal a useful related concept, when a concrete gap requires it, or when a list of matching notes is itself the answer. A discovery-only request can stop after search.
 
-`orion_read` reads a specific note. Use it when the user asks for a known note, a path is available, or note content is required. Pass only a relative path returned by Orion; never pass a Vault root or absolute path. A known resolvable path may be read directly; otherwise, make a focused search first.
+`orion_read` reads a specific note and is source of truth for analysis and synthesis. Use it when the user asks for a known note, a path is available, or content is needed to support a conclusion. Do not rely only on titles, paths, or snippets when question asks for analysis, synthesis, current state, or broad understanding; read genuinely relevant notes. Before reading outside the main domain or scope, require reasonable evidence of relevance, such as a concrete snippet, explicit reference, relation, or request need. Pass only a relative path returned by Orion; never pass a Vault root or absolute path. A known resolvable path may be read directly; otherwise, make a focused search first.
 
-`orion_context` assembles persistent context useful for work. Use it for continuing a project, understanding related decisions, or preparing task context. It may be the first tool when the user's request and topic make it the efficient choice, such as `Use o contexto do Orion sobre Lauren para continuarmos.`
+`orion_context` assembles persistent context useful for continuing work. Prefer it first for an explicit project continuation, history, person, prior decisions, or relationships across notes. Give it one small, semantically clear focus, not a bag of keywords. For a broad inventory or topic summary, do not call it automatically: use it only when search and reads lack needed structure or cross-note relationships. Treat sufficient returned chunks as answer evidence; do not read a full source note unless a concrete gap remains.
 
 `orion_remember` persists one explicit, semantic knowledge assertion. Send only `{ content, subject?, project?, kind? }`. Never send paths, Vault roots, operation, overwrite, filename, directory, or absolute path. `subject`, `project`, and `kind` are optional hints; use only when clear from context. Do not invent hints or treat `kind` as fixed taxonomy. Orion decides internal destination and operation.
 
-These roles are conceptual, not a mandatory sequence. Search may lead to reads, context may be used directly, and a single tool may be enough.
+These roles are conceptual, not a mandatory sequence. Choose direct read for a known path; search for discovery; context for continuation and cross-note structure. A single tool may be enough for simple requests.
+
+## Orchestration by intent
+
+For a broad inventory or summary, start with one focused `orion_search`, select clearly relevant paths from its results, read needed notes in one tool-call batch, then synthesize. Do not call `orion_context` merely to repeat search paths or snippets. Expand only when the read evidence exposes a directly necessary gap or relationship.
+
+For continuation of a project or work context, start with `orion_context`. Follow with focused search or reads only when its chunks leave a concrete gap.
+
+For a specific known path, call `orion_read` directly. For a simple discovery question, `orion_search` may be sufficient.
+
+When a search returns several clearly relevant notes for a broad request, issue their reads together in one logical round. Do not pause to reconsider each path independently. If a full note was read, do not search or contextualize that same information again without a concrete reason.
 
 ## Search approach
 
-Use small, focused queries. Prefer one representative concept, such as `financas`, `orcamento`, `autenticacao`, or `jwt`, rather than a string of synonyms or categories. Do not assume `OR`, `AND`, or `NOT` have special meaning.
+Use small, focused queries for both `orion_search` and `orion_context`. Prefer one representative concept, such as `financas`, `orcamento`, `autenticacao`, or `jwt`, rather than a string of synonyms or categories. Do not assume `OR`, `AND`, or `NOT` have special meaning.
 
-Refine only when useful. A zero-result query does not prove relevant knowledge is absent; try a focused alternative when justified. Do not turn progressive search into a ritual or generate giant synonym queries. If reasonable focused attempts find nothing, say that the Orion search found no relevant results, not that no such notes exist.
+Expand progressively only from concrete evidence. A term found in a note, heading, snippet, path, backlink, relation, supporting chunk, or user request can justify a focused next query. A direct gap required to answer also can justify one. For example, a finance inquiry can start with `financas`, then investigate `fatura` or `cartao` only if notes expose that topic; it can investigate `renda` when expense-only notes leave income directly necessary to financial analysis. Do not brainstorm generic related terms, send giant synonym queries, or turn progressive search into ritual.
 
-Use paths and scopes returned by Orion to focus any later retrieval instead of guessing unrelated terms.
+Zero results do not prove knowledge is absent. Before concluding meaningful absence, try justified focused alternatives, use context when useful, and inspect relevant paths. If reasonable exploration still finds nothing, say Orion search found no relevant results, not that no such notes exist.
+
+Use paths and scopes returned by Orion to focus later retrieval. A strong relevant scope is investigation core: understand its relevant notes first. Scope is not a boundary; expand outside it only when notes point outward, a search returns clearly relevant material, or a directly necessary gap cannot be resolved inside scope.
 
 ## Broad requests
 
-For broad requests, retrieve and synthesize information clearly relevant to the stated goal. Decide what to read or contextualize from relevance, amount of material, note size, and information already obtained; do not use numerical result thresholds.
+For broad requests, build a consolidated view instead of stopping at first search or returning paths alone. Search central topic, read primary relevant notes together, follow evidence-backed relationships, then investigate directly necessary gaps with focused derived searches and reads. Use context only when it adds structure, continuity, or relationships not already available from search and reads. `Tudo que achar` means deeply explore knowledge Orion actually connects to topic, not every remotely associated concept. Synthesize supported findings, relationships, decisions, pending work, and important gaps.
+
+Depth adapts to request. For a simple listing such as `Quais notas tenho sobre financas?`, search may be enough. For analysis, current-state, or `tudo que encontrar` requests, retrieve, read, contextualize, and cross-reference enough relevant material to produce grounded synthesis. Do not use numerical result thresholds.
 
 Do not claim exhaustive Vault coverage unless a tool guarantees it. State results as relevant information found in Orion.
 
@@ -115,4 +131,5 @@ For `WRITE_TARGET_NOT_CONFIGURED`, say: `Consigo consultar o Orion, mas o Vault 
 - Read authorization and agent selection never authorize writing.
 - Uncertain authorization: do not access or write Orion.
 - Before first authorized read or write: announce it briefly.
-- After authorization: choose only necessary tools; no fixed workflow.
+- After read authorization: preserve deep retrieval with fewest necessary decision rounds; route by intent, batch clearly relevant reads, and use context only when it adds information not already retrieved.
+- Stop when further retrieval is clearly repetitive, irrelevant, or no longer adds useful information.

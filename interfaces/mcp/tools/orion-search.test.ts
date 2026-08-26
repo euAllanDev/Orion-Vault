@@ -53,7 +53,7 @@ describe('orion_search', () => {
     });
   });
 
-  it('returns match titles and paths for an agent', async () => {
+  it('returns match metadata and its snippet for an agent', async () => {
     const response = createSearchResponse({
       summary: 'Found 1 matching note(s).',
       status: 'success',
@@ -66,7 +66,8 @@ describe('orion_search', () => {
           path: 'projects/lauren/architecture.md',
           tags: ['design'],
           score: 0.91,
-          matchedFields: ['title', 'content']
+          matchedFields: ['title', 'content'],
+          snippet: 'System design for Lauren.'
         }],
         chunks: [],
         retrievalMode: 'lexical-only',
@@ -79,9 +80,65 @@ describe('orion_search', () => {
     expect(result).toEqual({
       content: [{
         type: 'text',
-        text: 'Found 1 matching note(s).\n\n1. Lauren Architecture\nPath: projects/lauren/architecture.md\nScore: 0.91\nTags: design\nMatched fields: title, content'
+        text: 'Found 1 matching note(s).\n\n1. Lauren Architecture\nPath: projects/lauren/architecture.md\nScore: 0.91\nTags: design\nMatched fields: title, content\nSnippet: System design for Lauren.'
       }]
     });
+  });
+
+  it('omits snippet when neither match nor related chunk has one', async () => {
+    const response = createSearchResponse({
+      status: 'success',
+      data: {
+        vaultRoot: '/vault', tags: [],
+        matches: [{ kind: 'note', path: 'Notes/Plain.md', tags: [], score: 0.5, matchedFields: [] }],
+        chunks: [], retrievalMode: 'lexical-only', counts: { notes: 1, matches: 1, chunks: 0 }
+      }
+    });
+
+    const result = await handleOrionSearch({ search: vi.fn().mockResolvedValue(response) }, '/vault', { query: 'plain' });
+
+    expect(result.content[0]).toEqual({ type: 'text', text: 'Found 1 matching note(s).\n\n1. Notes/Plain.md\nPath: Notes/Plain.md\nScore: 0.5' });
+  });
+
+  it('adds one distinct related chunk snippet with its heading', async () => {
+    const response = createSearchResponse({
+      status: 'success',
+      data: {
+        vaultRoot: '/vault', tags: [],
+        matches: [{ kind: 'note', title: 'Budget', path: 'Finance/Budget.md', tags: [], score: 0.8, matchedFields: [] }],
+        chunks: [{ chunkId: 'budget-plan', path: 'Finance/Budget.md', heading: 'Planning', tags: [], score: 0.9, snippet: 'Track income and expenses monthly.', text: 'Full chunk text must not be exposed.', tokenCount: 8, matchedTerms: [], reasons: [] }],
+        retrievalMode: 'hybrid', counts: { notes: 1, matches: 1, chunks: 1 }
+      }
+    });
+
+    const result = await handleOrionSearch({ search: vi.fn().mockResolvedValue(response) }, '/vault', { query: 'budget' });
+
+    expect(result.content[0]).toEqual({ type: 'text', text: 'Found 1 matching note(s).\n\n1. Budget\nPath: Finance/Budget.md\nScore: 0.8\nRelevant section: Planning\nSnippet: Track income and expenses monthly.' });
+  });
+
+  it('does not duplicate a matching chunk snippet and remains compact for multiple results', async () => {
+    const response = createSearchResponse({
+      status: 'success',
+      data: {
+        vaultRoot: '/vault', tags: [],
+        matches: [
+          { kind: 'note', title: 'Goals', path: 'Finance/Goals.md', tags: [], score: 0.9, matchedFields: [], snippet: 'Set financial goals.' },
+          { kind: 'note', title: 'Budget', path: 'Finance/Budget.md', tags: [], score: 0.8, matchedFields: [] }
+        ],
+        chunks: [
+          { chunkId: 'goals-1', path: 'Finance/Goals.md', heading: 'Goals', tags: [], score: 0.9, snippet: ' Set financial goals. ', text: 'Full text.', tokenCount: 3, matchedTerms: [], reasons: [] },
+          { chunkId: 'budget-1', path: 'Finance/Budget.md', tags: [], score: 0.8, snippet: 'Track monthly spending.', text: 'Full text.', tokenCount: 3, matchedTerms: [], reasons: [] }
+        ],
+        retrievalMode: 'hybrid', counts: { notes: 2, matches: 2, chunks: 2 }
+      }
+    });
+
+    const result = await handleOrionSearch({ search: vi.fn().mockResolvedValue(response) }, '/vault', { query: 'finance' });
+    const text = result.content[0]?.type === 'text' ? result.content[0].text : '';
+
+    expect(text).toBe('Found 2 matching note(s).\n\n1. Goals\nPath: Finance/Goals.md\nScore: 0.9\nSnippet: Set financial goals.\n\n2. Budget\nPath: Finance/Budget.md\nScore: 0.8\nSnippet: Track monthly spending.');
+    expect(text).not.toContain('Full text.');
+    expect(text.match(/Set financial goals\./g)).toHaveLength(1);
   });
 
   it('returns a valid empty response when no notes match', async () => {

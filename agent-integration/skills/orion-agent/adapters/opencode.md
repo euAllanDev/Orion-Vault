@@ -2,7 +2,7 @@
 
 ## Role
 
-This adapter exposes `Orion Agent Skill` to OpenCode. `../SKILL.md` is source of truth for Vault access, authorization scope, transparency, tool selection, context economy, and fallback.
+This adapter exposes `Orion Agent Skill` to OpenCode. `../SKILL.md` is source of truth for Vault access, authorization scope, transparency, deep retrieval, tool selection, and fallback.
 
 ## Registration
 
@@ -15,4 +15,4 @@ Register primary agent file at `~/.config/opencode/agents/orion.md`. Its prompt 
 - `mode: primary` exposes `Orion` alongside Build, Plan, and General.
 - Selecting `Orion` only selects agent behavior. It never authorizes Vault retrieval or writing.
 - Global `mcp.orion` provides technical access to `orion_ping`, `orion_search`, `orion_read`, `orion_context`, and `orion_remember`.
-- Agent behavior enforces `SKILL.md`: explicit read intent permits retrieval; separate current explicit write intent permits one scoped `orion_remember` call. First authorized read or write is announced. No fixed tool sequence applies.
+- Agent behavior enforces `SKILL.md`: explicit read intent permits deep, evidence-guided retrieval with intent routing, batched relevant reads, and no redundant context; separate current explicit write intent permits one scoped `orion_remember` call. First authorized read or write is announced. No fixed tool sequence or artificial retrieval cap applies.
