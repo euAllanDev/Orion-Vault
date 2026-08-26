@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { NoteSnapshotDto } from '../../dto/note-snapshot.dto';
 import type { NoteSourcePort } from '../../ports/note-source.port';
 import type { VaultWorkspacePort } from '../../ports/vault-workspace.port';
-import { RememberKnowledgeUseCase } from '../../use-cases/remember-knowledge/remember-knowledge.use-case';
+import { classifyRememberCandidate, RememberKnowledgeUseCase } from '../../use-cases/remember-knowledge/remember-knowledge.use-case';
 
 const writeRoot = 'C:/vault-write';
 const readRoot = 'C:/vault-read';
@@ -90,11 +90,152 @@ describe('RememberKnowledgeUseCase', () => {
     expect(writer.editMarkdownFileIfUnchanged).not.toHaveBeenCalled();
   });
 
-  it('treats similarity without an unambiguous destination as conflict', async () => {
+  it('creates when a related note is not a canonical destination', async () => {
     const { service, writer } = useCase([note('database.md', '# Database\n\nLauren uses PostgreSQL for reporting.\n', 'Database')]);
     const result = await service.execute({ content: 'Lauren uses PostgreSQL for production.' });
 
+    expect(result).toMatchObject({ action: 'created' });
+    expect(writer.editMarkdownFileIfUnchanged).not.toHaveBeenCalled();
+  });
+
+  it('classifies discovery candidates without treating them as write targets', () => {
+    expect(classifyRememberCandidate(
+      note('remember-a.md', '# Remembered\n\nLauren uses PostgreSQL.\n', 'Remembered knowledge'),
+      { content: 'Lauren uses PostgreSQL.' }
+    )).toBe('equivalent');
+    expect(classifyRememberCandidate(
+      note('Lauren.md', '# Lauren\n\nLauren works on analytics.\n', 'Lauren'),
+      { content: 'Lauren prefers TypeScript.', subject: 'Lauren' }
+    )).toBe('canonical');
+    expect(classifyRememberCandidate(
+      note('Benchmark/banco-de-dados.md', '# Banco de dados\n\nProjeto Benchmark usa PostgreSQL.\n', 'Banco de dados'),
+      { content: 'Projeto Benchmark usa SQLite.', project: 'Benchmark', subject: 'Banco de dados' }
+    )).toBe('conflicting');
+    expect(classifyRememberCandidate(
+      note('notes/ideas/lista-ideias.md', '# Lista de ideias\n\nProjetos pessoais futuros e ideias.\n', 'Lista de ideias'),
+      { content: 'Projetos pessoais terao revisao mensal.', subject: 'Projetos', kind: 'decision' }
+    )).toBe('related');
+    expect(classifyRememberCandidate(
+      note('notes/archive.md', '# Arquivo\n\nSem assunto relacionado.\n', 'Arquivo'),
+      { content: 'Projetos pessoais terao revisao mensal.', subject: 'Projetos', kind: 'decision' }
+    )).toBe('ignored');
+  });
+
+  it('creates benchmark knowledge despite vaguely related Agent Orion notes', async () => {
+    const { service, writer } = useCase([
+      note('orion-agent.md', '# Agent Orion\n\nBenchmark de integracao e memoria.\n', 'Agent Orion'),
+      note('benchmark-notes.md', '# Benchmark\n\nNotas sobre agentes.\n', 'Benchmark')
+    ]);
+    const result = await service.execute({
+      content: 'Estamos realizando um benchmark do Agent Orion v0.3.',
+      subject: 'Benchmark Agent Orion v0.3',
+      kind: 'benchmark'
+    });
+
+    expect(result).toMatchObject({ action: 'created' });
+    expect(writer.editMarkdownFileIfUnchanged).not.toHaveBeenCalled();
+  });
+
+  it('returns noop when the benchmark assertion is repeated after creation', async () => {
+    const input = {
+      content: 'Estamos realizando um benchmark do Agent Orion v0.3.',
+      subject: 'Benchmark Agent Orion v0.3',
+      kind: 'benchmark'
+    };
+    const first = useCase([]);
+    const created = await first.service.execute(input);
+    if (created.action !== 'created') throw new Error('expected created result');
+
+    const second = useCase([note(created.note, `# Remembered knowledge\n\n${input.content}\n`)]);
+    const result = await second.service.execute(input);
+
+    expect(result).toMatchObject({ action: 'noop', note: created.note });
+    expect(second.writer.createMarkdownFile).not.toHaveBeenCalled();
+  });
+
+  it('creates a project database decision when only a generic project checklist exists', async () => {
+    const { service, writer } = useCase([
+      note('notas/projetos/checklist-projeto.md', '# Checklist de projeto\n\nPlanejar banco e tarefas.\n', 'Checklist de projeto')
+    ]);
+    const result = await service.execute({
+      content: 'Para o projeto Benchmark, vamos usar SQLite.',
+      project: 'Benchmark',
+      subject: 'Banco de dados',
+      kind: 'decision'
+    });
+
+    expect(result).toMatchObject({ action: 'created' });
+    expect(writer.editMarkdownFileIfUnchanged).not.toHaveBeenCalled();
+  });
+
+  it('creates a project review decision when an ideas note is merely related', async () => {
+    const { service, writer } = useCase([
+      note('notas/ideias/lista-ideias.md', '# Lista de ideias\n\nProjetos pessoais futuros.\n', 'Lista de ideias')
+    ]);
+    const result = await service.execute({ content: 'Projetos pessoais terao revisao mensal.', subject: 'Projetos', kind: 'decision' });
+
+    expect(result).toMatchObject({ action: 'created' });
+    expect(writer.editMarkdownFileIfUnchanged).not.toHaveBeenCalled();
+  });
+
+  it('creates a new database decision when retrieved notes are not canonical targets', async () => {
+    const { service, writer } = useCase([
+      note('tecnologia/banco-de-dados-ficticio.md', '# Banco de dados ficticio\n\nEntidades e colecoes.\n', 'Banco de dados ficticio'),
+      note('notas-tecnologia.md', '# Notas sobre Tecnologia\n\nBanco de dados armazena informacoes.\n', 'Notas sobre Tecnologia')
+    ]);
+    const result = await service.execute({ content: 'Agora vamos usar PostgreSQL.', subject: 'Banco de dados', kind: 'decision' });
+
+    expect(result).toMatchObject({ action: 'created' });
+    expect(writer.editMarkdownFileIfUnchanged).not.toHaveBeenCalled();
+  });
+
+  it('appends complementary knowledge to one canonical project database note', async () => {
+    const existing = note(
+      'Benchmark/banco-de-dados.md',
+      '# Banco de dados\n\nProjeto Benchmark usa PostgreSQL.\n',
+      'Banco de dados'
+    );
+    const { service, writer } = useCase([existing]);
+    const result = await service.execute({
+      content: 'Projeto Benchmark tem backup diario do banco de dados.',
+      project: 'Benchmark',
+      subject: 'Banco de dados',
+      kind: 'decision'
+    });
+
+    expect(result).toMatchObject({ action: 'appended', note: 'Benchmark/banco-de-dados.md' });
+    expect(writer.editMarkdownFileIfUnchanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('conflicts when two project database notes are canonical', async () => {
+    const { service, writer } = useCase([
+      note('Benchmark/banco-de-dados.md', '# Banco de dados\n\nProjeto Benchmark usa PostgreSQL.\n', 'Banco de dados'),
+      note('Benchmark/arquitetura/banco-de-dados.md', '# Banco de dados\n\nProjeto Benchmark usa PostgreSQL.\n', 'Banco de dados')
+    ]);
+    const result = await service.execute({
+      content: 'Projeto Benchmark tem backup diario do banco de dados.',
+      project: 'Benchmark',
+      subject: 'Banco de dados',
+      kind: 'decision'
+    });
+
+    expect(result).toMatchObject({ action: 'conflict', reason: 'multiple_strong_candidates' });
+    expect(writer.createMarkdownFile).not.toHaveBeenCalled();
+  });
+
+  it('conflicts rather than creating a contradictory canonical database decision', async () => {
+    const { service, writer } = useCase([
+      note('Benchmark/banco-de-dados.md', '# Banco de dados\n\nProjeto Benchmark usa PostgreSQL.\n', 'Banco de dados')
+    ]);
+    const result = await service.execute({
+      content: 'Projeto Benchmark usa SQLite.',
+      project: 'Benchmark',
+      subject: 'Banco de dados',
+      kind: 'decision'
+    });
+
     expect(result).toMatchObject({ action: 'conflict', reason: 'candidate_requires_clarification' });
+    expect(writer.createMarkdownFile).not.toHaveBeenCalled();
     expect(writer.editMarkdownFileIfUnchanged).not.toHaveBeenCalled();
   });
 

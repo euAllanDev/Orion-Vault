@@ -27,6 +27,8 @@ interface NormalizedRememberInput {
   readonly fingerprint: string;
 }
 
+export type RememberCandidateClassification = 'equivalent' | 'canonical' | 'related' | 'conflicting' | 'ignored';
+
 export class RememberKnowledgeUseCase {
   constructor(private readonly dependencies: RememberKnowledgeDependencies) {}
 
@@ -34,22 +36,29 @@ export class RememberKnowledgeUseCase {
     const remember = normalizeInput(input);
     const writeVaultRoot = this.resolveWriteVaultRoot();
     const notes = (await this.dependencies.noteSource.listNotes(writeVaultRoot)).filter((note) => isSafeRelativeMarkdownPath(note.relativePath));
-    const equivalent = notes.find((note) => containsEquivalentAssertion(note.content, remember.content));
+    const classifications = notes.map((note) => ({ note, classification: classifyRememberCandidate(note, remember) }));
+    const equivalent = classifications.find(({ classification }) => classification === 'equivalent')?.note;
 
     if (equivalent) {
       return success('noop', equivalent.relativePath, 'Equivalent knowledge already exists.');
     }
 
-    const candidates = notes.filter((note) => isCandidate(note, remember));
-    if (candidates.length > 1) {
-      return conflict('multiple_strong_candidates', candidates);
+    const conflictingCandidates = classifications
+      .filter(({ classification }) => classification === 'conflicting')
+      .map(({ note }) => note);
+    if (conflictingCandidates.length) {
+      return conflict('candidate_requires_clarification', conflictingCandidates);
     }
 
-    const candidate = candidates[0];
+    const canonicalCandidates = classifications
+      .filter(({ classification }) => classification === 'canonical')
+      .map(({ note }) => note);
+    if (canonicalCandidates.length > 1) {
+      return conflict('multiple_strong_candidates', canonicalCandidates);
+    }
+
+    const candidate = canonicalCandidates[0];
     if (candidate) {
-      if (!isCanonicalCandidate(candidate, remember) || mayContradict(candidate, remember)) {
-        return conflict('candidate_requires_clarification', [candidate]);
-      }
 
       const proposedContent = appendDelimited(candidate.content, input.content.trim());
       const changed = await this.dependencies.workspace.editMarkdownFileIfUnchanged(
@@ -138,26 +147,50 @@ function containsEquivalentAssertion(content: string, assertion: string): boolea
   return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'u').test(normalized(content));
 }
 
-function isCandidate(note: NoteSnapshotDto, input: NormalizedRememberInput): boolean {
-  const title = normalized(note.title ?? '');
-  const signals = [input.subject, input.project, input.kind].filter((value): value is string => Boolean(value));
-  if (signals.some((signal) => title === signal)) return true;
+export function classifyRememberCandidate(note: NoteSnapshotDto, input: Pick<RememberKnowledgeInputDto, 'content' | 'subject' | 'project' | 'kind'>): RememberCandidateClassification {
+  const normalizedInput = {
+    content: normalized(input.content),
+    subject: optionalNormalized(input.subject),
+    project: optionalNormalized(input.project),
+    kind: optionalNormalized(input.kind)
+  };
+  if (containsEquivalentAssertion(note.content, normalizedInput.content)) return 'equivalent';
+  if (isCanonicalCandidate(note, normalizedInput)) return mayContradict(note, normalizedInput) ? 'conflicting' : 'canonical';
+  return isRelatedCandidate(note, normalizedInput) ? 'related' : 'ignored';
+}
 
-  const noteTokens = new Set(tokens(note.content));
+function isRelatedCandidate(note: NoteSnapshotDto, input: Pick<NormalizedRememberInput, 'content' | 'subject' | 'project' | 'kind'>): boolean {
+  const noteTokens = new Set(tokens(`${note.title ?? ''} ${note.relativePath} ${note.content}`));
   return tokens(input.content).filter((token) => noteTokens.has(token)).length >= 2;
 }
 
-function isCanonicalCandidate(note: NoteSnapshotDto, input: NormalizedRememberInput): boolean {
-  return Boolean(input.subject && normalized(note.title ?? '') === input.subject);
+function isCanonicalCandidate(note: NoteSnapshotDto, input: Pick<NormalizedRememberInput, 'subject' | 'project'>): boolean {
+  if (!input.subject) return false;
+
+  const title = normalized(note.title ?? '');
+  const pathSegments = note.relativePath
+    .replace(/\.md$/i, '')
+    .split('/')
+    .map((segment) => normalized(segment.replace(/[-_]/g, ' ')));
+  const subjectMatch = title === input.subject || pathSegments.includes(input.subject);
+  if (!subjectMatch) return false;
+  if (!input.project) return true;
+
+  return title === input.project || pathSegments.includes(input.project) || normalized(note.content).includes(input.project);
 }
 
-function mayContradict(note: NoteSnapshotDto, input: NormalizedRememberInput): boolean {
-  const existing = normalized(note.content);
+function mayContradict(note: NoteSnapshotDto, input: Pick<NormalizedRememberInput, 'content'>): boolean {
+  const existing = normalized(note.content.replace(/^#{1,6}\s+.*$/gm, ''));
   const incoming = input.content;
   if (/\bnao\b|\bnot\b/.test(existing) !== /\bnao\b|\bnot\b/.test(incoming)) return true;
-  const existingPrefix = existing.match(/^(.{3,80}?)(?:\s+(?:is|are|uses|usa|tem|e)\s+)/)?.[1];
-  const incomingPrefix = incoming.match(/^(.{3,80}?)(?:\s+(?:is|are|uses|usa|tem|e)\s+)/)?.[1];
-  return Boolean(existingPrefix && incomingPrefix && existingPrefix === incomingPrefix);
+  const existingStatement = existing.match(/^(.{3,80}?)\s+(is|are|uses|usa|tem|e)\s+/);
+  const incomingStatement = incoming.match(/^(.{3,80}?)\s+(is|are|uses|usa|tem|e)\s+/);
+  return Boolean(
+    existingStatement &&
+    incomingStatement &&
+    existingStatement[1] === incomingStatement[1] &&
+    existingStatement[2] === incomingStatement[2]
+  );
 }
 
 function appendDelimited(content: string, incoming: string): string {
