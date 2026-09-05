@@ -3,6 +3,7 @@ import { createAiBridgeRuntime } from '../runtime/ai-bridge-runtime';
 import { createOrionContextHandler, ORION_CONTEXT_TOOL } from './tools/orion-context';
 import { createOrionSearchHandler, ORION_SEARCH_TOOL } from './tools/orion-search';
 import { createOrionReadHandler, ORION_READ_TOOL } from './tools/orion-read';
+import { createOrionRelatedHandler, ORION_RELATED_TOOL } from './tools/orion-related';
 import { createOrionRememberHandler, ORION_REMEMBER_TOOL } from './tools/orion-remember';
 
 export const ORION_PING_TOOL = {
@@ -24,6 +25,7 @@ export function createOrionMcpServer(runtime: OrionMcpRuntime = createAiBridgeRu
   server.registerTool('orion_search', ORION_SEARCH_TOOL, createOrionSearchHandler(runtime));
   server.registerTool('orion_context', ORION_CONTEXT_TOOL, createOrionContextHandler(runtime));
   server.registerTool('orion_read', ORION_READ_TOOL, createOrionReadHandler(runtime));
+  server.registerTool('orion_related', ORION_RELATED_TOOL, createOrionRelatedHandler(runtime));
   server.registerTool('orion_remember', ORION_REMEMBER_TOOL, createOrionRememberHandler(runtime));
 
   return server;

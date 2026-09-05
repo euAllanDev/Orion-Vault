@@ -23,6 +23,7 @@ describe('createOrionMcpServer', () => {
       'orion_context',
       'orion_ping',
       'orion_read',
+      'orion_related',
       'orion_remember',
       'orion_search'
     ]);
