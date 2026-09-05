@@ -6,6 +6,8 @@ import { LocalOrganizationAiProvider } from '../../infra/ai/local-models/local-o
 import { NoopOrganizationAiProvider } from '../../infra/ai/local-models/noop-organization-ai.provider';
 import { createEmbeddingProvider } from '../../infra/ai/local-models/embedding-provider.factory';
 import { createSemanticNoteRelationsService } from '../../application/services/semantic-note-relations.service';
+import { OrionKnowledgeFacade } from '../../application/services/orion-knowledge-facade';
+import { OrionSourceRegistry } from '../../application/services/orion-source-registry';
 import { VaultVerificationService } from '../../application/services/vault-verification.service';
 import { AiBridgeService } from '../../application/services/ai-bridge.service';
 import type { NoteSourcePort } from '../../application/ports/note-source.port';
@@ -36,6 +38,8 @@ export function createAiBridgeRuntime(vaultRootOverride?: string): {
   readonly noteSource: NoteSourcePort;
   readonly vaultRoot: string;
   readonly vaultRoots: readonly string[];
+  readonly sourceRegistry: OrionSourceRegistry;
+  readonly knowledge: OrionKnowledgeFacade;
   readonly rememberService: RememberKnowledgeUseCase;
 } {
   const config = loadAppConfig();
@@ -49,10 +53,23 @@ export function createAiBridgeRuntime(vaultRootOverride?: string): {
 
   const vaultRoots = vaultRootOverride?.trim() ? [vaultRoot] : resolveOrionVaultRoots(process.env, vaultRoot);
 
+  const sourceRegistry = new OrionSourceRegistry();
+  const service = new AiBridgeService({
+    noteSource,
+    aiProvider,
+    embeddingProvider,
+    semanticExcludePaths: config.semanticExcludePaths,
+    actionExecutor: new NodeOrganizationActionExecutor(),
+    vaultVerifier: new VaultVerificationService(new NodeVaultScanner()),
+    relations: createSemanticNoteRelationsService()
+  });
+
   return {
     config,
     vaultRoot,
     vaultRoots,
+    sourceRegistry,
+    knowledge: new OrionKnowledgeFacade({ service, noteSource, vaultRoots, sourceRegistry }),
     noteSource,
     rememberService: new RememberKnowledgeUseCase({
       noteSource,
@@ -60,14 +77,6 @@ export function createAiBridgeRuntime(vaultRootOverride?: string): {
       writeVaultRoot: config.writeVaultRoot,
       readVaultRoots: vaultRoots
     }),
-    service: new AiBridgeService({
-      noteSource,
-      aiProvider,
-      embeddingProvider,
-      semanticExcludePaths: config.semanticExcludePaths,
-      actionExecutor: new NodeOrganizationActionExecutor(),
-      vaultVerifier: new VaultVerificationService(new NodeVaultScanner()),
-      relations: createSemanticNoteRelationsService()
-    })
+    service
   };
 }

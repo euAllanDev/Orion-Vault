@@ -4,7 +4,11 @@ import type {
   AiBridgeSearchDataDto,
   AiBridgeSearchRequestDto
 } from '../../../application/dto/ai-bridge.dto';
-import { searchAcrossVaults, type OrionMultiVaultService } from '../orion-multi-vault';
+import { OrionKnowledgeFacade } from '../../../application/services/orion-knowledge-facade';
+import { OrionSourceRegistry } from '../../../application/services/orion-source-registry';
+import type { OrionMultiVaultService } from '../orion-multi-vault';
+import { classifyOrionMcpFailure, createOrionMcpError } from '../tool-error';
+import type { MultiVaultSearchData } from '../orion-multi-vault';
 
 export const ORION_SEARCH_INPUT_SCHEMA = {
   type: 'object',
@@ -35,56 +39,67 @@ export interface OrionSearchService {
 export interface OrionSearchRuntime {
   readonly service: OrionMultiVaultService;
   readonly vaultRoots: readonly string[];
+  readonly sourceRegistry?: OrionSourceRegistry;
+  readonly facade?: OrionKnowledgeFacade;
+  readonly knowledge?: OrionKnowledgeFacade;
+  readonly noteSource?: import('../../../application/ports/note-source.port').NoteSourcePort;
 }
 
 export async function handleOrionSearch(service: OrionSearchService, vaultRoot: string, input: OrionSearchInput): Promise<CallToolResult> {
+  const query = normalizeQuery(input);
+  if (!query) {
+    return createOrionMcpError('INVALID_INPUT', 'Search query must contain non-whitespace text.');
+  }
+
   try {
     const response = await service.search({
       vaultRoot,
-      query: input.query.trim(),
+      query,
       tags: input.tags,
       scopePath: input.scopePath
     });
 
     if (response.status === 'error' || response.status === 'conflict') {
-      return {
-        content: [{ type: 'text', text: formatSearchError(response) }],
-        isError: true
-      };
+      return createOrionMcpError(classifyOrionMcpFailure(response), 'Unable to search Orion Vault.');
     }
 
     return {
       content: [{ type: 'text', text: formatSearchMatches(response.data) }]
     };
   } catch {
-    return {
-      content: [{ type: 'text', text: 'Unable to search Orion Vault.' }],
-      isError: true
-    };
+    return createOrionMcpError('INTERNAL_ERROR', 'Unable to search Orion Vault.');
   }
 }
 
 export function createOrionSearchHandler(runtime: OrionSearchRuntime): (input: OrionSearchInput) => Promise<CallToolResult> {
   return async (input) => {
+    const query = normalizeQuery(input);
+    if (!query) {
+      return createOrionMcpError('INVALID_INPUT', 'Search query must contain non-whitespace text.');
+    }
+
     try {
-      const response = await searchAcrossVaults(runtime.service, runtime.vaultRoots, {
-        query: input.query.trim(),
+      const facade = runtime.knowledge ?? runtime.facade ?? new OrionKnowledgeFacade({
+        service: runtime.service,
+        noteSource: runtime.noteSource ?? { getNote: async () => null, listNotes: async () => [] },
+        vaultRoots: runtime.vaultRoots,
+        sourceRegistry: runtime.sourceRegistry ?? new OrionSourceRegistry()
+      });
+      const response = await facade.search({
+        query,
         tags: input.tags,
         scopePath: input.scopePath
       });
       return response.status === 'error' || response.status === 'conflict'
-        ? { content: [{ type: 'text', text: formatSearchError(response) }], isError: true }
+        ? createOrionMcpError(classifyOrionMcpFailure(response), 'Unable to search Orion Vault.')
         : { content: [{ type: 'text', text: formatSearchMatches(response.data) }] };
     } catch {
-      return {
-        content: [{ type: 'text', text: 'Unable to search Orion Vault.' }],
-        isError: true
-      };
+      return createOrionMcpError('INTERNAL_ERROR', 'Unable to search Orion Vault.');
     }
   };
 }
 
-function formatSearchMatches(data: AiBridgeSearchDataDto): string {
+function formatSearchMatches(data: AiBridgeSearchDataDto | MultiVaultSearchData): string {
   if (data.matches.length === 0) {
     return 'No Orion Vault notes matched the search.';
   }
@@ -95,6 +110,7 @@ function formatSearchMatches(data: AiBridgeSearchDataDto): string {
     lines.push('');
     lines.push(`${index + 1}. ${match.title ?? match.path}`);
     lines.push(`Path: ${match.path}`);
+    if ('sourceRef' in match && match.sourceRef) lines.push(`Source ref: ${match.sourceRef}`);
     lines.push(`Score: ${match.score}`);
     if (match.tags.length > 0) {
       lines.push(`Tags: ${match.tags.join(', ')}`);
@@ -125,7 +141,6 @@ function normalizeSnippet(snippet: string): string {
   return snippet.replace(/\s+/g, ' ').trim();
 }
 
-function formatSearchError(response: AiBridgeResponseDto<AiBridgeSearchDataDto>): string {
-  const issueLines = response.issues.map((issue) => `- ${issue.code}: ${issue.message}`);
-  return [response.summary, ...issueLines].join('\n');
+function normalizeQuery(input: OrionSearchInput): string | null {
+  return typeof input.query === 'string' && input.query.trim() ? input.query.trim() : null;
 }

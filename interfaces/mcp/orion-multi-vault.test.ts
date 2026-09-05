@@ -9,8 +9,9 @@ import type { RetrievalChunkDto } from '../../application/dto/semantic-retrieval
 import { resolveOrionVaultRoots } from '../runtime/ai-bridge-runtime';
 import { ORION_CONTEXT_INPUT_SCHEMA } from './tools/orion-context';
 import { ORION_SEARCH_INPUT_SCHEMA } from './tools/orion-search';
-import { ORION_READ_INPUT_SCHEMA } from './tools/orion-read';
+import { createOrionReadHandler, ORION_READ_INPUT_SCHEMA } from './tools/orion-read';
 import { contextAcrossVaults, readAcrossVaults, searchAcrossVaults, type OrionMultiVaultService } from './orion-multi-vault';
+import { OrionSourceRegistry } from '../../application/services/orion-source-registry';
 
 const vaultA = 'C:/vault-a';
 const vaultB = 'C:/vault-b';
@@ -119,17 +120,20 @@ describe('Orion multi-Vault MCP composition', () => {
     expect(result.data.resultVaultIndexes).toEqual([1, 0]);
   });
 
-  it('deduplicates equivalent notes and keeps the first Vault on equal rank', async () => {
+  it('keeps equivalent notes from different Vaults distinguishable', async () => {
     const search = vi.fn(({ vaultRoot }) => Promise.resolve(searchResponse(
-      vaultRoot,
-      [match('Shared Note', vaultRoot === vaultA ? 'shared-a.md' : 'shared-b.md', 10, 'same content')]
+      vaultRoot, [match('Shared Note', 'projects/orion/README.md', 10, 'same content')]
     )));
+    const sourceRegistry = new OrionSourceRegistry();
 
-    const result = await searchAcrossVaults(serviceForSearch(search), [vaultA, vaultB], { query: 'shared' });
+    const result = await searchAcrossVaults(serviceForSearch(search), [vaultA, vaultB], { query: 'shared' }, sourceRegistry);
 
-    expect(result.data.matches).toHaveLength(1);
-    expect(result.data.matches[0]?.path).toBe('shared-a.md');
-    expect(result.data.resultVaultIndexes).toEqual([0]);
+    expect(result.data.matches).toHaveLength(2);
+    expect(result.data.matches.map((item) => item.sourceRef)).toEqual(expect.arrayContaining([expect.stringMatching(/^orion:src_[A-Za-z0-9_-]+$/)]));
+    expect(new Set(result.data.matches.map((item) => item.sourceRef)).size).toBe(2);
+    expect(result.data.matches.every((item) => !item.sourceRef?.includes(vaultA) && !item.sourceRef?.includes(vaultB))).toBe(true);
+    expect(sourceRegistry.resolve(result.data.matches[0]!.sourceRef)).toEqual({ vaultIndex: 0, relativePath: 'projects/orion/README.md' });
+    expect(sourceRegistry.resolve(result.data.matches[1]!.sourceRef)).toEqual({ vaultIndex: 1, relativePath: 'projects/orion/README.md' });
   });
 
   it('continues with Vault B when Vault A returns an error', async () => {
@@ -152,7 +156,8 @@ describe('Orion multi-Vault MCP composition', () => {
 
     const result = await readAcrossVaults({ getNote }, [vaultA, vaultB], 'Financas/contas.md');
 
-    expect(result?.content).toBe('Vault A');
+    expect(result.note?.content).toBe('Vault A');
+    expect(result.vaultAvailable).toBe(true);
     expect(getNote).toHaveBeenCalledTimes(1);
   });
 
@@ -163,8 +168,33 @@ describe('Orion multi-Vault MCP composition', () => {
 
     const result = await readAcrossVaults({ getNote }, [vaultA, vaultB], 'Financas/contas.md');
 
-    expect(result?.content).toBe('Vault B');
+    expect(result.note?.content).toBe('Vault B');
+    expect(result.vaultAvailable).toBe(true);
     expect(getNote.mock.calls.map(([root]) => root)).toEqual([vaultA, vaultB]);
+  });
+
+  it('resolves a search sourceRef back to its originating Vault', async () => {
+    const sourceRegistry = new OrionSourceRegistry();
+    const search = vi.fn(({ vaultRoot }) => Promise.resolve(searchResponse(vaultRoot, [match('README', 'projects/orion/README.md')])));
+    const searched = await searchAcrossVaults(serviceForSearch(search), [vaultA, vaultB], { query: 'readme' }, sourceRegistry);
+    const sourceRef = searched.data.matches[1]!.sourceRef;
+    const getNote = vi.fn((vaultRoot: string) => Promise.resolve({
+      id: vaultRoot,
+      absolutePath: vaultRoot,
+      relativePath: 'projects/orion/README.md',
+      tags: [],
+      content: vaultRoot === vaultA ? 'Vault A' : 'Vault B'
+    }));
+    const read = createOrionReadHandler({ noteSource: { getNote }, vaultRoots: [vaultA, vaultB], sourceRegistry });
+
+    await expect(read({ sourceRef })).resolves.toMatchObject({ content: [{ text: expect.stringContaining('Vault B') }] });
+    expect(getNote).toHaveBeenCalledWith(vaultB, 'projects/orion/README.md');
+  });
+
+  it('reports every configured Vault as unavailable when every read fails', async () => {
+    const result = await readAcrossVaults({ getNote: vi.fn().mockRejectedValue(new Error('offline')) }, [vaultA, vaultB], 'Financas/contas.md');
+
+    expect(result).toEqual({ note: null, vaultAvailable: false });
   });
 
   it('enforces one global context budget after merging both Vaults', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AiBridgeAgentContextDataDto, AiBridgeResponseDto } from '../../../application/dto/ai-bridge.dto';
-import { handleOrionContext, ORION_CONTEXT_INPUT_SCHEMA, type OrionContextService } from './orion-context';
+import { createOrionContextHandler, handleOrionContext, ORION_CONTEXT_INPUT_SCHEMA, type OrionContextService } from './orion-context';
 
 function createContextResponse(overrides: Partial<AiBridgeResponseDto<AiBridgeAgentContextDataDto>> = {}): AiBridgeResponseDto<AiBridgeAgentContextDataDto> {
   return {
@@ -119,7 +119,17 @@ describe('orion_context', () => {
     });
   });
 
-  it('converts application errors into controlled MCP responses', async () => {
+  it('returns INVALID_INPUT before calling the service for malformed input', async () => {
+    const loadAgentContext = vi.fn();
+
+    await expect(handleOrionContext({ loadAgentContext }, '/vault', { tags: ['valid', 3] } as unknown as { tags: readonly string[] })).resolves.toEqual({
+      content: [{ type: 'text', text: 'INVALID_INPUT: Context input must contain only strings and string tags.' }],
+      isError: true
+    });
+    expect(loadAgentContext).not.toHaveBeenCalled();
+  });
+
+  it('converts unavailable Vault responses into coded MCP errors', async () => {
     const response = createContextResponse({
       summary: 'Failed to load agent context.',
       status: 'error',
@@ -129,7 +139,7 @@ describe('orion_context', () => {
     const result = await handleOrionContext({ loadAgentContext: vi.fn().mockResolvedValue(response) }, '/vault', {});
 
     expect(result).toEqual({
-      content: [{ type: 'text', text: 'Failed to load agent context.\n- VAULT_ERROR: Vault is unavailable.' }],
+      content: [{ type: 'text', text: 'VAULT_UNAVAILABLE: Unable to load Orion Vault context.' }],
       isError: true
     });
   });
@@ -138,7 +148,22 @@ describe('orion_context', () => {
     const result = await handleOrionContext({ loadAgentContext: vi.fn().mockRejectedValue(new Error('internal details')) }, '/vault', {});
 
     expect(result).toEqual({
-      content: [{ type: 'text', text: 'Unable to load Orion Vault context.' }],
+      content: [{ type: 'text', text: 'INTERNAL_ERROR: Unable to load Orion Vault context.' }],
+      isError: true
+    });
+  });
+
+  it('returns VAULT_UNAVAILABLE when every configured Vault fails', async () => {
+    const handler = createOrionContextHandler({
+      service: {
+        search: vi.fn(),
+        loadAgentContext: vi.fn().mockResolvedValue(createContextResponse({ status: 'error', issues: [{ code: 'VAULT_UNAVAILABLE', message: 'offline' }] }))
+      },
+      vaultRoots: ['/vault-a', '/vault-b']
+    });
+
+    await expect(handler({ query: 'incident' })).resolves.toEqual({
+      content: [{ type: 'text', text: 'VAULT_UNAVAILABLE: Unable to load Orion Vault context.' }],
       isError: true
     });
   });
