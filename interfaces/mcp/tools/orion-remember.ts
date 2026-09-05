@@ -1,7 +1,6 @@
 import { fromJsonSchema, type CallToolResult } from '@modelcontextprotocol/server';
 import type { RememberKnowledgeInputDto, RememberKnowledgeResultDto } from '../../../application/dto/remember-knowledge.dto';
 import { RememberKnowledgeError } from '../../../application/use-cases/remember-knowledge/remember-knowledge.use-case';
-import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 
 export const ORION_REMEMBER_INPUT_SCHEMA = {
   type: 'object',
@@ -26,6 +25,10 @@ export interface OrionRememberService {
   execute(input: RememberKnowledgeInputDto): Promise<RememberKnowledgeResultDto>;
 }
 
+export interface OrionRememberRuntime {
+  readonly rememberService: OrionRememberService;
+}
+
 export async function handleOrionRemember(service: OrionRememberService, input: OrionRememberInput): Promise<CallToolResult> {
   try {
     return formatRememberResult(await service.execute(input));
@@ -40,9 +43,8 @@ export async function handleOrionRemember(service: OrionRememberService, input: 
   }
 }
 
-export async function executeOrionRemember(input: OrionRememberInput): Promise<CallToolResult> {
-  const runtime = createAiBridgeRuntime();
-  return handleOrionRemember(runtime.rememberService, input);
+export function createOrionRememberHandler(runtime: OrionRememberRuntime): (input: OrionRememberInput) => Promise<CallToolResult> {
+  return async (input) => handleOrionRemember(runtime.rememberService, input);
 }
 
 function formatRememberResult(result: RememberKnowledgeResultDto): CallToolResult {

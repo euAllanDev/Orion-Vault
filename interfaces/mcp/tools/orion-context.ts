@@ -4,8 +4,7 @@ import type {
   AiBridgeAgentContextRequestDto,
   AiBridgeResponseDto
 } from '../../../application/dto/ai-bridge.dto';
-import { contextAcrossVaults } from '../orion-multi-vault';
-import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
+import { contextAcrossVaults, type OrionMultiVaultService } from '../orion-multi-vault';
 
 export const ORION_CONTEXT_INPUT_SCHEMA = {
   type: 'object',
@@ -32,6 +31,11 @@ export interface OrionContextInput {
 
 export interface OrionContextService {
   loadAgentContext(request: AiBridgeAgentContextRequestDto): Promise<AiBridgeResponseDto<AiBridgeAgentContextDataDto>>;
+}
+
+export interface OrionContextRuntime {
+  readonly service: OrionMultiVaultService;
+  readonly vaultRoots: readonly string[];
 }
 
 export async function handleOrionContext(service: OrionContextService, vaultRoot: string, input: OrionContextInput): Promise<CallToolResult> {
@@ -62,19 +66,20 @@ export async function handleOrionContext(service: OrionContextService, vaultRoot
   }
 }
 
-export async function executeOrionContext(input: OrionContextInput): Promise<CallToolResult> {
-  try {
-    const runtime = createAiBridgeRuntime();
-    const response = await contextAcrossVaults(runtime.service, runtime.vaultRoots, input);
-    return response.status === 'error' || response.status === 'conflict'
-      ? { content: [{ type: 'text', text: formatContextError(response) }], isError: true }
-      : { content: [{ type: 'text', text: formatAgentContext(response.data) }] };
-  } catch {
-    return {
-      content: [{ type: 'text', text: 'Unable to load Orion Vault context.' }],
-      isError: true
-    };
-  }
+export function createOrionContextHandler(runtime: OrionContextRuntime): (input: OrionContextInput) => Promise<CallToolResult> {
+  return async (input) => {
+    try {
+      const response = await contextAcrossVaults(runtime.service, runtime.vaultRoots, input);
+      return response.status === 'error' || response.status === 'conflict'
+        ? { content: [{ type: 'text', text: formatContextError(response) }], isError: true }
+        : { content: [{ type: 'text', text: formatAgentContext(response.data) }] };
+    } catch {
+      return {
+        content: [{ type: 'text', text: 'Unable to load Orion Vault context.' }],
+        isError: true
+      };
+    }
+  };
 }
 
 function formatAgentContext(data: AiBridgeAgentContextDataDto): string {

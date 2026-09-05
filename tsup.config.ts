@@ -24,7 +24,7 @@ export default defineConfig([
     outDir: 'dist/desktop'
   },
   {
-    entry: ['interfaces/mcp/server.ts'],
+    entry: ['interfaces/mcp/server.ts', 'interfaces/mcp/http-server.ts'],
     format: ['esm'],
     platform: 'node',
     target: 'node20',

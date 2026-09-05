@@ -6,7 +6,7 @@ metadata:
   mcp-tools: orion_search, orion_read, orion_context, orion_remember, orion_ping
 ---
 
-# Orion Agent Skill v0.5 - Deep Retrieval
+# Orion Agent Skill v0.6 - Deep Retrieval
 
 ## Purpose
 
@@ -28,6 +28,42 @@ Examples of explicit authorization include:
 Examples are natural-language intent, not literal command patterns. Selecting Orion Agent does not authorize Vault access. Do not infer authorization from usefulness, historical wording, likely relevance, agent selection, or unrelated prior request.
 
 When authorization is absent or ambiguous, do not call any Orion tool, including `orion_ping`, and do not announce an Orion consultation. Never invent Vault content.
+
+## Intent routing before tools
+
+Before choosing Orion or local tools, infer source from the complete request and immediate conversation context. Do not let one noun decide source. First select one of `ORION`, `LOCAL`, or `CLARIFY`; then apply read authorization separately. Source selection never opens the Vault.
+
+Choose `ORION` when the request as a whole clearly seeks the user's persisted knowledge. Strong evidence includes possessives tied to personal knowledge, saved material, records, prior notes, personal subjects, or an explicit Orion/Vault reference. Interpret informal, imprecise, and slightly misspelled terms from surrounding meaning rather than requiring exact vocabulary. For example, a request to inspect `minhas coisas salvas sobre financas` has persistent-knowledge intent even if its container word is vague.
+
+Choose `LOCAL` when the request as a whole clearly targets current project artifacts or code. Strong evidence includes an explicit project, repository, backend, API, implementation, function, controller, endpoint, or codebase context. Use normal local tools only after this decision.
+
+Choose `CLARIFY` when both persisted knowledge and local artifacts remain materially plausible after considering full phrasing and recent context. Ask one short source question and do not call Orion or local search tools first. Example: `Você quer os arquivos/notas do Orion ou arquivos deste projeto?`
+
+Immediate conversation context has high weight. A recent Orion, Vault, notes, or persistent-memory discussion can make an imprecise personal reference an `ORION` request when consultation intent is otherwise clear. A recent backend or route discussion weighs toward `LOCAL`. Context resolves ambiguity only when it makes one interpretation clearly more likely; it must not override clear current-request evidence.
+
+Use no hardcoded substitutions or long synonym lists. Treat typos, near words, generic containers, and informal language as weak evidence. Resolve them through sentence meaning, ownership, subject, requested action, and immediate conversation context. If that evidence does not produce a clear source, choose `CLARIFY`.
+
+After source routing, keep authorization gates intact:
+
+- `ORION` plus explicit current consultation intent permits Orion retrieval.
+- `ORION` without explicit current consultation intent does not permit any Orion call. Historical or speculative remarks still require an explicit request.
+- `LOCAL` permits normal project analysis.
+- `CLARIFY` permits neither source until user answers.
+
+Behavioral routing examples:
+
+| Request and context | Decision |
+| --- | --- |
+| `da uma olhada nas minhas notas sobre financas` | `ORION` |
+| `de uma olhada nas minhas rotas relacionadas as minhas financas`, after Orion/notes context | `ORION`, or short clarification only if context does not resolve it; never automatic local grep |
+| `veja as rotas de financas deste projeto` | `LOCAL` |
+| `quais endpoints financeiros existem na API?` | `LOCAL` |
+| `olha nas minhas coisas salvas sobre a Lauren` | `ORION` |
+| `acho que tinhamos alguma coisa sobre banco` | No Orion access: no explicit current consultation request |
+| `procura o que eu tinha salvo sobre banco` | `ORION` |
+| `veja meus arquivos sobre financas`, without source context | `CLARIFY` |
+| Same request after clear Orion conversation | `ORION` |
+| Same request after clear local-code conversation | `LOCAL`, or `CLARIFY` if source remains materially uncertain |
 
 ## Write authorization
 

@@ -196,6 +196,22 @@ Entrypoint principal:
 
 - `interfaces/web/server.ts`
 
+### MCP local
+
+MCP via stdio permanece compativel:
+
+```powershell
+node dist/mcp/server.mjs
+```
+
+MCP Streamable HTTP local usa endpoint unico `/mcp`:
+
+```powershell
+node dist/mcp/http-server.mjs
+```
+
+Por padrao, HTTP faz bind em `127.0.0.1:7331` e nao requer token. Use `ORION_MCP_HTTP_HOST` e `ORION_MCP_HTTP_PORT` para configuracao explicita. Bind fora de loopback exige `ORION_MCP_HTTP_TOKEN`; envie-o em cada requisicao como `Authorization: Bearer <token>`. O token e comparado em tempo constante e nunca e incluido nos logs.
+
 ### Desktop
 
 Empacota a experiencia em uma janela local-first, com bootstrap do vault padrao, integracao local e fluxo mais proximo de produto final.

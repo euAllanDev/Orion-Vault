@@ -1,43 +1,14 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
-import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
-import { executeOrionContext, ORION_CONTEXT_TOOL } from './tools/orion-context';
-import { executeOrionSearch, ORION_SEARCH_TOOL } from './tools/orion-search';
-import { executeOrionRead, ORION_READ_TOOL } from './tools/orion-read';
-import { executeOrionRemember, ORION_REMEMBER_TOOL } from './tools/orion-remember';
+import { startOrionMcpStdioServer } from './transports/stdio';
 
-export const ORION_PING_TOOL = {
-  description: 'Checks whether the Orion Vault MCP server is running.'
-};
-
-export async function handleOrionPing(): Promise<CallToolResult> {
-  return {
-    content: [{ type: 'text', text: 'Orion MCP online.' }]
-  };
-}
-
-export function createOrionMcpServer(): McpServer {
-  const server = new McpServer({ name: 'orion-vault', version: '0.1.1' });
-
-  server.registerTool('orion_ping', ORION_PING_TOOL, handleOrionPing);
-  server.registerTool('orion_search', ORION_SEARCH_TOOL, executeOrionSearch);
-  server.registerTool('orion_context', ORION_CONTEXT_TOOL, executeOrionContext);
-  server.registerTool('orion_read', ORION_READ_TOOL, executeOrionRead);
-  server.registerTool('orion_remember', ORION_REMEMBER_TOOL, executeOrionRemember);
-
-  return server;
-}
-
-export async function startOrionMcpServer(): Promise<void> {
-  const server = createOrionMcpServer();
-  await server.connect(new StdioServerTransport());
-}
+export { createOrionMcpServer, handleOrionPing, ORION_PING_TOOL } from './create-orion-mcp-server';
+export { startOrionMcpStdioServer as startOrionMcpServer } from './transports/stdio';
 
 const entrypoint = process.argv[1];
 
 if (entrypoint && import.meta.url === pathToFileURL(path.resolve(entrypoint)).href) {
-  void startOrionMcpServer().catch((error: unknown) => {
+  void startOrionMcpStdioServer().catch((error: unknown) => {
     console.error('Failed to start Orion MCP server:', error);
     process.exitCode = 1;
   });

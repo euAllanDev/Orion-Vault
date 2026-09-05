@@ -4,8 +4,7 @@ import type {
   AiBridgeSearchDataDto,
   AiBridgeSearchRequestDto
 } from '../../../application/dto/ai-bridge.dto';
-import { searchAcrossVaults } from '../orion-multi-vault';
-import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
+import { searchAcrossVaults, type OrionMultiVaultService } from '../orion-multi-vault';
 
 export const ORION_SEARCH_INPUT_SCHEMA = {
   type: 'object',
@@ -31,6 +30,11 @@ export interface OrionSearchInput {
 
 export interface OrionSearchService {
   search(request: AiBridgeSearchRequestDto): Promise<AiBridgeResponseDto<AiBridgeSearchDataDto>>;
+}
+
+export interface OrionSearchRuntime {
+  readonly service: OrionMultiVaultService;
+  readonly vaultRoots: readonly string[];
 }
 
 export async function handleOrionSearch(service: OrionSearchService, vaultRoot: string, input: OrionSearchInput): Promise<CallToolResult> {
@@ -60,23 +64,24 @@ export async function handleOrionSearch(service: OrionSearchService, vaultRoot: 
   }
 }
 
-export async function executeOrionSearch(input: OrionSearchInput): Promise<CallToolResult> {
-  try {
-    const runtime = createAiBridgeRuntime();
-    const response = await searchAcrossVaults(runtime.service, runtime.vaultRoots, {
-      query: input.query.trim(),
-      tags: input.tags,
-      scopePath: input.scopePath
-    });
-    return response.status === 'error' || response.status === 'conflict'
-      ? { content: [{ type: 'text', text: formatSearchError(response) }], isError: true }
-      : { content: [{ type: 'text', text: formatSearchMatches(response.data) }] };
-  } catch {
-    return {
-      content: [{ type: 'text', text: 'Unable to search Orion Vault.' }],
-      isError: true
-    };
-  }
+export function createOrionSearchHandler(runtime: OrionSearchRuntime): (input: OrionSearchInput) => Promise<CallToolResult> {
+  return async (input) => {
+    try {
+      const response = await searchAcrossVaults(runtime.service, runtime.vaultRoots, {
+        query: input.query.trim(),
+        tags: input.tags,
+        scopePath: input.scopePath
+      });
+      return response.status === 'error' || response.status === 'conflict'
+        ? { content: [{ type: 'text', text: formatSearchError(response) }], isError: true }
+        : { content: [{ type: 'text', text: formatSearchMatches(response.data) }] };
+    } catch {
+      return {
+        content: [{ type: 'text', text: 'Unable to search Orion Vault.' }],
+        isError: true
+      };
+    }
+  };
 }
 
 function formatSearchMatches(data: AiBridgeSearchDataDto): string {

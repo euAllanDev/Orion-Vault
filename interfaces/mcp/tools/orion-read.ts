@@ -1,6 +1,5 @@
 import { fromJsonSchema, type CallToolResult } from '@modelcontextprotocol/server';
 import type { NoteSnapshotDto } from '../../../application/dto/note-snapshot.dto';
-import { createAiBridgeRuntime } from '../../runtime/ai-bridge-runtime';
 import { readAcrossVaults } from '../orion-multi-vault';
 
 export const ORION_READ_MAX_CHARACTERS = 12_000;
@@ -25,6 +24,11 @@ export interface OrionReadInput {
 
 export interface OrionReadService {
   getNote(vaultRoot: string, relativePath: string): Promise<NoteSnapshotDto | null>;
+}
+
+export interface OrionReadRuntime {
+  readonly noteSource: OrionReadService;
+  readonly vaultRoots: readonly string[];
 }
 
 function normalizeReadPath(value: string): string | null {
@@ -64,25 +68,26 @@ export async function handleOrionRead(service: OrionReadService, vaultRoot: stri
   }
 }
 
-export async function executeOrionRead(input: OrionReadInput): Promise<CallToolResult> {
-  const relativePath = normalizeReadPath(input.path);
-  if (!relativePath) {
-    return {
-      content: [{ type: 'text', text: 'Invalid Orion note path. Use a relative Markdown path inside the configured Vault.' }],
-      isError: true
-    };
-  }
+export function createOrionReadHandler(runtime: OrionReadRuntime): (input: OrionReadInput) => Promise<CallToolResult> {
+  return async (input) => {
+    const relativePath = normalizeReadPath(input.path);
+    if (!relativePath) {
+      return {
+        content: [{ type: 'text', text: 'Invalid Orion note path. Use a relative Markdown path inside the configured Vault.' }],
+        isError: true
+      };
+    }
 
-  try {
-    const runtime = createAiBridgeRuntime();
-    const note = await readAcrossVaults(runtime.noteSource, runtime.vaultRoots, relativePath);
-    return formatReadResult(note, relativePath);
-  } catch {
-    return {
-      content: [{ type: 'text', text: 'Unable to read Orion note.' }],
-      isError: true
-    };
-  }
+    try {
+      const note = await readAcrossVaults(runtime.noteSource, runtime.vaultRoots, relativePath);
+      return formatReadResult(note, relativePath);
+    } catch {
+      return {
+        content: [{ type: 'text', text: 'Unable to read Orion note.' }],
+        isError: true
+      };
+    }
+  };
 }
 
 function formatReadResult(note: NoteSnapshotDto | null, requestedPath: string): CallToolResult {
