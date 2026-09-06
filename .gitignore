@@ -8,3 +8,4 @@ test-results/
 release/
 release-test/
 win-unpacked/
+vault/**/.orion/
