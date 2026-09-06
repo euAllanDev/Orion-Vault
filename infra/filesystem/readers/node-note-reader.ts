@@ -129,13 +129,17 @@ export class NodeNoteReader implements NoteSourcePort {
     return Promise.all(
       absolutePaths.map(async (absolutePath) => {
         const content = await fs.readFile(absolutePath, 'utf8');
+        const stat = await fs.stat(absolutePath);
+        const relativePath = path.relative(vaultRoot, absolutePath).replace(/\\/g, '/');
+        
         return {
-          id: absolutePath,
+          id: relativePath,
           absolutePath,
-          relativePath: path.relative(vaultRoot, absolutePath).replace(/\\/g, '/'),
+          relativePath,
           content,
           title: extractTitle(content),
-          tags: extractTags(content)
+          tags: extractTags(content),
+          mtime: stat.mtimeMs
         };
       })
     );

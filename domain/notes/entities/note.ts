@@ -8,6 +8,7 @@ export interface NoteProps {
   readonly content: string;
   readonly title?: string;
   readonly tags?: readonly string[];
+  readonly mtime?: number;
 }
 
 export class Note {
@@ -16,6 +17,7 @@ export class Note {
   public readonly content: string;
   public readonly title?: string;
   public readonly tags: readonly string[];
+  public readonly mtime?: number;
 
   constructor(props: NoteProps) {
     if (!props.content.trim()) {
@@ -27,6 +29,7 @@ export class Note {
     this.content = props.content;
     this.title = props.title?.trim() || undefined;
     this.tags = Object.freeze([...(props.tags ?? [])]);
+    this.mtime = props.mtime;
     Object.freeze(this);
   }
 
