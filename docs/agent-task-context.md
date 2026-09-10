@@ -53,6 +53,22 @@ OpenCode's current MCP adapter exposes knowledge tools only, so its Markdown ski
 yet receive this in-process capability. Adding a task MCP tool or a fake task store would
 change that boundary and is intentionally out of scope.
 
+## Experimental role phases
+
+`researchTask(runtime, input)` and `prepareDevelopmentTask(runtime, input)` provide a small,
+sequential experiment over one injected `AgentRuntime`. A caller creates a task, sets it to
+`discovery`, runs research, then passes the same runtime and task ID to development. Research
+searches Orion, reads discovered references, records one `researcher` artifact with concise
+Known/Inferred/Unknown findings, and moves the task to `planning`. Development gets that task,
+reads its associated references, records a minimum plan and a `developer` preparation artifact,
+then moves it to `implementation`. It does not claim an implementation completed.
+
+These are two execution roles, not autonomous agents, workers, queues, or a scheduler. Both
+phases use the `knowledge` and `tasks` capabilities from the same runtime, so a sourceRef from
+research is valid for development. A reference from another runtime remains rejected by
+`AgentTaskContextService`. Orion Development can call these phases only when an in-process host
+injects `AgentRuntime`; its current Markdown/OpenCode path still has knowledge MCP only.
+
 ## Runtime usage
 
 ```ts

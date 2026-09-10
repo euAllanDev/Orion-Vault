@@ -53,6 +53,8 @@ Use the existing contracts, not a parallel Markdown/JSON task model:
 
 An in-process host can inject `AgentRuntime` from `interfaces/agent/agent-runtime-host.ts`. It supplies only `runtime.knowledge` and `runtime.tasks`, backed by one `createAiBridgeRuntime()` instance and one shared source registry. A Markdown skill cannot discover that service by itself. If the host exposes only knowledge MCP tools, report that AgentTaskContext is unavailable in this session. Do not claim creation, updates, reference association, or a runtime `blocked` status that did not occur. Ask whether to continue explicitly without task tracking or wait for a compatible host; do not silently downgrade LEVEL 2+ to LEVEL 1. Do not implement a bridge, new tools, persistence, or a substitute task type as a workaround.
 
+When an in-process host explicitly provides it, `researchTask` and `prepareDevelopmentTask` may run sequentially as `researcher` and `developer` roles over that same runtime and task ID. They are not autonomous agents or skill execution. The Markdown/OpenCode path still cannot invoke them through MCP.
+
 Tasks and sourceRefs are runtime-only. After runtime loss, old IDs cannot be resumed or reopened: create a new task in a compatible runtime and rediscover references with current authorization. Never fabricate or re-register a remote sourceRef locally.
 
 ## Task operations
