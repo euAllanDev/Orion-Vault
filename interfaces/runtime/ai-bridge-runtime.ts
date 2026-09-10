@@ -6,6 +6,7 @@ import { LocalOrganizationAiProvider } from '../../infra/ai/local-models/local-o
 import { NoopOrganizationAiProvider } from '../../infra/ai/local-models/noop-organization-ai.provider';
 import { createEmbeddingProvider } from '../../infra/ai/local-models/embedding-provider.factory';
 import { createSemanticNoteRelationsService } from '../../application/services/semantic-note-relations.service';
+import { AgentTaskContextService } from '../../application/services/agent-task-context.service';
 import { OrionKnowledgeFacade } from '../../application/services/orion-knowledge-facade';
 import { OrionSourceRegistry } from '../../application/services/orion-source-registry';
 import { VaultVerificationService } from '../../application/services/vault-verification.service';
@@ -40,6 +41,8 @@ export function createAiBridgeRuntime(vaultRootOverride?: string): {
   readonly vaultRoots: readonly string[];
   readonly sourceRegistry: OrionSourceRegistry;
   readonly knowledge: OrionKnowledgeFacade;
+  /** Session-owned task API. Do not expose the registry to skills directly. */
+  readonly tasks: AgentTaskContextService;
   readonly rememberService: RememberKnowledgeUseCase;
 } {
   const config = loadAppConfig();
@@ -70,6 +73,7 @@ export function createAiBridgeRuntime(vaultRootOverride?: string): {
     vaultRoots,
     sourceRegistry,
     knowledge: new OrionKnowledgeFacade({ service, noteSource, vaultRoots, sourceRegistry }),
+    tasks: new AgentTaskContextService(sourceRegistry),
     noteSource,
     rememberService: new RememberKnowledgeUseCase({
       noteSource,

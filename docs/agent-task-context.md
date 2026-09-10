@@ -7,6 +7,11 @@
 The service reuses `EntityId`, `ValidationError`, and `OrionSourceRegistry.resolve`.
 It has no MCP, filesystem, database, or agent-execution dependency.
 
+`createAiBridgeRuntime()` creates one `OrionSourceRegistry`, passes it to both
+`OrionKnowledgeFacade` and `AgentTaskContextService`, and exposes task operations as
+`runtime.tasks`. `AgentRuntimeHost` owns that runtime for an agent session and exposes only
+`knowledge` and `tasks` to skill execution. This is an in-memory capability, not an MCP tool.
+
 Existing `AiBridgeAgentContextDataDto` is a retrieval bundle, not a task lifecycle.
 CLI `PrepareWritingTaskData` / `PrepareEditTaskData` prepare transient context without
 task identity or shared state. Organization plans contain only move-note and
@@ -31,12 +36,28 @@ These contracts and all existing skills remain unchanged.
 - No timestamps, event history, artifact versioning, permissions, or audit-log guarantees.
 - All returned snapshots and nested collections/objects are frozen. Inputs are copied. Failed updates publish nothing; older snapshots never change.
 
+## Scope, lifecycle, and access
+
+Ownership is `agent session -> runtime -> AgentTaskContextService -> tasks`. One reused
+runtime retains its tasks across interactions in that session. At session end its owner
+calls `dispose()` and releases its runtime reference; no task or source reference is
+persisted, written to Vault, or recovered by a later runtime.
+
+A compatible host injects `AgentRuntime`, containing only `runtime.knowledge` and
+`runtime.tasks`. Skills use task `create`, `get`, `update`, and `reopen` operations and
+receive immutable snapshots. They do not receive source registry registrations, task maps,
+vault roots, or filesystem internals. `runtime.sourceRegistry` remains host composition state
+for existing adapters; it is not a skill capability.
+
+OpenCode's current MCP adapter exposes knowledge tools only, so its Markdown skills cannot
+yet receive this in-process capability. Adding a task MCP tool or a fake task store would
+change that boundary and is intentionally out of scope.
+
 ## Runtime usage
 
 ```ts
-const sources = new OrionSourceRegistry();
-// Supply this same registry to OrionKnowledgeFacade and task service.
-const tasks = new AgentTaskContextService(sources);
+const runtime = createAiBridgeRuntime();
+const { knowledge, tasks } = runtime;
 const task = tasks.create({
   id: 'site-x-auth',
   goal: 'Implement authentication according to Orion documentation',
@@ -45,7 +66,9 @@ const task = tasks.create({
 }, 'user');
 
 // In a real caller, use sourceRef returned by knowledge.search/context/related.
-const sourceRef = sources.register(0, 'architecture/authentication.md');
+const search = await knowledge.search({ query: 'authentication' });
+const sourceRef = search.data.matches[0]?.sourceRef;
+if (!sourceRef) throw new Error('Knowledge source reference unavailable');
 tasks.update(task.id, { addSourceRefs: [sourceRef] }, 'researcher');
 tasks.update(task.id, {
   status: 'planning',
@@ -68,10 +91,9 @@ const snapshot = tasks.get(task.id);
 Future callers share one service instance and task ID, obtain snapshots via `get`,
 and submit explicit updates with their declared actor. Reference consumers use the
 same runtime's knowledge facade to read notes. Nothing is wired into MCP or UI yet.
-An owner discards the service when its runtime ends; there is no global singleton.
-Both tasks and source references are lost on restart. Multi-process sharing,
-concurrency control, persistence, scheduling, and automatic skill execution are
-deliberately outside this version.
+There is no global singleton. Multi-process sharing, concurrency control, persistence,
+scheduling, automatic skill execution, and a host-to-skill runtime injection are outside
+this version.
 
 The textual plan can describe `agent-context`, `plan`, `preview`, `diff`, and
 `validate` work, while artifact references can identify their external outputs.
