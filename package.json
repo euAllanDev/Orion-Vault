@@ -39,14 +39,15 @@
     "docs:sync-ai": "tsx scripts/sync-ai-docs.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
     "esbuild": "^0.24.2",
     "tsx": "^4.21.0",
-    "@modelcontextprotocol/server": "2.0.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",
     "@modelcontextprotocol/client": "2.0.0",
+    "@opencode-ai/plugin": "1.18.14",
     "@playwright/test": "^1.52.0",
     "@types/node": "^22.10.1",
     "electron": "^33.4.11",
@@ -68,6 +69,7 @@
       "node_modules/@esbuild/**",
       "node_modules/zod/**",
       "dist/cli/**",
+      "dist/opencode/**",
       "openspec/**",
       "scripts/start-ai-terminal.ps1",
       "scripts/orion.cmd"

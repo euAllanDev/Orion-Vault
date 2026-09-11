@@ -33,5 +33,15 @@ export default defineConfig([
     dts: false,
     outExtension: () => ({ js: '.mjs' }),
     outDir: 'dist/mcp'
+  },
+  {
+    entry: ['interfaces/opencode/orion-agent-runtime-plugin.ts'],
+    format: ['esm'],
+    platform: 'node',
+    target: 'node20',
+    sourcemap: true,
+    clean: false,
+    outExtension: () => ({ js: '.mjs' }),
+    outDir: 'dist/opencode'
   }
 ]);
