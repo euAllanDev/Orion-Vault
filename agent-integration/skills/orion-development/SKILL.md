@@ -142,11 +142,11 @@ Use normal agent tools for filesystem, terminal, IDE, code, tests, and Git. Orio
 
 Set a tracked task to `implementation` before changes. Register significant implementation outputs when they actually exist. AgentTaskContext records work; it neither performs edits nor grants permission to commit, push, or modify the Vault.
 
-### 8. Validate and correct
+### 8. Validate, review, and correct
 
 Validate code with relevant project checks. For sufficiently complex work, perform a second Orion comparison: use focused `orion_search`, `orion_context`, `orion_related`, or `orion_read` to confirm important requirements and decisions.
 
-Set a tracked task to `review` before validation. Inspect the actual project diff and run appropriate tests, typecheck, build, lint, or UI checks. Use Orion `validate` only for its Vault-boundary purpose when applicable; it does not replace these checks. Attach newly relevant same-runtime sourceRefs and record significant test/review outcomes as artifacts, with truthful attribution to this one agent.
+Set a tracked task to `review` before validation. Complex tracked work can follow sequential roles: `Research -> Development -> Review`, reusing one `AgentTaskContext` and runtime. Inspect the actual project diff and run appropriate tests, typecheck, build, lint, or UI checks. Use Orion `validate` only for its Vault-boundary purpose when applicable; it does not replace these checks. Attach newly relevant same-runtime sourceRefs and record significant test/review outcomes as artifacts, with truthful attribution to this one agent.
 
 Ask: `Does implementation match Orion knowledge?`
 

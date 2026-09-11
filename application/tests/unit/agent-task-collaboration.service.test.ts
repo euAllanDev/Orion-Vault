@@ -3,7 +3,7 @@ import { ValidationError } from '../../../domain/shared/errors/validation-error'
 import { AgentTaskContextService } from '../../services/agent-task-context.service';
 import { OrionSourceRegistry } from '../../services/orion-source-registry';
 import { AgentRuntimeHost, type AgentRuntime } from '../../../interfaces/agent/agent-runtime-host';
-import { prepareDevelopmentTask, researchTask } from '../../services/agent-task-collaboration.service';
+import { prepareDevelopmentTask, researchTask, reviewTask } from '../../services/agent-task-collaboration.service';
 
 function createRuntime(): { readonly host: AgentRuntimeHost; readonly tasks: AgentTaskContextService; readonly search: ReturnType<typeof vi.fn>; readonly read: ReturnType<typeof vi.fn> } {
   const registry = new OrionSourceRegistry();
@@ -71,5 +71,81 @@ describe('agent task collaboration phases', () => {
 
     await expect(prepareDevelopmentTask(host.getRuntime(), { taskId: 'site-x-dashboard' })).rejects.toMatchObject({ code: 'AGENT_TASK_RESEARCH_REQUIRED' });
     expect(tasks.get('site-x-dashboard').status).toBe('discovery');
+  });
+
+  it('reviews implementation against same-runtime Orion sources and creates a reviewer artifact', async () => {
+    const { host, tasks, read } = createRuntime();
+    tasks.create({ id: 'site-x-review', goal: 'Implement dashboard', constraints: ['Use Site X documentation'] }, 'orion-development');
+    tasks.update('site-x-review', { status: 'discovery' }, 'researcher');
+    await researchTask(host.getRuntime(), { taskId: 'site-x-review', objective: 'dashboard' });
+    await prepareDevelopmentTask(host.getRuntime(), { taskId: 'site-x-review' });
+
+    const reviewed = await reviewTask(host.getRuntime(), {
+      taskId: 'site-x-review',
+      findings: [{ kind: 'compliant', description: 'Dashboard artifact follows associated documentation.', basedOn: tasks.get('site-x-review').sourceRefs }]
+    });
+
+    expect(reviewed.status).toBe('review');
+    expect(read).toHaveBeenCalledWith({ sourceRef: reviewed.sourceRefs[0] });
+    expect(reviewed.artifacts.at(-1)).toMatchObject({
+      id: 'review-findings', producedBy: 'reviewer', description: expect.stringContaining('PASS'), basedOn: reviewed.sourceRefs
+    });
+    expect(Object.isFrozen(reviewed.artifacts.at(-1))).toBe(true);
+  });
+
+  it.each([
+    ['compliant', 'PASS', 'Compliant'],
+    ['divergence', 'FAIL', 'Divergence'],
+    ['missing', 'FAIL', 'Missing'],
+    ['unknown', 'WARN', 'Unknown']
+  ] as const)('records %s findings without completing the task', async (kind, result, label) => {
+    const { host, tasks } = createRuntime();
+    tasks.create({ id: `review-${kind}`, goal: 'Implement dashboard' }, 'orion-development');
+    tasks.update(`review-${kind}`, { status: 'implementation', addArtifacts: [{ id: 'implementation', description: 'Actual implementation inspected', reference: 'src/dashboard.ts' }] }, 'developer');
+
+    const reviewed = await reviewTask(host.getRuntime(), {
+      taskId: `review-${kind}`,
+      findings: [{ kind, description: `${label} result from actual inspection.` }]
+    });
+
+    expect(reviewed.status).toBe('review');
+    expect(reviewed.artifacts.at(-1)?.description).toContain(result);
+    expect(reviewed.artifacts.at(-1)?.description).toContain(label);
+  });
+
+  it('allows explicit review to implementation to review correction loop', async () => {
+    const { host, tasks } = createRuntime();
+    tasks.create({ id: 'review-loop', goal: 'Implement dashboard' }, 'orion-development');
+    tasks.update('review-loop', { status: 'implementation', addArtifacts: [{ id: 'implementation-v1', description: 'Implementation inspected', reference: 'src/dashboard.ts' }] }, 'developer');
+    await reviewTask(host.getRuntime(), { taskId: 'review-loop', findings: [{ kind: 'missing', description: 'Required empty state is absent.' }] });
+    tasks.update('review-loop', { status: 'implementation', addArtifacts: [{ id: 'implementation-v2', description: 'Empty state implemented', reference: 'src/dashboard.ts' }] }, 'developer');
+
+    const reviewed = await reviewTask(host.getRuntime(), { taskId: 'review-loop', artifactId: 'review-findings-v2', findings: [{ kind: 'compliant', description: 'Required empty state is implemented.' }] });
+    expect(reviewed.status).toBe('review');
+    expect(reviewed.artifacts.filter((artifact) => artifact.producedBy === 'reviewer')).toHaveLength(2);
+  });
+
+  it('adds a newly discovered same-runtime source during review and rejects foreign references', async () => {
+    const first = createRuntime();
+    const second = createRuntime();
+    first.tasks.create({ id: 'review-isolation', goal: 'Implement dashboard' }, 'orion-development');
+    first.tasks.update('review-isolation', { status: 'discovery' }, 'researcher');
+    await researchTask(first.host.getRuntime(), { taskId: 'review-isolation', objective: 'dashboard' });
+    await prepareDevelopmentTask(first.host.getRuntime(), { taskId: 'review-isolation' });
+    const sourceRefFromFirstRuntime = first.tasks.get('review-isolation').sourceRefs[0];
+    second.tasks.create({ id: 'review-isolation', goal: 'Implement dashboard' }, 'orion-development');
+    second.tasks.update('review-isolation', { status: 'implementation', addArtifacts: [{ id: 'implementation', description: 'Implementation inspected', reference: 'src/dashboard.ts' }] }, 'developer');
+
+    await expect(reviewTask(second.host.getRuntime(), {
+      taskId: 'review-isolation',
+      findings: [{ kind: 'unknown', description: 'Need external evidence.', basedOn: [sourceRefFromFirstRuntime] }]
+    })).rejects.toMatchObject({ code: 'AGENT_TASK_ARTIFACT_SOURCE' });
+    expect(second.tasks.get('review-isolation').status).toBe('implementation');
+
+    const reviewed = await reviewTask(first.host.getRuntime(), {
+      taskId: 'review-isolation', knowledgeQuery: 'dashboard',
+      artifactId: 'review-with-discovery', findings: [{ kind: 'unknown', description: 'No documented behavior for this edge case.' }]
+    });
+    expect(reviewed.sourceRefs).toHaveLength(2);
   });
 });

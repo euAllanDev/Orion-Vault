@@ -55,19 +55,38 @@ change that boundary and is intentionally out of scope.
 
 ## Experimental role phases
 
-`researchTask(runtime, input)` and `prepareDevelopmentTask(runtime, input)` provide a small,
+`researchTask(runtime, input)`, `prepareDevelopmentTask(runtime, input)`, and
+`reviewTask(runtime, input)` provide a small,
 sequential experiment over one injected `AgentRuntime`. A caller creates a task, sets it to
 `discovery`, runs research, then passes the same runtime and task ID to development. Research
 searches Orion, reads discovered references, records one `researcher` artifact with concise
 Known/Inferred/Unknown findings, and moves the task to `planning`. Development gets that task,
 reads its associated references, records a minimum plan and a `developer` preparation artifact,
-then moves it to `implementation`. It does not claim an implementation completed.
+then moves it to `implementation`. After real implementation artifacts and validation outputs are
+available, review reads associated sources, may use focused search and related notes for a concrete
+gap, and records one `reviewer` artifact. Its description contains `PASS`, `WARN`, or `FAIL` and
+explicit `Compliant`, `Divergence`, `Missing`, or `Unknown` findings. `Unknown` is not failure by
+itself. Review moves to `review`; it never completes a task or applies corrections.
 
-These are two execution roles, not autonomous agents, workers, queues, or a scheduler. Both
+These are three execution roles, not autonomous agents, workers, queues, or a scheduler. All
 phases use the `knowledge` and `tasks` capabilities from the same runtime, so a sourceRef from
-research is valid for development. A reference from another runtime remains rejected by
+research is valid for development and review. A reference from another runtime remains rejected by
 `AgentTaskContextService`. Orion Development can call these phases only when an in-process host
 injects `AgentRuntime`; its current Markdown/OpenCode path still has knowledge MCP only.
+
+The normal sequential lifecycle is `pending -> discovery -> planning -> implementation -> review`.
+Known critical divergence, missing mandatory work, or failed mandatory validation keeps the task out
+of `completed`. A caller explicitly changes `review -> implementation` for a correction, records a
+new developer artifact, and invokes review again. Warnings and unknowns do not automatically block
+completion; an explicit caller concludes only after evaluating them.
+
+`reviewTask` accepts the existing `taskId`, explicit findings from available implementation artifacts
+or validation output, and optionally a focused knowledge query for a concrete evidence gap. Each
+finding is `compliant`, `divergence`, `missing`, or `unknown`; optional `basedOn` refs must belong to
+the same task. The operation reads current task refs, can associate same-runtime search or related
+results, and emits a concise review artifact. It cannot inspect an artifact reference automatically:
+when actual implementation evidence is unavailable, callers record an `unknown` finding rather than
+inventing files, test output, or tool execution.
 
 ## Runtime usage
 
@@ -98,9 +117,10 @@ tasks.update(task.id, {
   }]
 }, 'developer');
 tasks.update(task.id, {
-  status: 'completed',
-  addArtifacts: [{ id: 'test-report', description: 'Authentication tests passed' }]
+  status: 'review',
+  addArtifacts: [{ id: 'review-findings', description: 'PASS\nCompliant: Authentication tests passed', basedOn: [sourceRef] }]
 }, 'reviewer');
+// An explicit caller may mark completed only after evaluating review findings.
 const snapshot = tasks.get(task.id);
 ```
 

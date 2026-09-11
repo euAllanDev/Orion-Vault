@@ -13,8 +13,45 @@ export interface PrepareDevelopmentTaskInput {
   readonly artifactId?: string;
 }
 
+export const REVIEW_FINDING_KINDS = ['compliant', 'divergence', 'missing', 'unknown'] as const;
+export type ReviewFindingKind = typeof REVIEW_FINDING_KINDS[number];
+
+export interface ReviewFinding {
+  readonly kind: ReviewFindingKind;
+  /** Factual result from inspection of available implementation artifacts or validation output. */
+  readonly description: string;
+  /** Relevant task sources; omitted when the finding has no documented basis. */
+  readonly basedOn?: readonly string[];
+}
+
+export interface ReviewTaskInput {
+  readonly taskId: string;
+  readonly findings: readonly ReviewFinding[];
+  /** Optional focused query when associated sources leave a concrete review gap. */
+  readonly knowledgeQuery?: string;
+  readonly artifactId?: string;
+}
+
 function describeResearch(objective: string, sourceRefs: readonly string[]): string {
   return `Research findings for ${objective}\n\nKnown: Identified ${sourceRefs.length} relevant Orion source reference(s).\nInferred: Development can prepare an implementation plan from this runtime-scoped evidence.\nUnknown: This research phase does not perform the implementation.`;
+}
+
+function describeReview(goal: string, findings: readonly ReviewFinding[]): string {
+  const labels: Record<ReviewFindingKind, string> = {
+    compliant: 'Compliant',
+    divergence: 'Divergence',
+    missing: 'Missing',
+    unknown: 'Unknown'
+  };
+  const result = findings.some((finding) => finding.kind === 'divergence' || finding.kind === 'missing')
+    ? 'FAIL'
+    : findings.some((finding) => finding.kind === 'unknown')
+      ? 'WARN'
+      : 'PASS';
+  const details = findings.length === 0
+    ? 'Unknown: No review findings were supplied from an actual implementation inspection.'
+    : findings.map((finding) => `${labels[finding.kind]}: ${finding.description}`).join('\n');
+  return `Review findings for ${goal}\n\n${result}\n${details}`;
 }
 
 /** Sequential role phases over one injected AgentRuntime; this is not agent orchestration. */
@@ -81,4 +118,48 @@ export async function prepareDevelopmentTask(runtime: AgentRuntime, input: Prepa
       basedOn: task.sourceRefs
     }]
   }, 'developer');
+}
+
+/** Records an explicit evidence-based review; it never completes or corrects the task. */
+export async function reviewTask(runtime: AgentRuntime, input: ReviewTaskInput): Promise<AgentTaskContext> {
+  const task = runtime.tasks.get(input.taskId);
+  if (task.status !== 'implementation' && task.status !== 'review') {
+    throw new ValidationError('Review requires a task in implementation or review', 'AGENT_TASK_REVIEW_STATE');
+  }
+  if (!task.artifacts.some((artifact) => artifact.producedBy === 'developer')) {
+    throw new ValidationError('Review requires a development artifact', 'AGENT_TASK_DEVELOPMENT_REQUIRED');
+  }
+  for (const finding of input.findings) {
+    if (!REVIEW_FINDING_KINDS.includes(finding.kind)) {
+      throw new ValidationError('Unknown review finding kind', 'AGENT_TASK_REVIEW_FINDING');
+    }
+    if (typeof finding.description !== 'string' || !finding.description.trim()) {
+      throw new ValidationError('Review finding description cannot be empty', 'AGENT_TASK_REVIEW_FINDING');
+    }
+  }
+
+  const sourceRefs = new Set(task.sourceRefs);
+  for (const sourceRef of task.sourceRefs) await runtime.knowledge.read({ sourceRef });
+  if (input.knowledgeQuery) {
+    const search = await runtime.knowledge.search({ query: input.knowledgeQuery });
+    for (const match of search.data.matches) if (match.sourceRef) sourceRefs.add(match.sourceRef);
+    for (const chunk of search.data.chunks) if (chunk.sourceRef) sourceRefs.add(chunk.sourceRef);
+  }
+  const firstSourceRef = task.sourceRefs[0];
+  if (firstSourceRef) {
+    const related = await runtime.knowledge.related(firstSourceRef);
+    for (const note of related.results) sourceRefs.add(note.sourceRef);
+  }
+
+  const evidence = [...sourceRefs];
+  const basedOn = [...new Set(input.findings.flatMap((finding) => finding.basedOn ?? []))];
+  return runtime.tasks.update(task.id, {
+    status: 'review',
+    addSourceRefs: evidence,
+    addArtifacts: [{
+      id: input.artifactId ?? 'review-findings',
+      description: describeReview(task.goal, input.findings),
+      basedOn: basedOn.length > 0 ? basedOn : evidence
+    }]
+  }, 'reviewer');
 }
