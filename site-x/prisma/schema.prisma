@@ -1,0 +1,184 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkspacePlan {
+  FREE
+  PRO
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  RESEARCHER
+  VIEWER
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum ConsentStatus {
+  PENDING
+  GRANTED
+  DECLINED
+}
+
+enum SessionMethod {
+  INTERVIEW
+  OBSERVATION
+  USABILITY_TEST
+}
+
+enum SessionStatus {
+  PLANNED
+  COMPLETED
+  CANCELLED
+}
+
+enum EvidenceKind {
+  QUOTE
+  OBSERVATION
+  NOTE
+}
+
+enum ThemeConfidence {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model User {
+  id            String              @id @default(uuid()) @db.Uuid
+  email         String              @unique @db.Citext
+  name          String?             @db.VarChar(120)
+  image         String?             @map("imageUrl")
+  emailVerified DateTime?
+  createdAt     DateTime            @default(now())
+  memberships   Membership[]
+  projects      Project[]           @relation("ProjectCreator")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Workspace {
+  id          String       @id @default(uuid()) @db.Uuid
+  slug        String       @unique
+  name        String
+  plan        WorkspacePlan
+  createdAt   DateTime     @default(now())
+  memberships Membership[]
+  projects    Project[]
+  evidenceRequests EvidenceRequest[]
+}
+
+model Membership {
+  workspaceId String         @db.Uuid
+  userId      String         @db.Uuid
+  role        MembershipRole
+  joinedAt    DateTime       @default(now())
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id])
+  user        User           @relation(fields: [userId], references: [id])
+
+  @@id([workspaceId, userId])
+}
+
+model Project {
+  id          String        @id @default(uuid()) @db.Uuid
+  workspaceId String        @db.Uuid
+  name        String        @db.VarChar(100)
+  objective   String
+  status      ProjectStatus
+  createdById String        @db.Uuid
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id])
+  createdBy   User          @relation("ProjectCreator", fields: [createdById], references: [id])
+  participants Participant[]
+  sessions    Session[]
+  themes      Theme[]
+
+  @@index([workspaceId, status])
+}
+
+model Participant {
+  id            String        @id @default(uuid()) @db.Uuid
+  projectId     String        @db.Uuid
+  displayName   String
+  consentStatus ConsentStatus
+  metadata      Json          @db.JsonB
+  project       Project       @relation(fields: [projectId], references: [id])
+  sessions      Session[]
+}
+
+model Session {
+  id            String        @id @default(uuid()) @db.Uuid
+  projectId     String        @db.Uuid
+  participantId String?       @db.Uuid
+  scheduledAt   DateTime
+  method        SessionMethod
+  status        SessionStatus
+  guide         String?
+  project       Project       @relation(fields: [projectId], references: [id])
+  participant   Participant?  @relation(fields: [participantId], references: [id])
+  evidences     Evidence[]
+
+  @@index([projectId, scheduledAt])
+}
+
+model Evidence {
+  id               String       @id @default(uuid()) @db.Uuid
+  sessionId        String       @db.Uuid
+  text             String
+  kind             EvidenceKind
+  timestampSeconds Int?
+  tags             String[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  session          Session      @relation(fields: [sessionId], references: [id])
+  themeEvidences   ThemeEvidence[]
+  idempotencyRequests EvidenceRequest[]
+}
+
+model EvidenceRequest {
+  workspaceId String   @db.Uuid
+  userId      String   @db.Uuid
+  key         String   @db.VarChar(128)
+  evidenceId  String   @db.Uuid
+  createdAt   DateTime @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  evidence    Evidence  @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId, key])
+}
+
+model Theme {
+  id          String          @id @default(uuid()) @db.Uuid
+  projectId   String          @db.Uuid
+  title       String
+  summary     String
+  confidence  ThemeConfidence
+  project     Project         @relation(fields: [projectId], references: [id])
+  evidences   ThemeEvidence[]
+}
+
+model ThemeEvidence {
+  themeId    String   @db.Uuid
+  evidenceId String   @db.Uuid
+  theme      Theme    @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  evidence   Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@id([themeId, evidenceId])
+}

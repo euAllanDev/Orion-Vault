@@ -1,0 +1,35 @@
+name: site-x-benchmark-v2
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - site_x_benchmark_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  mailpit:
+    image: axllent/mailpit:v1.20.5
+    ports:
+      - "${MAILPIT_SMTP_PORT}:1025"
+      - "${MAILPIT_UI_PORT}:8025"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider --quiet http://localhost:8025/api/v1/info"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+volumes:
+  site_x_benchmark_postgres_data:
+    name: site-x-benchmark-v2-postgres-data
