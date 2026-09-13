@@ -38,7 +38,7 @@ async function logStartup(message: string): Promise<void> {
 }
 
 const preloadPath = fileURLToPath(new URL('../../interfaces/desktop/preload.cjs', import.meta.url));
-const agendaReminderSoundPath = path.join(app.getAppPath(), 'sounds', 'notificacao_lembrete_premium_leve (online-audio-converter.com).mp3');
+const agendaReminderSoundPath = path.join(app.getAppPath(), 'sounds', 'universfield-message-notification-199577.mp3');
 const desktopNotificationIconCandidates = [
   path.join(process.resourcesPath, 'build', 'icon.ico'),
   path.join(app.getAppPath(), 'build', 'icon.ico'),
