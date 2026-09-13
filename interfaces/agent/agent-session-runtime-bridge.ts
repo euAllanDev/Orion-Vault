@@ -15,7 +15,8 @@ export type AgentSessionWorkflowCommand =
   | { readonly kind: 'research'; readonly taskId: string; readonly objective: string; readonly artifactId?: string }
   | { readonly kind: 'develop'; readonly taskId: string; readonly artifactId?: string }
   | { readonly kind: 'review'; readonly taskId: string; readonly findings: readonly ReviewFinding[]; readonly knowledgeQuery?: string; readonly artifactId?: string }
-  | { readonly kind: 'complete'; readonly taskId: string };
+  | { readonly kind: 'complete'; readonly taskId: string }
+  | { readonly kind: 'reopen'; readonly taskId: string; readonly actor: AgentTaskActor };
 
 type Session = Readonly<{ host: AgentRuntimeHost; workflow: AgentWorkflowOrchestrator }>;
 
@@ -57,6 +58,8 @@ export class AgentSessionRuntimeBridge {
       }
       case 'complete':
         return workflow.complete(command.taskId);
+      case 'reopen':
+        return this.require(sessionId).host.getRuntime().tasks.reopen(command.taskId, command.actor);
     }
   }
 
