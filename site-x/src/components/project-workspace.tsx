@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useState } from 'react';
 import { api, errorMessage } from '@/lib/client-api';
 import { useWorkspace } from './workspace-context';
 
@@ -31,6 +31,7 @@ type Theme = {
 };
 
 const tabIds = { 'Sessões': 'sessions', 'Evidências': 'evidences', 'Temas': 'themes' } as const;
+const tabNames = Object.keys(tabIds) as (keyof typeof tabIds)[];
 
 export function ProjectWorkspace({
   projectId,
@@ -52,6 +53,25 @@ export function ProjectWorkspace({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const canWrite = role !== 'VIEWER' && !archived;
+
+  function moveTab(event: KeyboardEvent<HTMLButtonElement>, name: keyof typeof tabIds) {
+    const current = tabNames.indexOf(name);
+    const next = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? tabNames.length - 1
+        : event.key === 'ArrowRight' || event.key === 'ArrowDown'
+          ? (current + 1) % tabNames.length
+          : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+            ? (current - 1 + tabNames.length) % tabNames.length
+            : current;
+    if (next === current && !['Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const nextName = tabNames[next];
+    setTab(nextName);
+    document.getElementById(`${tabIds[nextName]}-tab`)?.focus();
+  }
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -199,7 +219,7 @@ export function ProjectWorkspace({
     <div className="detail-grid">
       <section>
         <div className="tabs" role="tablist" aria-label="Conteúdo do projeto">
-          {['Sessões', 'Evidências', 'Temas'].map((name) => (
+          {tabNames.map((name) => (
             <button
               key={name}
               type="button"
@@ -207,7 +227,9 @@ export function ProjectWorkspace({
               id={`${tabIds[name as keyof typeof tabIds]}-tab`}
               aria-controls={`${tabIds[name as keyof typeof tabIds]}-panel`}
               aria-selected={tab === name}
+              tabIndex={tab === name ? 0 : -1}
               onClick={() => setTab(name)}
+              onKeyDown={(event) => moveTab(event, name)}
             >
               {name}
             </button>
