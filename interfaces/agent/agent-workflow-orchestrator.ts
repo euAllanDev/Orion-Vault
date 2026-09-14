@@ -64,7 +64,7 @@ export class AgentWorkflowOrchestrator {
   async develop(taskId: string, input: Omit<PrepareDevelopmentTaskInput, 'taskId'> = {}): Promise<AgentTaskContext> {
     const runtime = this.host.getRuntime();
     const task = runtime.tasks.get(taskId);
-    const correction = task.status === 'implementation' && this.latestReviewOutcome(task) === 'FAIL';
+    const correction = task.status === 'review' && this.latestReviewOutcome(task) === 'FAIL';
     if (task.status !== 'planning' && !correction) invalidOrder('Development requires completed research and planning, or a failed review');
     const artifactId = correction && !input.artifactId
       ? `implementation-plan-${task.artifacts.filter((artifact) => artifact.producedBy === 'developer').length + 1}`
@@ -77,13 +77,11 @@ export class AgentWorkflowOrchestrator {
     const runtime = this.host.getRuntime();
     const task = runtime.tasks.get(taskId);
     if (task.status !== 'implementation') invalidOrder('Review requires completed development in implementation');
-    await this.roles.reviewer.execute(runtime, { taskId, ...input });
+    const artifactId = input.artifactId ?? `review-findings-${task.artifacts.filter((artifact) => artifact.producedBy === 'reviewer').length + 1}`;
+    await this.roles.reviewer.execute(runtime, { taskId, ...input, artifactId });
     const reviewed = this.requireStatus(runtime.tasks.get(taskId), 'review', 'Review must leave the task in review');
     const reviewOutcome = this.roles.reviewer.classify(input.findings);
-    const next = reviewOutcome === 'FAIL'
-      ? runtime.tasks.update(taskId, { status: 'implementation' }, 'orchestrator')
-      : reviewed;
-    return Object.freeze({ task: next, reviewOutcome });
+    return Object.freeze({ task: reviewed, reviewOutcome });
   }
 
   complete(taskId: string): AgentTaskContext {

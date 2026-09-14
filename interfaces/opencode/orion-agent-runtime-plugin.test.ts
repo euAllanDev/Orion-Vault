@@ -40,8 +40,8 @@ describe('OpenCode agent runtime plugin', () => {
     await invoke(tools.orion_agent_task_create, { taskId: 'task', goal: 'Implement dashboard' }, 'A');
     expect((await invoke(tools.orion_agent_workflow, { action: 'researcher', taskId: 'task', objective: 'dashboard' }, 'A')).status).toBe('planning');
     expect((await invoke(tools.orion_agent_workflow, { action: 'developer', taskId: 'task' }, 'A')).status).toBe('implementation');
-    expect((await invoke(tools.orion_agent_workflow, { action: 'reviewer', taskId: 'task', findings: [{ kind: 'missing', description: 'Empty state missing.' }] }, 'A')).status).toBe('implementation');
-    expect((await invoke(tools.orion_agent_workflow, { action: 'develop', taskId: 'task' }, 'A')).status).toBe('implementation');
+    expect((await invoke(tools.orion_agent_workflow, { action: 'reviewer', taskId: 'task', findings: [{ kind: 'missing', description: 'Empty state missing.' }] }, 'A')).status).toBe('review');
+    expect((await invoke(tools.orion_agent_workflow, { action: 'develop', taskId: 'task', reviewArtifactId: 'review-findings-1', implementationReference: 'site-x/src/components/project-workspace.tsx' }, 'A')).status).toBe('implementation');
     expect((await invoke(tools.orion_agent_workflow, { action: 'review', taskId: 'task', artifactId: 'review-2', findings: [{ kind: 'compliant', description: 'Empty state present.' }] }, 'A')).status).toBe('review');
     expect((await invoke(tools.orion_agent_workflow, { action: 'complete', taskId: 'task' }, 'A')).status).toBe('completed');
     expect((await invoke(tools.orion_agent_workflow, { action: 'reopen', taskId: 'task' }, 'A')).status).toBe('pending');

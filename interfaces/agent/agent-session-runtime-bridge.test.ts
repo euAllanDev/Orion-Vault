@@ -32,13 +32,14 @@ describe('AgentSessionRuntimeBridge', () => {
     expect(reviewed.sourceRefs).toEqual(researched.sourceRefs);
   });
 
-  it('returns FAIL to implementation, requires PASS for explicit completion, and keeps WARN open', async () => {
+  it('keeps FAIL review open, requires its artifact for correction, and keeps WARN open', async () => {
     const bridge = new AgentSessionRuntimeBridge(fixtureHost);
     bridge.createTask('A', { id: 'task', goal: 'Implement dashboard', actor: 'agent' });
     await bridge.invoke('A', { kind: 'research', taskId: 'task', objective: 'dashboard' });
     await bridge.invoke('A', { kind: 'develop', taskId: 'task' });
-    expect((await bridge.invoke('A', { kind: 'review', taskId: 'task', findings: [{ kind: 'missing', description: 'Missing state.' }] })).status).toBe('implementation');
-    await bridge.invoke('A', { kind: 'develop', taskId: 'task' });
+    expect((await bridge.invoke('A', { kind: 'review', taskId: 'task', findings: [{ kind: 'missing', description: 'Missing state.' }] })).status).toBe('review');
+    await expect(bridge.invoke('A', { kind: 'develop', taskId: 'task' })).rejects.toThrow('Correction requires the latest failed review artifact');
+    await bridge.invoke('A', { kind: 'develop', taskId: 'task', reviewArtifactId: 'review-findings-1', implementationReference: 'site-x/src/components/project-workspace.tsx' });
     expect((await bridge.invoke('A', { kind: 'review', taskId: 'task', findings: [{ kind: 'unknown', description: 'No audit evidence.' }] })).status).toBe('review');
     await expect(bridge.invoke('A', { kind: 'complete', taskId: 'task' })).rejects.toThrow();
   });

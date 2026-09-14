@@ -11,6 +11,10 @@ export interface ResearchTaskInput {
 export interface PrepareDevelopmentTaskInput {
   readonly taskId: string;
   readonly artifactId?: string;
+  /** Failed reviewer artifact explicitly consumed by a correction. */
+  readonly reviewArtifactId?: string;
+  /** Actual implementation output inspected by a later reviewer. */
+  readonly implementationReference?: string;
 }
 
 export const REVIEW_FINDING_KINDS = ['compliant', 'divergence', 'missing', 'unknown'] as const;
@@ -103,18 +107,35 @@ export async function prepareDevelopmentTask(runtime: AgentRuntime, input: Prepa
     throw new ValidationError('Development preparation requires a research artifact', 'AGENT_TASK_RESEARCH_REQUIRED');
   }
 
+  const latestReview = [...task.artifacts].reverse().find((artifact) => artifact.producedBy === 'reviewer');
+  const failedReview = latestReview?.description.includes('\n\nFAIL\n') ? latestReview : undefined;
+  const correction = task.status === 'review';
+  const correctionReviewArtifactId = input.reviewArtifactId ?? '';
+  if (correction && (!failedReview || correctionReviewArtifactId !== failedReview.id)) {
+    throw new ValidationError('Correction requires the latest failed review artifact', 'AGENT_TASK_CORRECTION_REVIEW_REQUIRED');
+  }
+
   for (const sourceRef of task.sourceRefs) await runtime.knowledge.read({ sourceRef });
-  const plan = [
-    `Review research findings: ${researchArtifact.description.split('\n', 1)[0]}`,
-    `Implement ${task.goal} according to associated Orion sources`,
-    'Validate the implementation against the associated sources'
-  ];
+  const plan = correction
+    ? [
+        `Read failed review artifact: ${correctionReviewArtifactId}`,
+        `Correct ${task.goal} according to associated Orion sources`,
+        'Re-run review against the corrected implementation'
+      ]
+    : [
+        `Review research findings: ${researchArtifact.description.split('\n', 1)[0]}`,
+        `Implement ${task.goal} according to associated Orion sources`,
+        'Validate the implementation against the associated sources'
+      ];
   runtime.tasks.update(task.id, { plan }, 'developer');
   runtime.tasks.update(task.id, { status: 'implementation' }, 'developer');
   return runtime.tasks.update(task.id, {
     addArtifacts: [{
       id: input.artifactId ?? 'implementation-plan',
-      description: `Implementation preparation for ${task.goal}; consumes research artifact ${researchArtifact.id}.`,
+      description: correction
+        ? `Correction implementation for ${task.goal}; consumes failed review artifact ${correctionReviewArtifactId}.`
+        : `Implementation preparation for ${task.goal}; consumes research artifact ${researchArtifact.id}.`,
+      ...(input.implementationReference ? { reference: input.implementationReference } : {}),
       basedOn: task.sourceRefs
     }]
   }, 'developer');

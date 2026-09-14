@@ -88,19 +88,36 @@ describe('AgentWorkflowOrchestrator', () => {
     expect(fixture.tasks.get('dashboard')).toMatchObject({ status: 'pending', artifacts: [] });
   });
 
-  it('returns FAIL review to implementation and permits deterministic correction review', async () => {
+  it('keeps FAIL review recorded until a developer consumes it, then re-reviews correction', async () => {
     const fixture = createFixture();
     createTask(fixture.tasks);
     const workflow = new AgentWorkflowOrchestrator(fixture.host);
     await workflow.run({ taskId: 'dashboard', research: { objective: 'dashboard' }, development: {} });
 
-    const failed = await workflow.review('dashboard', { findings: [{ kind: 'missing', description: 'Empty state is missing.' }] });
-    const corrected = await workflow.develop('dashboard');
+    const failed = await workflow.review('dashboard', { artifactId: 'review-v1', findings: [{ kind: 'missing', description: 'Empty state is missing.', basedOn: fixture.sourceRefs }] });
+    await expect(workflow.develop('dashboard')).rejects.toMatchObject({ code: 'AGENT_TASK_CORRECTION_REVIEW_REQUIRED' });
+    const corrected = await workflow.develop('dashboard', { reviewArtifactId: 'review-v1', implementationReference: 'site-x/src/components/projects.tsx' });
     const passed = await workflow.review('dashboard', { artifactId: 'review-corrected', findings: [{ kind: 'compliant', description: 'Empty state is present.' }] });
 
-    expect(failed).toMatchObject({ reviewOutcome: 'FAIL', task: { status: 'implementation' } });
-    expect(corrected.artifacts.at(-1)).toMatchObject({ id: 'implementation-plan-2', producedBy: 'developer' });
+    expect(failed).toMatchObject({ reviewOutcome: 'FAIL', task: { status: 'review' } });
+    expect(corrected.artifacts.at(-1)).toMatchObject({ id: 'implementation-plan-2', producedBy: 'developer', reference: 'site-x/src/components/projects.tsx', description: expect.stringContaining('review-v1'), basedOn: fixture.sourceRefs });
     expect(passed).toMatchObject({ reviewOutcome: 'PASS', task: { status: 'review' } });
+  });
+
+  it('keeps persistent FAIL open and requires a new correction artifact before another review', async () => {
+    const fixture = createFixture();
+    createTask(fixture.tasks);
+    const workflow = new AgentWorkflowOrchestrator(fixture.host);
+    await workflow.run({ taskId: 'dashboard', research: { objective: 'dashboard' }, development: {} });
+
+    await workflow.review('dashboard', { artifactId: 'review-v1', findings: [{ kind: 'missing', description: 'First defect.', basedOn: fixture.sourceRefs }] });
+    await workflow.develop('dashboard', { reviewArtifactId: 'review-v1', implementationReference: 'site-x/src/components/project-workspace.tsx' });
+    const persistent = await workflow.review('dashboard', { artifactId: 'review-v2', findings: [{ kind: 'divergence', description: 'Defect persists.', basedOn: fixture.sourceRefs }] });
+
+    expect(persistent).toMatchObject({ reviewOutcome: 'FAIL', task: { status: 'review' } });
+    expect(() => workflow.complete('dashboard')).toThrow(ValidationError);
+    await expect(workflow.develop('dashboard', { reviewArtifactId: 'review-v1' })).rejects.toMatchObject({ code: 'AGENT_TASK_CORRECTION_REVIEW_REQUIRED' });
+    expect((await workflow.develop('dashboard', { reviewArtifactId: 'review-v2' })).artifacts.at(-1)?.description).toContain('review-v2');
   });
 
   it('keeps WARN in review and permits explicit completion only after PASS', async () => {

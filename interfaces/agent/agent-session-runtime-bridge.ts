@@ -13,7 +13,7 @@ export interface AgentSessionTaskInput {
 
 export type AgentSessionWorkflowCommand =
   | { readonly kind: 'research'; readonly taskId: string; readonly objective: string; readonly artifactId?: string }
-  | { readonly kind: 'develop'; readonly taskId: string; readonly artifactId?: string }
+  | { readonly kind: 'develop'; readonly taskId: string; readonly artifactId?: string; readonly reviewArtifactId?: string; readonly implementationReference?: string }
   | { readonly kind: 'review'; readonly taskId: string; readonly findings: readonly ReviewFinding[]; readonly knowledgeQuery?: string; readonly artifactId?: string }
   | { readonly kind: 'complete'; readonly taskId: string }
   | { readonly kind: 'reopen'; readonly taskId: string; readonly actor: AgentTaskActor };
@@ -46,7 +46,11 @@ export class AgentSessionRuntimeBridge {
       case 'research':
         return workflow.research(command.taskId, { objective: command.objective, artifactId: command.artifactId });
       case 'develop':
-        return workflow.develop(command.taskId, { artifactId: command.artifactId });
+        return workflow.develop(command.taskId, {
+          artifactId: command.artifactId,
+          reviewArtifactId: command.reviewArtifactId,
+          implementationReference: command.implementationReference
+        });
       case 'review': {
         const task = this.getTask(sessionId, command.taskId);
         const artifactId = command.artifactId ?? `review-findings-${task.artifacts.filter((artifact) => artifact.producedBy === 'reviewer').length + 1}`;

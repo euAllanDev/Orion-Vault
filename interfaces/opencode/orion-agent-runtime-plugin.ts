@@ -30,13 +30,13 @@ export function createOpenCodeAgentRuntimePlugin(sessionBridge: AgentSessionRunt
     orion_agent_workflow: tool({
       description: 'Runs research, develop, review, complete, or reopen in this session runtime. Researcher, developer, and reviewer are accepted host role aliases.',
       args: {
-        action: tool.schema.enum(['research', 'develop', 'review', 'complete', 'reopen', 'researcher', 'developer', 'reviewer']), taskId: tool.schema.string().min(1), objective: tool.schema.string().min(1).optional(), artifactId: tool.schema.string().min(1).optional(), knowledgeQuery: tool.schema.string().min(1).optional(),
+        action: tool.schema.enum(['research', 'develop', 'review', 'complete', 'reopen', 'researcher', 'developer', 'reviewer']), taskId: tool.schema.string().min(1), objective: tool.schema.string().min(1).optional(), artifactId: tool.schema.string().min(1).optional(), reviewArtifactId: tool.schema.string().min(1).optional(), implementationReference: tool.schema.string().min(1).optional(), knowledgeQuery: tool.schema.string().min(1).optional(),
         findings: tool.schema.array(tool.schema.object({ kind: tool.schema.enum(['compliant', 'divergence', 'missing', 'unknown']), description: tool.schema.string().min(1), basedOn: tool.schema.array(tool.schema.string().min(1)).optional() })).optional()
       },
       async execute(args, context) {
         const action = args.action === 'researcher' ? 'research' : args.action === 'developer' ? 'develop' : args.action === 'reviewer' ? 'review' : args.action;
         if (action === 'research') { if (!args.objective) throw new Error('Research requires objective'); return snapshot(await sessionBridge.invoke(context.sessionID, { kind: 'research', taskId: args.taskId, objective: args.objective, artifactId: args.artifactId })); }
-        if (action === 'develop') return snapshot(await sessionBridge.invoke(context.sessionID, { kind: 'develop', taskId: args.taskId, artifactId: args.artifactId }));
+        if (action === 'develop') return snapshot(await sessionBridge.invoke(context.sessionID, { kind: 'develop', taskId: args.taskId, artifactId: args.artifactId, reviewArtifactId: args.reviewArtifactId, implementationReference: args.implementationReference }));
         if (action === 'review') { if (!args.findings) throw new Error('Review requires findings'); return snapshot(await sessionBridge.invoke(context.sessionID, { kind: 'review', taskId: args.taskId, findings: args.findings, knowledgeQuery: args.knowledgeQuery, artifactId: args.artifactId })); }
         if (action === 'complete') return snapshot(await sessionBridge.invoke(context.sessionID, { kind: 'complete', taskId: args.taskId }));
         if (action === 'reopen') return snapshot(await sessionBridge.invoke(context.sessionID, { kind: 'reopen', taskId: args.taskId, actor: 'opencode-agent' }));
