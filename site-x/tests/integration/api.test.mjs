@@ -30,6 +30,7 @@ function client() {
   return {
     async fetch(path, options = {}) {
       const headers = new Headers(options.headers);
+      if (["POST", "PATCH", "DELETE"].includes(options.method) && !headers.has("origin")) headers.set("origin", origin);
       if (cookies.size) headers.set("cookie", [...cookies].map(([name, value]) => `${name}=${value}`).join("; "));
       const response = await fetch(path.startsWith("http") ? path : `${origin}${path}`, { ...options, headers, redirect: "manual" });
       const cookie = response.headers.get("set-cookie");

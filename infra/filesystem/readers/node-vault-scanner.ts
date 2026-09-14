@@ -51,7 +51,9 @@ async function scanEntry(rootPath: string, absolutePath: string): Promise<VaultE
     sizeBytes: stat.size,
     extension,
     title: extension === 'md' ? extractTitle(content) : undefined,
-    preview: extension === 'md' ? extractPreview(content) : []
+    preview: extension === 'md' ? extractPreview(content) : [],
+    modifiedAt: stat.mtimeMs,
+    createdAt: stat.birthtimeMs || stat.ctimeMs
   };
 }
 

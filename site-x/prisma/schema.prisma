@@ -60,6 +60,7 @@ model User {
   name          String?             @db.VarChar(120)
   image         String?             @map("imageUrl")
   emailVerified DateTime?
+  authVersion   Int                 @default(0)
   createdAt     DateTime            @default(now())
   memberships   Membership[]
   projects      Project[]           @relation("ProjectCreator")

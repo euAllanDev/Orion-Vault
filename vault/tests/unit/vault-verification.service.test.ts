@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { VaultVerificationService } from '../../../vault/services/vault-verification.service';
 
+const NOW = Date.now();
+
 describe('VaultVerificationService', () => {
   it('reports empty files and missing markdown metadata', async () => {
     const service = new VaultVerificationService({
@@ -19,7 +21,9 @@ describe('VaultVerificationService', () => {
               sizeBytes: 0,
               extension: 'md',
               title: undefined,
-              preview: ['']
+              preview: [''],
+              modifiedAt: NOW,
+              createdAt: NOW
             }
           ]
         };
@@ -53,7 +57,9 @@ describe('VaultVerificationService', () => {
               sizeBytes: 12,
               extension: 'md',
               title: 'A',
-              preview: ['# A']
+              preview: ['# A'],
+              modifiedAt: NOW,
+              createdAt: NOW
             },
             {
               kind: 'file',
@@ -63,7 +69,9 @@ describe('VaultVerificationService', () => {
               sizeBytes: 12,
               extension: 'md',
               title: 'B',
-              preview: ['# B']
+              preview: ['# B'],
+              modifiedAt: NOW,
+              createdAt: NOW
             }
           ]
         };
@@ -98,7 +106,9 @@ describe('VaultVerificationService', () => {
               sizeBytes: 5,
               extension: 'md',
               title: 'Escape',
-              preview: ['# Escape']
+              preview: ['# Escape'],
+              modifiedAt: NOW,
+              createdAt: NOW
             }
           ]
         };

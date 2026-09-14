@@ -604,6 +604,37 @@
                 </button>
               </div>
             </div>
+              <div class="tree-filter-bar">
+                <div class="tree-filter-head">
+                  <span class="tree-filter-label">Localizar</span>
+                  <span id="treeFilterResultCount" class="tree-filter-result-count" aria-live="polite"></span>
+                </div>
+                <div class="tree-search-wrap">
+                  <svg class="tree-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="11" cy="11" r="6" />
+                    <path d="M20 20l-3.5-3.5" />
+                  </svg>
+                  <input id="treeFilterInput" class="tree-search-input" type="search" placeholder="Nome ou caminho da pasta" autocomplete="off" aria-label="Filtrar pastas por nome ou caminho" />
+                  <button id="treeFilterClearButton" class="tree-filter-clear" type="button" aria-label="Limpar filtro" title="Limpar filtro" disabled>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
+                  </button>
+                </div>
+                <div class="tree-sort-controls">
+                  <select id="treeSortSelect" class="tree-sort-select" aria-label="Ordenar por">
+                    <option value="name">Nome</option>
+                    <option value="modified">Modificado</option>
+                    <option value="created">Criado</option>
+                  </select>
+                  <button id="treeSortDirButton" class="tree-sort-dir" title="Inverter ordem" aria-label="Inverter ordem" data-dir="asc">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" class="sort-asc-icon">
+                      <path d="M12 5v14M6 11l6-6 6 6" />
+                    </svg>
+                    <svg viewBox="0 0 24 24" aria-hidden="true" class="sort-desc-icon">
+                      <path d="M12 19V5M6 13l6 6 6-6" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
               <div class="tree-context">
                 <span class="eyebrow">Pasta ativa</span>
                 <p id="folderBreadcrumb">Nenhuma pasta selecionada</p>

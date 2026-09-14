@@ -27,6 +27,7 @@ function client() {
   return {
     async fetch(path, options = {}) {
       const headers = new Headers(options.headers);
+      if (['POST', 'PATCH', 'DELETE'].includes(options.method) && !headers.has('origin')) headers.set('origin', origin);
       if (cookies.size)
         headers.set(
           'cookie',

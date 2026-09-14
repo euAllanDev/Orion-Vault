@@ -1,4 +1,4 @@
-import { apiResponse, parseInput, parseJson, resolveSessionWorkspace } from "@/lib/api";
+import { apiResponse, parseInput, parseJson, requireSameOriginMutation, resolveSessionWorkspace } from "@/lib/api";
 import { evidenceInput, idempotencyKey, uuid } from "@/lib/api-schemas";
 import { requireAuthenticatedUser } from "@/lib/authorization";
 import { createEvidenceIdempotently, listEvidence } from "@/lib/repositories/research-repository";
@@ -14,6 +14,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ses
 
 export async function POST(request: Request, { params }: { params: Promise<{ sessionId: string }> }) {
   return apiResponse(async () => {
+    requireSameOriginMutation(request);
     const sessionId = parseInput(uuid, (await params).sessionId);
     const key = parseInput(idempotencyKey, request.headers.get("idempotency-key"));
     const input = parseInput(evidenceInput, await parseJson(request));

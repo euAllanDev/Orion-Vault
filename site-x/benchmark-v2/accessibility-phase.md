@@ -17,23 +17,21 @@ Critérios adicionais nesta fase são boas práticas ou cobertura auxiliar; não
 
 | Case | Scope | Result | Evidence |
 |---|---|---|---|
-| Public Axe | `/`, `/pricing`, `/login` | BLOCKED | Playwright web server stopped at Prisma `P1001` before Chrome launch. |
-| Authenticated Axe | dashboard, projects, project detail, settings, create-project dialog | BLOCKED | Playwright web server stopped at Prisma `P1001` before Chrome launch. |
-| Protected route | unauthenticated dashboard redirects to login and does not render dashboard metrics | NOT TESTED in Playwright; historical PASS in `npm run test:auth` and `npm run test:frontend` HTTP integration evidence | Current run stopped at Prisma `P1001` before Chrome launch. |
-| Keyboard | Tab, Shift+Tab, Enter, Space, Escape; skip link; dialog focus trap and return focus | BLOCKED | Playwright web server stopped at Prisma `P1001` before Chrome launch. |
-| Forms | login, project creation, participant selector, evidence fields, theme tab | BLOCKED | Playwright web server stopped at Prisma `P1001` before Chrome launch. |
-| Responsive | desktop and mobile controls/focus | BLOCKED | Playwright web server stopped at Prisma `P1001` before Chrome launch. |
+| Public Axe | `/`, `/pricing`, `/login` | PASS | Zero violations in Chrome desktop and iPhone 13 viewport: six scans. |
+| Authenticated Axe | dashboard, projects, project detail, settings, create-project dialog | PASS | Zero violations in Chrome desktop and iPhone 13 viewport: ten scans after real Auth.js/Mailpit login. |
+| Protected route | unauthenticated dashboard redirects to login and does not render dashboard metrics | PASS | Browser test redirects to `/login` and confirms dashboard metrics are absent. |
+| Keyboard | Tab, Shift+Tab, Enter, Space, Escape; skip link; dialog focus trap and return focus | PASS | Browser suite verifies skip link, create-project dialog focus trap/Escape/return, and mobile menu focus trap/Escape/return. |
+| Forms | login, project creation, participant selector, evidence fields, theme tab | PASS | Browser suite completes login, project creation, seeded-project participant selection, session, evidence, theme, edit and deletion. |
+| Responsive | desktop and mobile controls/focus | PASS | Desktop Chrome and iPhone 13 projects both pass public and authenticated flows; mobile menu test passes. |
 | Async errors | 401, 403, validation, network error feedback | PARTIAL | Existing API/frontend integration covers 401/403/validation HTTP behavior; accessible browser announcement not tested. Network failure remains untested. |
 
 ### Axe Results
 
-No Axe browser scan completed. Counts before and after corrections are `UNKNOWN`, not zero. Playwright listed six configured cases but executed zero: its `webServer` stopped before test code, browser launch and Axe attachment generation.
+On 2026-09-13, `npm run infra:up` and `npm run infra:smoke` established PostgreSQL and Mailpit before browser execution. `npm run test:a11y` then ran six configured cases with Chrome: five passed and one desktop execution was intentionally skipped because it is mobile-only.
 
-- Violations: `UNKNOWN`.
-- Incomplete: `UNKNOWN`.
-- Passes: `UNKNOWN`.
-
-On 2026-09-13, `npx playwright test --list` validated six configured desktop/mobile cases using the Chrome channel. `npm run test:a11y` then stopped in `npm run db:migrate` with Prisma `P1001`: PostgreSQL at `127.0.0.1:54329` was unavailable. Docker status confirmed Docker Desktop daemon unavailable. Chrome was detected but was not launched; no result is represented as PASS.
+- Violations: `0` in all 16 relevant Axe scans: public pages (six) plus authenticated routes and create-project dialog (ten).
+- Incomplete: recorded separately in Playwright attachments; not treated as a pass.
+- Passes: recorded separately in Playwright attachments; no aggregate count is asserted here.
 
 ## Corrections Implemented
 
@@ -42,6 +40,9 @@ On 2026-09-13, `npx playwright test --list` validated six configured desktop/mob
 - Added programmatic labels to project edit fields and evidence type, timestamp and tag fields.
 - Added Playwright/Axe test plumbing. These changes are implementation corrections; they are not evidence that Axe has passed.
 - Added `channel: "chrome"` to both Chromium projects. This is configuration-only correction for installed Google Chrome; no functional accessibility test changed.
+- Replaced the central orange `--signal` token with `#ad3f28`. It preserves the warm accent while meeting WCAG AA contrast against canvas, white surfaces, and white button text.
+- Corrected async session, evidence and theme form handlers to retain their form element before awaiting a request. React clears `event.currentTarget` after the synchronous handler segment; the old code therefore threw after successful mutations and skipped refresh.
+- Corrected browser fixtures: participant selection now uses the seeded project that owns `Participant A`; isolated concurrent logins use distinct seeded member emails and select their own Mailpit message.
 
 ## Planned Browser Cases
 
@@ -62,7 +63,7 @@ On 2026-09-13, `npx playwright test --list` validated six configured desktop/mob
 
 ## Unknowns And Limits
 
-- Google Chrome is installed and selected with `channel: "chrome"`; Chromium bundle download is no longer required for these projects. Current Playwright/Axe execution is blocked by unavailable PostgreSQL and Docker Desktop before Chrome launch.
+- Google Chrome is installed and selected with `channel: "chrome"`; Chromium bundle download is not required for these projects. Local PostgreSQL and Mailpit evidence applies only to this benchmark environment.
 - No NVDA/Chrome or VoiceOver/Safari test environment/accounts were supplied. This is documented as an existing benchmark unknown.
 - No production browser, deployment or RUM evidence was used.
 - NFR-A11Y-001 is not accepted. Formal evidence remains incomplete.
@@ -80,12 +81,14 @@ On 2026-09-13, `npx playwright test --list` validated six configured desktop/mob
 | `npm run db:migrate` | PASS: no pending migrations. |
 | `npm run db:seed` | PASS: deterministic fixtures seeded. |
 | `npx playwright test --list` | PASS: configuration parses and lists 6 desktop/mobile cases. |
-| `npm run test:integration` | BLOCKED before tests: Prisma seed returned `P1001` for PostgreSQL `127.0.0.1:54329`. |
-| `npm run test:auth` | BLOCKED before tests: Prisma migrate returned `P1001` for PostgreSQL `127.0.0.1:54329`. |
-| `npm run test:rbac` | BLOCKED before tests: Prisma migrate returned `P1001` for PostgreSQL `127.0.0.1:54329`. |
-| `npm run test:api` | BLOCKED before tests: Prisma migrate returned `P1001` for PostgreSQL `127.0.0.1:54329`. |
-| `npm run test:frontend` | BLOCKED before tests: Prisma migrate returned `P1001` for PostgreSQL `127.0.0.1:54329`. |
-| `npm run test:a11y` | BLOCKED before browser launch: Playwright web server Prisma migrate returned `P1001` for PostgreSQL `127.0.0.1:54329`; Axe counts remain `UNKNOWN`. |
+| `npm run infra:up` | PASS: local PostgreSQL and Mailpit containers healthy. |
+| `npm run infra:smoke` | PASS: PostgreSQL connected and Mailpit API healthy. |
+| `npm run test:integration` | PASS: 4 persistence tests. |
+| `npm run test:auth` | PASS: 9 Auth.js/Mailpit tests. |
+| `npm run test:rbac` | PASS: 7 repository/RBAC tests. |
+| `npm run test:api` | PASS: 9 HTTP/Auth.js/RBAC/PostgreSQL tests. |
+| `npm run test:frontend` | PASS: authenticated frontend integration test. |
+| `npm run test:a11y` | PASS: 5 cases passed, 1 desktop mobile-only case skipped; 16 Axe scans have zero violations. |
 | `npm run lint` | PASS. |
 | `npm run build` | PASS. |
-| `git diff --check` | PENDING. |
+| `git diff --check` | PASS. |

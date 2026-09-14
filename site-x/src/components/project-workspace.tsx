@@ -30,6 +30,8 @@ type Theme = {
   evidences: { evidenceId: string }[];
 };
 
+const tabIds = { 'Sessões': 'sessions', 'Evidências': 'evidences', 'Temas': 'themes' } as const;
+
 export function ProjectWorkspace({
   projectId,
   archived
@@ -88,7 +90,8 @@ export function ProjectWorkspace({
   async function saveSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const participantId = String(form.get('participantId') || '');
     try {
       await api(`/api/v1/projects/${projectId}/sessions`, {
@@ -101,7 +104,7 @@ export function ProjectWorkspace({
           guide: form.get('guide') || null
         })
       });
-      event.currentTarget.reset();
+      formElement.reset();
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -111,7 +114,8 @@ export function ProjectWorkspace({
   }
   async function saveEvidence(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const sessionId = String(form.get('sessionId'));
     if (!sessionId) return setError('Selecione uma sessão.');
     setSaving(true);
@@ -131,7 +135,7 @@ export function ProjectWorkspace({
             .filter(Boolean)
         })
       });
-      event.currentTarget.reset();
+      formElement.reset();
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -170,7 +174,8 @@ export function ProjectWorkspace({
   async function saveTheme(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     try {
       await api(`/api/v1/projects/${projectId}/themes`, {
         method: 'POST',
@@ -182,7 +187,7 @@ export function ProjectWorkspace({
         })
       });
       setSelected([]);
-      event.currentTarget.reset();
+      formElement.reset();
       await load();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -199,6 +204,8 @@ export function ProjectWorkspace({
               key={name}
               type="button"
               role="tab"
+              id={`${tabIds[name as keyof typeof tabIds]}-tab`}
+              aria-controls={`${tabIds[name as keyof typeof tabIds]}-panel`}
               aria-selected={tab === name}
               onClick={() => setTab(name)}
             >
@@ -206,6 +213,7 @@ export function ProjectWorkspace({
             </button>
           ))}
         </div>
+        <div role="tabpanel" id={`${tabIds[tab as keyof typeof tabIds]}-panel`} aria-labelledby={`${tabIds[tab as keyof typeof tabIds]}-tab`}>
         {archived && (
           <p className="notice">Projeto arquivado: conteúdo somente leitura.</p>
         )}
@@ -469,6 +477,7 @@ export function ProjectWorkspace({
             )}
           </>
         )}
+        </div>
       </section>
     </div>
   );

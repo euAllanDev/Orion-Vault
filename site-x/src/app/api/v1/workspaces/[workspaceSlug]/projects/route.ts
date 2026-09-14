@@ -1,4 +1,4 @@
-import { apiResponse, parseInput, parseJson, resolveWorkspace } from "@/lib/api";
+import { apiResponse, parseInput, parseJson, requireSameOriginMutation, resolveWorkspace } from "@/lib/api";
 import { createProjectInput, projectListQuery, workspaceSlug } from "@/lib/api-schemas";
 import { requireAuthenticatedUser } from "@/lib/authorization";
 import { createProject, listProjectsPage } from "@/lib/repositories/project-repository";
@@ -15,6 +15,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ work
 
 export async function POST(request: Request, { params }: { params: Promise<{ workspaceSlug: string }> }) {
   return apiResponse(async () => {
+    requireSameOriginMutation(request);
     const slug = parseInput(workspaceSlug, (await params).workspaceSlug);
     const input = parseInput(createProjectInput, await parseJson(request));
     const user = await requireAuthenticatedUser();

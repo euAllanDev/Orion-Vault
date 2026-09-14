@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { VaultVerificationService } from '../../../vault/services/vault-verification.service';
 
+const NOW = Date.now();
+
 describe('VaultVerificationService', () => {
   it('summarizes a scanned vault tree', async () => {
     const service = new VaultVerificationService({
@@ -25,7 +27,9 @@ describe('VaultVerificationService', () => {
                   sizeBytes: 12,
                   extension: 'md',
                   title: 'Alpha',
-                  preview: ['# Alpha']
+                  preview: ['# Alpha'],
+                  modifiedAt: NOW,
+                  createdAt: NOW
                 }
               ]
             },
@@ -36,7 +40,9 @@ describe('VaultVerificationService', () => {
               relativePath: 'root.txt',
               sizeBytes: 5,
               extension: 'txt',
-              preview: []
+              preview: [],
+              modifiedAt: NOW,
+              createdAt: NOW
             }
           ]
         };

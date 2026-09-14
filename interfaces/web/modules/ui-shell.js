@@ -16,6 +16,7 @@ export function createUiShellController(params) {
     moveEntry,
     deleteEntry,
     openNote,
+    filterNotesInFolder,
     showError
   } = params;
 
@@ -235,9 +236,10 @@ export function createUiShellController(params) {
 
     const actions = kind === 'folder'
       ? [
-          ['create-note', 'Nova nota'],
-          ['create-folder', 'Nova pasta'],
-          ['rename-folder', 'Renomear pasta'],
+           ['create-note', 'Nova nota'],
+           ['create-folder', 'Nova pasta'],
+           ['filter-notes', 'Filtrar notas nesta pasta'],
+           ['rename-folder', 'Renomear pasta'],
           ['move-folder', 'Mover pasta'],
           ['copy-path', 'Copiar caminho'],
           ['delete-folder', 'Apagar pasta']
@@ -267,9 +269,10 @@ export function createUiShellController(params) {
         closeMenus();
         try {
           if (action === 'open-note') await openNote(relativePath, { recordActivity: true, kind: 'open' });
-          if (action === 'create-note') await createNote();
-          if (action === 'create-folder') await createFolder();
-          if (action === 'rename-folder') await renameEntry(relativePath, 'folder');
+           if (action === 'create-note') await createNote();
+           if (action === 'create-folder') await createFolder();
+           if (action === 'filter-notes') await filterNotesInFolder(relativePath);
+           if (action === 'rename-folder') await renameEntry(relativePath, 'folder');
           if (action === 'rename-note') await renameEntry(relativePath, 'note');
           if (action === 'move-folder') await moveEntry(relativePath, 'folder');
           if (action === 'move-note') await moveEntry(relativePath, 'note');

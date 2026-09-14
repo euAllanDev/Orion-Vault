@@ -12,7 +12,11 @@ Regra de evidência: UI visual não aceita persistência, auth, RBAC, API real, 
 
 ## Phase 7 — accessibility
 
-`@playwright/test` e `@axe-core/playwright` estão configurados em `tests/accessibility/a11y.spec.ts` para Chromium desktop e mobile, ambos com `channel: "chrome"`, servidor Next, PostgreSQL, Auth.js e Mailpit locais. Em 2026-09-13, Google Chrome foi detectado em `C:\Program Files\Google\Chrome\Application\chrome.exe` e Playwright listou seis casos, mas `npm run test:a11y` parou no Prisma `P1001` para PostgreSQL `127.0.0.1:54329` antes de abrir Chrome ou executar testes. Portanto não há resultado Axe, teste de teclado ou leitor de tela válido; `NFR-A11Y-001` continua `PARTIAL` e sem aceite. Ver `accessibility-phase.md`.
+`@playwright/test` e `@axe-core/playwright` executam `tests/accessibility/a11y.spec.ts` em Chrome desktop e iPhone 13, com servidor Next, PostgreSQL, Auth.js e Mailpit locais. Em 2026-09-13, `npm run test:a11y` passou cinco casos e pulou intencionalmente um caso desktop mobile-only. As 16 varreduras Axe relevantes retornaram zero violations; teclado, skip link, dialog/focus, formulários autenticados e fluxos desktop/mobile passaram no navegador real. `NFR-A11Y-001` continua `PARTIAL`: NVDA/Chrome e VoiceOver/Safari ainda não foram executados. Ver `accessibility-phase.md`.
+
+## Phase 8 — security
+
+`npm run test:security` passa contra servidor Next construído, Auth.js/Mailpit e PostgreSQL locais. Evidência real cobre sessão ausente/adulterada, magic link inválido/expirado/reutilizado, JWT copiado após logout, enumeração de identidade benchmark, CSRF por Origin, IDOR cross-workspace, mass assignment, validação estrita, payloads XSS/SQL e headers. JWT pós-logout é invalidado por versão persistida de sessão; headers CSP/frame/MIME/referrer/permissions são presentes. HSTS, TLS/`Secure` em produção, rate limit distribuído, configuração de segredo/SMTP e controles de deploy permanecem UNKNOWN. Ver `security-phase.md`.
 
 ## Evidência Phase 3 — authentication
 

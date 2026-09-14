@@ -46,7 +46,11 @@ const state = {
   agendaReminderKeys: new Set(),
   recentActivity: [],
   overviewSummary: null,
-  desktopNotificationTimer: null
+  desktopNotificationTimer: null,
+  treeSort: 'name',
+  treeSortDir: 'asc',
+  treeFilter: '',
+  noteFilter: { folderPath: '', query: '' }
 };
 
 let desktopBootstrapPromise = null;
@@ -221,6 +225,11 @@ const els = {
   setupHint: document.getElementById('setupHint'),
   folderBreadcrumb: document.getElementById('folderBreadcrumb'),
   tree: document.getElementById('tree'),
+  treeFilterInput: document.getElementById('treeFilterInput'),
+  treeFilterClearButton: document.getElementById('treeFilterClearButton'),
+  treeFilterResultCount: document.getElementById('treeFilterResultCount'),
+  treeSortSelect: document.getElementById('treeSortSelect'),
+  treeSortDirButton: document.getElementById('treeSortDirButton'),
   breadcrumbs: document.getElementById('breadcrumbs'),
   noteTitle: document.getElementById('noteTitle'),
   editorMeta: document.querySelector('.editor-meta'),
@@ -1096,12 +1105,26 @@ function joinRelativePath(base, name) {
 }
 
 function sortEntries(entries) {
+  const sortBy = state.treeSort || 'name';
+  const sortDir = state.treeSortDir === 'desc' ? -1 : 1;
+
   return [...entries].sort((left, right) => {
+    // Folders always come before files regardless of sort key
     if (left.kind !== right.kind) {
       return left.kind === 'folder' ? -1 : 1;
     }
 
-    return left.name.localeCompare(right.name, 'pt-BR');
+    if (sortBy === 'modified') {
+      const lm = left.modifiedAt ?? 0;
+      const rm = right.modifiedAt ?? 0;
+      if (lm !== rm) return (lm < rm ? -1 : 1) * sortDir;
+    } else if (sortBy === 'created') {
+      const lc = left.createdAt ?? 0;
+      const rc = right.createdAt ?? 0;
+      if (lc !== rc) return (lc < rc ? -1 : 1) * sortDir;
+    }
+
+    return left.name.localeCompare(right.name, 'pt-BR') * (sortBy === 'name' ? sortDir : 1);
   });
 }
 
@@ -1506,6 +1529,7 @@ uiShell = createUiShellController({
   moveEntry: async (...args) => workspaceCore.moveEntry(...args),
   deleteEntry: async (target) => deleteSelectedWorkspaceEntry(target),
   openNote: async (...args) => workspaceCore.loadNote(...args),
+  filterNotesInFolder: async (pathValue) => filterNotesInFolder(pathValue),
   showError
 });
 
@@ -1944,6 +1968,26 @@ function toggleNoteOptionsMenu() {
 
 function showFolderContextMenu(relativePath, x, y) {
   uiShell.showFolderContextMenu(relativePath, x, y);
+}
+
+async function filterNotesInFolder(relativePath) {
+  const folderPath = normalizeRelativePath(relativePath);
+  const previousQuery = state.noteFilter.folderPath === folderPath ? state.noteFilter.query : '';
+  const query = await openInputDialog({
+    eyebrow: 'Pasta',
+    title: 'Filtrar notas',
+    message: `Mostra apenas notas dentro de ${prettyPath(folderPath)}. Deixe vazio para limpar o filtro.`,
+    label: 'Título ou caminho da nota',
+    value: previousQuery
+  });
+
+  if (query === null) return;
+
+  state.noteFilter = query ? { folderPath, query } : { folderPath: '', query: '' };
+  if (state.tree) workspaceTree.renderTree(state.tree);
+  els.editorStatus.textContent = query
+    ? `Filtrando notas em ${folderPath}.`
+    : 'Filtro de notas removido.';
 }
 
 function syncWorkspaceState() {
@@ -2427,6 +2471,38 @@ document.querySelectorAll('[data-quick-action]').forEach((button) => {
 });
 els.newNoteButton.addEventListener('click', () => { createNote().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar nota')); });
 els.newFolderButton.addEventListener('click', () => { createFolder().catch((error) => showError(error instanceof Error ? error.message : 'Falha ao criar pasta')); });
+
+// Tree filter/sort controls
+function updateTreeFilter() {
+  state.treeFilter = (els.treeFilterInput.value ?? '').toLowerCase().trim();
+  els.treeFilterClearButton.disabled = !state.treeFilter;
+  if (state.tree) workspaceTree.renderTree(state.tree);
+}
+
+els.treeFilterInput?.addEventListener('input', updateTreeFilter);
+els.treeFilterClearButton?.addEventListener('click', () => {
+  els.treeFilterInput.value = '';
+  updateTreeFilter();
+  els.treeFilterInput.focus();
+});
+els.treeFilterInput?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !state.treeFilter) return;
+  event.preventDefault();
+  els.treeFilterInput.value = '';
+  updateTreeFilter();
+});
+
+els.treeSortSelect?.addEventListener('change', () => {
+  state.treeSort = els.treeSortSelect.value || 'name';
+  if (state.tree) workspaceTree.renderTree(state.tree);
+});
+
+els.treeSortDirButton?.addEventListener('click', () => {
+  const next = state.treeSortDir === 'asc' ? 'desc' : 'asc';
+  state.treeSortDir = next;
+  els.treeSortDirButton.dataset.dir = next;
+  if (state.tree) workspaceTree.renderTree(state.tree);
+});
 els.relationsDetailsButton?.addEventListener('click', (event) => {
   event.stopPropagation();
   toggleRelationsDetailsMenu();

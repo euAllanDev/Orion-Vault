@@ -38,15 +38,38 @@ test.afterEach(async () => {
 });
 
 test('creates and autosaves a note, then keeps the desktop process active in the tray', async () => {
+  await page.locator('#newFolderButton').click();
+  await expect(page.locator('#inputDialog')).toBeVisible();
+  await page.locator('#inputDialogInput').fill('E2E Folder');
+  await page.locator('#inputDialogConfirm').click();
+
   await page.locator('#newNoteButton').click();
   await expect(page.locator('#inputDialog')).toBeVisible();
   await page.locator('#inputDialogInput').fill('E2E note');
   await page.locator('#inputDialogConfirm').click();
 
-  await expect(page.locator('.file-item[data-path="e2e-note.md"]')).toBeVisible();
+  const folderPath = 'E2E Folder';
+  const notePath = `${folderPath}/e2e-note.md`;
+  await expect(page.locator(`.file-item[data-path="${notePath}"]`)).toBeVisible();
+
+  await page.locator('#treeFilterInput').fill('e2e folder');
+  await expect(page.locator(`.folder[data-path="${folderPath}"]`)).toBeVisible();
+  await expect(page.locator('#treeFilterResultCount')).toHaveText('1 pasta');
+  await page.locator('#treeFilterClearButton').click();
+  await expect(page.locator('#treeFilterInput')).toHaveValue('');
+  await expect(page.locator(`.file-item[data-path="${notePath}"]`)).toBeVisible();
+
+  await page.locator(`.folder[data-path="${folderPath}"] summary`).click({ button: 'right' });
+  await page.getByRole('button', { name: 'Filtrar notas nesta pasta' }).click();
+  await expect(page.locator('#inputDialog')).toBeVisible();
+  await page.locator('#inputDialogInput').fill('e2e note');
+  await page.locator('#inputDialogConfirm').click();
+  await expect(page.locator('#treeFilterResultCount')).toHaveText('1 nota');
+  await expect(page.locator(`.file-item[data-path="${notePath}"]`)).toBeVisible();
+
   await page.locator('#noteEditorSurface').fill('Conteúdo salvo pelo teste E2E.');
 
-  const savedNotePath = path.join(vaultRoot, 'e2e-note.md');
+  const savedNotePath = path.join(vaultRoot, folderPath, 'e2e-note.md');
   await expect.poll(async () => fs.readFile(savedNotePath, 'utf8').catch(() => ''), { timeout: 10_000 })
     .toContain('Conteúdo salvo pelo teste E2E.');
 

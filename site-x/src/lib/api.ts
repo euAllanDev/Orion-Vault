@@ -32,6 +32,12 @@ export async function parseJson(request: Request) {
   }
 }
 
+export function requireSameOriginMutation(request: Request) {
+  const origin = request.headers.get("origin");
+  const expectedOrigin = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
+  if (!origin || !expectedOrigin || origin !== expectedOrigin) throw new AccessDeniedError();
+}
+
 export async function resolveWorkspace(slug: string) {
   return denyIfMissing(await db.workspace.findUnique({ where: { slug }, select: { id: true, slug: true } }));
 }
