@@ -47,6 +47,24 @@ describe('OpenCode agent runtime plugin', () => {
     expect((await invoke(tools.orion_agent_workflow, { action: 'reopen', taskId: 'task' }, 'A')).status).toBe('pending');
   });
 
+  it('deserializes OpenCode string findings and preserves explicit finding validation', async () => {
+    const tools = publicPlugin();
+    await invoke(tools.orion_agent_task_create, { taskId: 'string-findings', goal: 'Implement dashboard' }, 'A');
+    await invoke(tools.orion_agent_workflow, { action: 'research', taskId: 'string-findings', objective: 'dashboard' }, 'A');
+    await invoke(tools.orion_agent_workflow, { action: 'develop', taskId: 'string-findings' }, 'A');
+
+    const reviewed = await invoke(tools.orion_agent_workflow, {
+      action: 'review', taskId: 'string-findings', artifactId: 'review-string',
+      findings: JSON.stringify([{ kind: 'missing', description: 'Empty state missing.' }, { kind: 'unknown', description: 'Manual audit pending.' }])
+    }, 'A');
+    expect(reviewed).toMatchObject({ status: 'review', artifacts: [expect.anything(), expect.anything(), expect.objectContaining({ basedOn: expect.any(Array) })] });
+
+    await invoke(tools.orion_agent_workflow, { action: 'develop', taskId: 'string-findings', reviewArtifactId: 'review-string' }, 'A');
+    await expect(invoke(tools.orion_agent_workflow, {
+      action: 'review', taskId: 'string-findings', findings: JSON.stringify([{ kind: 'FAIL', description: 'Invalid kind.' }])
+    }, 'A')).rejects.toMatchObject({ code: 'AGENT_TASK_REVIEW_FINDING' });
+  });
+
   it('keeps snapshots safe, rejects completed updates, and invalidates disposed sessions', async () => {
     const tools = publicPlugin();
     const created = await invoke(tools.orion_agent_task_create, { taskId: 'task', goal: 'Implement dashboard' }, 'A');

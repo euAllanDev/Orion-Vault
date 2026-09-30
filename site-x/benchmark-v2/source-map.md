@@ -1,5 +1,10 @@
 # Site X Benchmark v2 Source Map
 
+> SourceRefs below are historical runtime-scoped evidence identifiers, not durable document
+> locators. A fresh benchmark session must discover its own sourceRefs through Orion MCP and
+> use the listed relative document paths to recover any source that is not yet in that runtime.
+> No vault root, absolute path, or registry data is required or exposed.
+
 | Requisito | SourceRef | Documento | Seção/trecho relevante |
 |---|---|---|---|
 | REQ-AUTH-001 | `orion:src_Q-nOQSmBtNdSJ7PlQ7l6cmHp` | `site-x/02-requirements.md` | Must have: magic link e sessão 30 dias. |

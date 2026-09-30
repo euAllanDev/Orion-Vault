@@ -43,6 +43,13 @@ runtime retains its tasks across interactions in that session. At session end it
 calls `dispose()` and releases its runtime reference; no task or source reference is
 persisted, written to Vault, or recovered by a later runtime.
 
+`sourceRef` is an opaque capability owned by that same runtime registry. A sourceRef
+returned by an agent session must be resolved through that session's `runtime.knowledge`.
+The separately constructed public MCP runtime intentionally rejects it as `NOT_FOUND`;
+it must not receive registry entries, vault roots, absolute paths, or registry internals.
+Public MCP search/context/related results create sourceRefs in its own registry and are
+resolvable only while that MCP runtime remains alive.
+
 A compatible host injects `AgentRuntime`, containing only `runtime.knowledge` and
 `runtime.tasks`. Skills use task `create`, `get`, `update`, and `reopen` operations and
 receive immutable snapshots. They do not receive source registry registrations, task maps,

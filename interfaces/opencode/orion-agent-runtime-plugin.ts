@@ -1,6 +1,7 @@
 import { tool } from '@opencode-ai/plugin';
 import { createAgentRuntimeHost } from '../agent/agent-runtime-host';
 import { AgentSessionRuntimeBridge } from '../agent/agent-session-runtime-bridge';
+import type { ReviewFinding } from '../../application/services/agent-task-collaboration.service';
 
 const activeVaultRoot = process.env.ORION_VAULT_ROOT?.trim();
 if (!activeVaultRoot) throw new Error('OpenCode agent runtime requires an active Orion vault session');
@@ -16,6 +17,17 @@ function endedSessionId(event: unknown): string | undefined {
 
 function snapshot(task: ReturnType<AgentSessionRuntimeBridge['getTask']>): string {
   return JSON.stringify({ id: task.id, goal: task.goal, project: task.project, constraints: task.constraints, status: task.status, sourceRefs: task.sourceRefs, plan: task.plan, artifacts: task.artifacts, provenance: task.provenance });
+}
+
+function reviewFindings(value: unknown): readonly ReviewFinding[] {
+  const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+  if (!Array.isArray(parsed)) throw new Error('Review findings must be an array');
+  for (const finding of parsed) {
+    if (!finding || typeof finding !== 'object' || typeof finding.description !== 'string') {
+      throw new Error('Invalid review finding');
+    }
+  }
+  return parsed as readonly ReviewFinding[];
 }
 
 /** Builds the public OpenCode surface without exposing its session bridge or runtime. */
@@ -37,7 +49,7 @@ export function createOpenCodeAgentRuntimePlugin(sessionBridge: AgentSessionRunt
         const action = args.action === 'researcher' ? 'research' : args.action === 'developer' ? 'develop' : args.action === 'reviewer' ? 'review' : args.action;
         if (action === 'research') { if (!args.objective) throw new Error('Research requires objective'); return snapshot(await sessionBridge.invoke(context.sessionID, { kind: 'research', taskId: args.taskId, objective: args.objective, artifactId: args.artifactId })); }
         if (action === 'develop') return snapshot(await sessionBridge.invoke(context.sessionID, { kind: 'develop', taskId: args.taskId, artifactId: args.artifactId, reviewArtifactId: args.reviewArtifactId, implementationReference: args.implementationReference }));
-        if (action === 'review') { if (!args.findings) throw new Error('Review requires findings'); return snapshot(await sessionBridge.invoke(context.sessionID, { kind: 'review', taskId: args.taskId, findings: args.findings, knowledgeQuery: args.knowledgeQuery, artifactId: args.artifactId })); }
+        if (action === 'review') { if (!args.findings) throw new Error('Review requires findings'); return snapshot(await sessionBridge.invoke(context.sessionID, { kind: 'review', taskId: args.taskId, findings: reviewFindings(args.findings), knowledgeQuery: args.knowledgeQuery, artifactId: args.artifactId })); }
         if (action === 'complete') return snapshot(await sessionBridge.invoke(context.sessionID, { kind: 'complete', taskId: args.taskId }));
         if (action === 'reopen') return snapshot(await sessionBridge.invoke(context.sessionID, { kind: 'reopen', taskId: args.taskId, actor: 'opencode-agent' }));
         throw new Error('Unknown workflow action');

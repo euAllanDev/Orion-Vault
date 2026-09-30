@@ -96,6 +96,18 @@ describe('orion_read', () => {
     });
   });
 
+  it('does not resolve a sourceRef registered by another runtime or expose its location', async () => {
+    const sourceRef = new OrionSourceRegistry().register(1, 'internal/architecture.md');
+    const getNote = vi.fn();
+    const handler = createOrionReadHandler({ noteSource: { getNote }, vaultRoots: ['/vault-a', '/vault-b'], sourceRegistry: new OrionSourceRegistry() });
+
+    await expect(handler({ sourceRef })).resolves.toEqual({
+      content: [{ type: 'text', text: 'NOT_FOUND: No Orion source was found for the supplied sourceRef.' }],
+      isError: true
+    });
+    expect(getNote).not.toHaveBeenCalled();
+  });
+
   it('returns VAULT_UNAVAILABLE when sourceRef Vault cannot be read', async () => {
     const sourceRegistry = new OrionSourceRegistry();
     const sourceRef = sourceRegistry.register(0, 'Financas/foo.md');
